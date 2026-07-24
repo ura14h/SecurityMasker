@@ -4,12 +4,17 @@ This is the *only* module that imports LiteLLM. It maps LiteLLM's callback /
 guardrail hooks onto the SecurityMasker core. Keeping the coupling here means a
 LiteLLM hook rename or signature change is a one-file fix (AGENTS.md §2 rule 5).
 
-Verified against **litellm==1.93.0**. The exact hook signatures are pinned by
-``tests/unit/test_litellm_hook_contract.py``; if that test fails after a LiteLLM
-upgrade, review the changes here before bumping the pin in pyproject.toml.
+Verified against **litellm==1.93.0**. Hook signatures are pinned by
+``tests/unit/test_litellm_hook_contract.py``.
 
-Phase 0 status: this callback is a **no-op pass-through**. It proves the hooks
-load and keep their contract. Phase 1+ wires in the masking engine at each hook.
+Behavior (Phase 2, OpenAI Responses/Chat):
+- ``async_pre_call_hook``: mask the outbound request (fail-closed on error, §26).
+- ``async_post_call_success_hook``: restore a non-streaming response.
+- ``async_post_call_streaming_iterator_hook``: restore streamed text with a
+  carry buffer (§20). Unknown chunks pass through unchanged.
+
+If ``SECURITYMASKER_CONFIG`` is unset the callback is a transparent no-op, so the
+proxy behaves as vanilla LiteLLM (§38-17).
 """
 
 from __future__ import annotations
@@ -19,8 +24,16 @@ from typing import Any
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
 
-# Hook names we depend on, kept as a module constant so the contract test and the
-# implementation cannot drift apart.
+from securitymasker.engine import MaskingEngine
+from securitymasker.errors import SecurityMaskerError
+from securitymasker.integrations.runtime import Runtime, resolve_session_id
+from securitymasker.logging import get_logger
+from securitymasker.models import MaskingSession
+from securitymasker.protocols import openai_responses
+from securitymasker.protocols.base import TEXT_KEYS
+from securitymasker.streaming.text_replacer import StreamingRestorer
+from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
+
 REQUIRED_HOOKS: tuple[str, ...] = (
     "async_pre_call_hook",
     "async_post_call_success_hook",
@@ -28,18 +41,15 @@ REQUIRED_HOOKS: tuple[str, ...] = (
     "async_post_call_failure_hook",
 )
 
+_log = get_logger(component="securitymasker.litellm")
+
 
 class SecurityMaskerCallback(CustomGuardrail):
-    """LiteLLM guardrail entry point for SecurityMasker.
-
-    Registered in the proxy config under ``guardrails`` (see
-    ``config/litellm.example.yaml``). When SecurityMasker is not registered, the
-    proxy behaves as vanilla LiteLLM (acceptance criterion §38-17).
-    """
+    """LiteLLM guardrail entry point for SecurityMasker."""
 
     def __init__(self, **kwargs: Any) -> None:
-        # ``guardrail_name`` / ``event_hook`` are injected by the proxy loader.
         super().__init__(**kwargs)
+        self._runtime = Runtime.from_env()
 
     async def async_pre_call_hook(
         self,
@@ -48,11 +58,18 @@ class SecurityMaskerCallback(CustomGuardrail):
         data: dict[str, Any],
         call_type: Any,
     ) -> Exception | str | dict[str, Any] | None:
-        """Mask the outbound request just before the LLM call.
-
-        Phase 0: pass-through. Phase 1+: run the detection/masking pipeline on the
-        request structure (``doc/00-First-Order.md`` §18) and fail closed on error.
-        """
+        if self._runtime is None:
+            return None
+        try:
+            session_id = resolve_session_id(data)
+            session = await self._runtime.store.get_or_create(session_id)
+            async with self._runtime.store.lock(session_id):
+                await openai_responses.mask_request(self._runtime.engine, session, data)
+                await self._runtime.store.save(session)
+        except SecurityMaskerError:
+            # Fail closed: block the request rather than forward original data (§26).
+            _log.warning("securitymasker_block", stage="pre_call")
+            raise
         return None
 
     async def async_post_call_success_hook(
@@ -61,7 +78,16 @@ class SecurityMaskerCallback(CustomGuardrail):
         user_api_key_dict: Any,
         response: Any,
     ) -> Any:
-        """Restore aliases in a non-streaming response (§19). Phase 0: pass-through."""
+        if self._runtime is None:
+            return response
+        session_id = resolve_session_id(data)
+        session = await self._runtime.store.get(session_id)
+        if session is None:
+            return response
+        if isinstance(response, dict):
+            openai_responses.restore_response(self._runtime.engine, session, response)
+        else:
+            _restore_response_object(self._runtime.engine, session, response)
         return response
 
     async def async_post_call_streaming_iterator_hook(
@@ -70,12 +96,26 @@ class SecurityMaskerCallback(CustomGuardrail):
         response: Any,
         request_data: dict[str, Any],
     ) -> AsyncGenerator[Any, None]:
-        """Real-time alias restoration over the SSE stream (§20-21).
+        if self._runtime is None:
+            async for chunk in response:
+                yield chunk
+            return
 
-        Phase 0: transparently re-yield every chunk unchanged.
-        """
+        session_id = resolve_session_id(request_data)
+        session = await self._runtime.store.get(session_id)
+        if session is None:
+            async for chunk in response:
+                yield chunk
+            return
+
+        restorer = StreamingRestorer(self._runtime.engine.literal_restorations(session))
         async for chunk in response:
+            _restore_chunk_text(chunk, restorer, self._runtime.engine, session)
             yield chunk
+        # Flush any carried tail onto a final synthetic-safe chunk if possible.
+        tail = restorer.flush()
+        if tail and (last := _make_text_chunk(chunk, tail)) is not None:
+            yield last
 
     async def async_post_call_failure_hook(
         self,
@@ -84,5 +124,102 @@ class SecurityMaskerCallback(CustomGuardrail):
         user_api_key_dict: Any,
         traceback_str: str | None = None,
     ) -> None:
-        """Ensure failures never leak original secrets (§25, §26). Phase 0: no-op."""
+        # Never leak original secrets on failure (§25, §26). Nothing to restore.
         return None
+
+
+# --------------------------------------------------------------------------- utils
+
+
+def _restore_response_object(
+    engine: MaskingEngine, session: MaskingSession, response: Any
+) -> None:
+    """Restore aliases in a live LiteLLM response object in place (§19).
+
+    Handles both Chat Completions (``choices[].message``) and Responses
+    (``output[].content[].text``) shapes via attribute access, since LiteLLM
+    returns typed pydantic objects (not dicts) at this hook.
+    """
+    restore = engine.make_restorer(session)
+    reasm = ToolArgumentReassembler(restore)
+
+    for choice in getattr(response, "choices", None) or []:
+        msg = getattr(choice, "message", None)
+        if msg is None:
+            continue
+        if isinstance(getattr(msg, "content", None), str):
+            msg.content = restore(msg.content)
+        for call in getattr(msg, "tool_calls", None) or []:
+            fn = getattr(call, "function", None)
+            if fn is not None and isinstance(getattr(fn, "arguments", None), str):
+                fn.arguments = reasm.restore_arguments(fn.arguments)
+
+    for item in getattr(response, "output", None) or []:
+        for part in getattr(item, "content", None) or []:
+            for key in TEXT_KEYS:
+                if isinstance(getattr(part, key, None), str):
+                    setattr(part, key, restore(getattr(part, key)))
+        if isinstance(getattr(item, "arguments", None), str):
+            item.arguments = reasm.restore_arguments(item.arguments)
+
+
+def _restore_chunk_text(
+    chunk: Any, restorer: StreamingRestorer, engine: MaskingEngine, session: MaskingSession
+) -> None:
+    """Restore text in a streaming chunk, in place.
+
+    Handles Chat Completions (``choices[].delta.content``), Responses
+    ``OutputTextDeltaEvent`` (``.delta``), and Responses created/completed events
+    that embed a full ``.response`` object. Unknown chunks pass through unchanged.
+    """
+    choices = getattr(chunk, "choices", None) or (
+        chunk.get("choices") if isinstance(chunk, dict) else None
+    )
+    if choices:
+        for choice in choices:
+            delta = getattr(choice, "delta", None) or (
+                choice.get("delta") if isinstance(choice, dict) else None
+            )
+            if delta is None:
+                continue
+            content = (
+                delta.get("content") if isinstance(delta, dict) else getattr(delta, "content", None)
+            )
+            if isinstance(content, str) and content:
+                restored = restorer.feed(content)
+                if isinstance(delta, dict):
+                    delta["content"] = restored
+                else:
+                    delta.content = restored
+        return
+
+    ctype = getattr(chunk, "type", None) or (chunk.get("type") if isinstance(chunk, dict) else None)
+    if isinstance(ctype, str) and ctype.endswith("output_text.delta"):
+        delta_text = getattr(chunk, "delta", None)
+        if isinstance(delta_text, str) and delta_text:
+            chunk.delta = restorer.feed(delta_text)
+        return
+
+    # response.created / response.completed embed a full response object; restore it
+    # with a direct (non-carry-buffer) restorer so its full text is clean too.
+    embedded = getattr(chunk, "response", None)
+    if embedded is not None:
+        _restore_response_object(engine, session, embedded)
+
+
+def _make_text_chunk(template: Any, text: str) -> Any | None:
+    """Clone the last chunk shape to carry a flushed text tail, if we can."""
+    try:
+        clone = template.model_copy(deep=True) if hasattr(template, "model_copy") else None
+    except Exception:  # noqa: BLE001
+        clone = None
+    if clone is None:
+        return None
+    choices = getattr(clone, "choices", None)
+    if not choices:
+        return None
+    delta = getattr(choices[0], "delta", None)
+    if delta is None:
+        return None
+    delta.content = text
+    return clone

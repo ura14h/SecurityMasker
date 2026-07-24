@@ -61,18 +61,56 @@ def _sse(lines: list[str]) -> StreamingResponse:
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+def _echo_user_text(body: dict) -> str:
+    """Extract the user's text so the mock can echo it back (masked) in the reply.
+
+    This lets restoration be tested end-to-end: whatever aliases the gateway put on
+    the wire come back in the response and must be restored before the client.
+    """
+    parts: list[str] = []
+    inp = body.get("input")
+    if isinstance(inp, str):
+        parts.append(inp)
+    elif isinstance(inp, list):
+        for item in inp:
+            content = item.get("content") if isinstance(item, dict) else None
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                parts.extend(p.get("text", "") for p in content if isinstance(p, dict))
+    for msg in body.get("messages", []) if isinstance(body.get("messages"), list) else []:
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            parts.extend(p.get("text", "") for p in content if isinstance(p, dict))
+    return " ".join(p for p in parts if p)
+
+
+def _reply_text(body: dict) -> str:
+    # Always include the canned alias (keeps Phase 0 fixtures valid) plus an echo of
+    # the (possibly masked) user text so Phase 2 restoration can be verified.
+    echo = _echo_user_text(body)
+    return f"Connected to {ALIAS_IN_RESPONSE}. :: {echo}" if echo else f"Connected to {ALIAS_IN_RESPONSE}."
+
+
+def _chunk(text: str, size: int = 4) -> list[str]:
+    return [text[i : i + size] for i in range(0, len(text), size)] or [""]
+
+
 # ---- OpenAI chat/completions -------------------------------------------------
 async def chat_completions(request: Request):
     body = await _read(request)
+    text = _reply_text(body)
     if body.get("stream"):
-        text = f"Connected to {ALIAS_IN_RESPONSE}."
+        # Small chunks deliberately split aliases across SSE boundaries (§20).
         chunks = [
             {
                 "id": "chatcmpl-mock",
                 "object": "chat.completion.chunk",
                 "choices": [{"index": 0, "delta": {"content": tok}, "finish_reason": None}],
             }
-            for tok in text.split(" ")
+            for tok in _chunk(text)
         ]
         lines = [f"data: {json.dumps(c)}\n\n" for c in chunks]
         lines.append("data: [DONE]\n\n")
@@ -85,7 +123,7 @@ async def chat_completions(request: Request):
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": f"Connected to {ALIAS_IN_RESPONSE}."},
+                    "message": {"role": "assistant", "content": text},
                     "finish_reason": "stop",
                 }
             ],
@@ -122,7 +160,7 @@ def _responses_object(text: str) -> dict:
 
 async def responses(request: Request):
     body = await _read(request)
-    text = f"Connected to {ALIAS_IN_RESPONSE}."
+    text = _reply_text(body)
     if body.get("stream"):
         obj = _responses_object(text)
         lines = [

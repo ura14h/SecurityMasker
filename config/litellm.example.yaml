@@ -1,11 +1,11 @@
-# LiteLLM Proxy config example — registers SecurityMasker as a guardrail.
+# LiteLLM Proxy config example — registers SecurityMasker as a CALLBACK so the full
+# mask (pre_call) + restore (post_call / streaming) lifecycle runs.
 # Verified against litellm==1.93.0 (see docs/compatibility.md).
 #
-# Phase 0: SecurityMaskerCallback is a no-op pass-through. Registering it here
-# proves the gateway boots with the guardrail loaded. Phase 1+ makes it mask.
-#
-# Run (with the .venv active and litellm extra installed):
+# Point SECURITYMASKER_CONFIG at your dictionary YAML before starting the proxy:
+#   export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
 #   litellm --config config/litellm.example.yaml
+# If SECURITYMASKER_CONFIG is unset, SecurityMasker is a transparent no-op.
 #
 # Secrets/keys come from the environment — never hardcode them here (§25).
 
@@ -22,19 +22,14 @@ model_list:
       model: anthropic/claude-sonnet-4-20250514
       api_key: os.environ/ANTHROPIC_API_KEY
 
-guardrails:
-  - guardrail_name: securitymasker
-    litellm_params:
-      # LiteLLM resolves this dotted path as a file relative to THIS config's
-      # directory, so it points at config/securitymasker_guardrail.py (a shim
-      # re-exporting the installed SecurityMaskerCallback). See docs/compatibility.md.
-      guardrail: securitymasker_guardrail.SecurityMaskerCallback
-      mode: pre_call          # masking happens before the upstream call
-      default_on: true
-
 litellm_settings:
   # §25: do not enable verbose/raw-request logging in production.
   set_verbose: false
+  # LiteLLM resolves this dotted path as a file relative to THIS config's directory,
+  # so it points at config/securitymasker_guardrail.py — a shim exposing a pre-built
+  # SecurityMaskerCallback instance (the callbacks path uses the object directly, not
+  # the class). See docs/compatibility.md.
+  callbacks: ["securitymasker_guardrail.securitymasker_callback"]
   # External log integrations (e.g. langfuse) are intentionally omitted until
   # raw-request non-forwarding is verified (docs/compatibility.md open item).
 

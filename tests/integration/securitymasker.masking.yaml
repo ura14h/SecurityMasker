@@ -1,0 +1,26 @@
+# Dictionary for the Phase 2 live masking test. Synthetic values only.
+version: 1
+defaults:
+  normalization: nfkc
+  merge_surface_forms: false
+entities:
+  - id: person
+    type: PERSON
+    values: ["山田太郎"]
+    replacement_profile: prose_identifier
+    restore_policy: literal
+    priority: 100
+  - id: org
+    type: ORGANIZATION
+    values: ["株式会社極秘技研", "極秘技研"]
+    replacement_profile: prose_identifier
+    restore_policy: literal
+    priority: 100
+patterns:
+  - id: prod_host
+    pattern: 'prod-db01\.internal\.example'
+    type: HOSTNAME
+    replacement_profile: hostname
+    restore_policy: literal
+    priority: 150
+enable_secret_detector: true

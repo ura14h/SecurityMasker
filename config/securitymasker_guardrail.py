@@ -1,12 +1,19 @@
-"""LiteLLM guardrail loader shim (place next to your litellm config).
+"""LiteLLM loader shim (place next to your litellm config).
 
-LiteLLM's config loader resolves a guardrail's dotted path as a *file relative to
-the config directory*, not as an installed module (see docs/compatibility.md). So
-this one-line shim sits beside the config and re-exports the real implementation
-from the installed ``securitymasker`` package. Reference it in the config as
-``securitymasker_guardrail.SecurityMaskerCallback``.
+LiteLLM resolves a callback/guardrail dotted path as a *file relative to the config
+directory*, not an installed module (docs/compatibility.md). This shim re-exports
+the real implementation from the installed ``securitymasker`` package.
+
+- As a **callback** (``litellm_settings.callbacks:``) — recommended, this runs the
+  full mask+restore lifecycle (pre_call, post_call, streaming) — LiteLLM uses the
+  object directly, so reference the pre-built instance
+  ``securitymasker_guardrail.securitymasker_callback``.
+- As a **guardrail** (``guardrails:``) LiteLLM instantiates the class and only fires
+  the mode-gated hook, so reference ``securitymasker_guardrail.SecurityMaskerCallback``.
 """
 
 from securitymasker.integrations.litellm import SecurityMaskerCallback
 
-__all__ = ["SecurityMaskerCallback"]
+securitymasker_callback = SecurityMaskerCallback()
+
+__all__ = ["SecurityMaskerCallback", "securitymasker_callback"]

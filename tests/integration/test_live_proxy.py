@@ -93,6 +93,8 @@ def test_chat_completions_non_stream(proxy) -> None:
 
 
 def test_chat_completions_stream(proxy) -> None:
+    import json
+
     with httpx.stream(
         "POST", f"{proxy['base']}/v1/chat/completions",
         json={"model": "securitymasker-openai", "stream": True,
@@ -100,7 +102,16 @@ def test_chat_completions_stream(proxy) -> None:
         timeout=15,
     ) as r:
         body = "".join(r.iter_text())
-    assert "data:" in body and ALIAS in body
+    assert "data:" in body
+    # The mock streams in small chunks, so reassemble deltas before checking.
+    reassembled = ""
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("data: ") and "[DONE]" not in line:
+            delta = json.loads(line[6:])["choices"][0]["delta"].get("content")
+            if delta:
+                reassembled += delta
+    assert ALIAS in reassembled
 
 
 def test_responses_stream(proxy) -> None:

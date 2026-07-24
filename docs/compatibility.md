@@ -86,7 +86,25 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
 4. **chat/completions stream**: LiteLLM が独自の `ModelResponseStream` チャンク形式へ再直列化
    （`async_post_call_streaming_iterator_hook` が見るのはこの形式）。
 
-### 残（Phase 2/3 で深掘り）
+### Phase 2 で判明した重要事項（2026-07-24、実測）
+
+5. **登録方式で発火するフックが変わる**:
+   - `guardrails:` に登録すると **mode（pre_call 等）で限定**され、pre_call しか発火しない。
+   - マスク（pre_call）＋復元（post_call/streaming）の**全ライフサイクル**を回すには
+     `litellm_settings.callbacks:` に登録する。
+   - ただし callbacks 経路は文字列を **インスタンス化しない**（クラスをそのまま使い、
+     フックが unbound になり `self` 不足で失敗する）。→ shim で**インスタンス**を公開し
+     `securitymasker_guardrail.securitymasker_callback` を参照する（`config/securitymasker_guardrail.py`）。
+6. **Responses ストリーミングのチャンク型**（iterator hook で観測）:
+   - `ResponseCreatedEvent`（`.response` に全体オブジェクト）
+   - `OutputTextDeltaEvent`（`.delta` にテキスト片、`item_id`/`content_index`）
+   - `ResponseCompletedEvent`（`.response` に全体オブジェクト）
+   → delta は carry buffer で逐次復元、created/completed の埋め込み `response` は直接復元。
+   chat は `choices[].delta.content`。
+7. **post_call のレスポンスは pydantic オブジェクト**（dict ではない）。属性で in-place 復元する
+   （`ResponsesAPIResponse.output[].content[].text` / `ModelResponse.choices[].message`）。
+
+### 残（Phase 3 で深掘り）
 
 - Responses の tool call / function call argument delta の実イベント列（Phase 2）
 - Anthropic の tool_use / input_json_delta / thinking blocks の実イベント列（Phase 3）

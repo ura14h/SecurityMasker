@@ -12,6 +12,7 @@ than letting original data through (§26).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from securitymasker import policy
@@ -117,29 +118,31 @@ class MaskingEngine:
             if det.original_value and det.original_value in masked:
                 raise LeakageError(entity_type=det.entity_type, request_id=request_id)
 
-    async def unmask_text(self, session: MaskingSession, text: str) -> str:
-        """Restore only aliases created in THIS session with ``literal`` policy (§19).
+    def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
+        """Alias→original map for THIS session's ``literal`` aliases only (§19).
 
-        ``env_reference`` aliases stay as ``${...}`` (their real value is never
-        returned); ``redacted`` values are irreversible.
+        ``env_reference`` aliases stay as ``${...}`` (real value never returned);
+        ``redacted`` values are irreversible. Decrypts each mapping once.
         """
-        restorable = {
-            alias: m
-            for alias, m in session.mappings_by_alias.items()
-            if m.restore_policy == RestorePolicy.LITERAL.value
-        }
-        if not restorable:
-            return text
+        out: dict[str, str] = {}
+        for alias, m in session.mappings_by_alias.items():
+            if m.restore_policy != RestorePolicy.LITERAL.value:
+                continue
+            out[alias] = decrypt(
+                session.aead_key, m.encrypted_original, aad=m.original_fingerprint.encode("ascii")
+            )
+        return out
+
+    def make_restorer(self, session: MaskingSession) -> Callable[[str], str]:
+        """Return a sync ``str→str`` that restores this session's literal aliases."""
+        restorations = self.literal_restorations(session)
+        if not restorations:
+            return lambda text: text
         # Longest alias first so a shorter alias that prefixes a longer one can't
         # partially match (collision-lengthened tokens, §7).
-        rx = re.compile("|".join(re.escape(a) for a in sorted(restorable, key=len, reverse=True)))
+        rx = re.compile("|".join(re.escape(a) for a in sorted(restorations, key=len, reverse=True)))
+        return lambda text: rx.sub(lambda m: restorations[m.group(0)], text)
 
-        def _sub(match: re.Match[str]) -> str:
-            mapping = restorable[match.group(0)]
-            return decrypt(
-                session.aead_key,
-                mapping.encrypted_original,
-                aad=mapping.original_fingerprint.encode("ascii"),
-            )
-
-        return rx.sub(_sub, text)
+    async def unmask_text(self, session: MaskingSession, text: str) -> str:
+        """Restore only aliases created in THIS session with ``literal`` policy (§19)."""
+        return self.make_restorer(session)(text)

@@ -76,10 +76,29 @@ Secret→env_reference / block→fail-closed。
 **Phase 1 で未対応（Phase 2+）**: プロトコル walker・SSE ストリーミング復元・ツール引数バッファ、
 LiteLLM callback への実配線（現状 callback は no-op、engine は単体で検証済み）。
 
-## 5. Phase 2: Codex 対応
+## 5. Phase 2: Codex 対応 ✅ 完了
 
 OpenAI Responses adapter、SSE parser、streaming text 復元（carry buffer / 全分割位置）、
 tool 引数バッファ（複数 delta → parse → 復元 → 再 serialize）、mock upstream、Codex E2E fixture。
+
+- [x] streaming/text_replacer（carry buffer）+ hypothesis で全分割位置検証
+- [x] protocols/sse（event/data 複数行/comment/retry/[DONE]/unknown 透過）
+- [x] protocols/structured_walker（値のみ変換・キー不変）
+- [x] protocols/openai_responses（input/messages/instructions/tool description マスク、
+      output/choices/tool 引数 復元、構造キー不変）
+- [x] streaming/tool_arguments（複数 delta→parse→復元→再 serialize、不完全 JSON は fail-closed）
+- [x] integrations/litellm 配線: pre_call マスク / post_call 復元（chat・Responses オブジェクト）/
+      streaming iterator 復元（chat delta・Responses OutputTextDelta・created/completed）
+- [x] runtime: SECURITYMASKER_CONFIG から engine/store 構築、セッション特定（ヘッダー→prev_id→一時）
+- [x] **ライブ統合テスト 7 passed**（chat/Responses × stream/非stream で 0 漏えい＋復元、
+      別セッション別 alias、proxy ログに秘密なし）
+- [x] unit **含め 117 passed**、ruff + mypy --strict クリーン
+
+**受け入れ達成（§38）**: 1（最終送信に機密なし）2（alias 復元）3-5（セッション分離）
+6（SSE 分割復元）7（tool 引数 JSON 分割→有効 JSON）8（tool 名/id/schema/type 不変）。
+
+**Phase 2 で未対応（後続）**: WebSocket 版 Responses（§22）、Hosted tool 実値、
+tool call/function call の実 delta イベント経路（fixture は合成、Codex 実バージョンは optional）、Anthropic（Phase 3）。
 
 ## 6. Phase 3: Claude Code 対応
 
