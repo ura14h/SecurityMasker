@@ -1,0 +1,8 @@
+data: {"type":"response.created","response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDoyY2E4ZjBmOGNkMDU4NDhmMzhmMjlhYjU1MjNiZTIwZDUzYjdkMTE1ZjBkNDE5MDg4YjAyMmVhMGNiODU2MzJlO3Jlc3BvbnNlX2lkOnJlc3AtbW9jaw==","created_at":1784890222,"model":"gpt-4o","object":"response","output":[{"id":"msg-mock-0","content":[{"annotations":[],"text":"Connected to SM_ORG_7F3A91.","type":"output_text"}],"role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}},"model":"securitymasker-openai"}
+
+data: {"type":"response.output_text.delta","item_id":"msg-mock-0","output_index":0,"content_index":0,"delta":"Connected to SM_ORG_7F3A91.","model":"securitymasker-openai"}
+
+data: {"type":"response.completed","response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDoyY2E4ZjBmOGNkMDU4NDhmMzhmMjlhYjU1MjNiZTIwZDUzYjdkMTE1ZjBkNDE5MDg4YjAyMmVhMGNiODU2MzJlO3Jlc3BvbnNlX2lkOnJlc3AtbW9jaw==","created_at":1784890222,"model":"gpt-4o","object":"response","output":[{"id":"msg-mock-0","content":[{"annotations":[],"text":"Connected to SM_ORG_7F3A91.","type":"output_text"}],"role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}},"model":"securitymasker-openai"}
+
+data: [DONE]
+

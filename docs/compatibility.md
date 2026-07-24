@@ -56,17 +56,41 @@ async def async_post_call_failure_hook(
   組み立て済み文字列を受け取る監査向けで、逐次変換には不向き。
 - `async_post_call_failure_hook` で失敗時にも機密が漏れない処理を担保する。
 
-## 未確認・Phase 0 残タスク（ライブ Proxy が必要）
+## ライブ Proxy 検証結果（実施済み 2026-07-24）
 
-以下は実際に `litellm --config` で Proxy を起動して確認する統合テスト項目（`tests/integration/`）。
-本コミット時点では**未実施**（正直な状態記録）。
+`tests/integration/test_live_proxy.py`（`SM_RUN_LIVE=1` で実行、mock upstream + 実 LiteLLM Proxy を
+subprocess 起動）で確認。**6 passed**。
 
-- [ ] no-op `SecurityMaskerCallback` を config 登録して Proxy 起動 → `/v1/responses`・`/v1/messages` が疎通
-- [ ] `/v1/responses` の実 SSE イベント列を記録し `tests/fixtures/` へ
-- [ ] `/v1/messages` の実 SSE イベント列を記録し `tests/fixtures/` へ
-- [ ] **LiteLLM logging が pre-call hook より前に raw request を保存しないか**検証（§25）。
-      保証できない場合は当該ログ連携をデプロイ検証で失敗させる方針。
-- [ ] `litellm.set_verbose` / detailed debug が本番で無効であることの検証
+- [x] no-op `SecurityMaskerCallback` を config 登録 → Proxy 正常起動（`/health/liveliness` = "I'm alive!"）
+- [x] `/v1/chat/completions`（stream / non-stream）疎通・SSE fixture 化
+- [x] `/v1/responses`（stream / non-stream）疎通・SSE fixture 化（Codex 経路）
+- [x] `/v1/messages`（Anthropic, stream）疎通・SSE fixture 化（Claude Code 経路）
+- [x] **§25**: `set_verbose: false` で proxy ログに元の秘密・API キーが **0 件**（漏えいなし）
 
-暫定の安全既定（§25）: 本番では詳細デバッグログを無効化し、外部ログ連携（Langfuse 等）は
-raw request 非送信を保証できるまで既定で無効にする。
+fixture: `tests/integration/fixture_openai_chat_stream.sse` /
+`fixture_openai_responses_stream.sse` / `fixture_anthropic_messages_stream.sse`。
+
+### 統合で判明した重要事項
+
+1. **guardrail のロード方式**: LiteLLM の config ローダー（`litellm/proxy/types_utils/utils.py`
+   の `get_instance_fn`）は、`config_file_path` があると dotted path を
+   **config ディレクトリ相対のファイルパス**として解決し、インストール済みモジュールへは
+   フォールバックしない。→ SecurityMasker は config に隣接する 1 行 shim
+   （`securitymasker_guardrail.py`）を同梱し、`securitymasker_guardrail.SecurityMaskerCallback`
+   として参照する。実体はインストール済み `securitymasker` パッケージ。
+2. **Responses の `id` 変換**: LiteLLM は Responses の `id` を
+   `resp_<base64("litellm:custom_llm_provider:...;model_id:...;response_id:<orig>")>`
+   に書き換える。`previous_response_id`→セッションキー導出（§7）で復号が必要。
+3. **Responses SSE 形式**: LiteLLM は `event:` 行を付けず `data: {..., "type": "..."}` の
+   SDK 形式で返す（`type` が JSON 内）。Anthropic 経路は `event:` 名とブロック構造を透過保持。
+4. **chat/completions stream**: LiteLLM が独自の `ModelResponseStream` チャンク形式へ再直列化
+   （`async_post_call_streaming_iterator_hook` が見るのはこの形式）。
+
+### 残（Phase 2/3 で深掘り）
+
+- Responses の tool call / function call argument delta の実イベント列（Phase 2）
+- Anthropic の tool_use / input_json_delta / thinking blocks の実イベント列（Phase 3）
+- 外部ログ連携（Langfuse 等）は raw request 非送信を保証できるまで既定無効（デプロイ検証で担保）
+
+暫定の安全既定（§25）: 本番では詳細デバッグログを無効化し、外部ログ連携は raw request
+非送信を保証できるまで既定で無効にする。

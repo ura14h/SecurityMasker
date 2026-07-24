@@ -68,6 +68,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 
+[tool.ruff.lint.per-file-ignores]
+# Mock upstream emits inline JSON SSE lines that are naturally long.
+"tests/integration/mock_upstream.py" = ["E501"]
+# Proxy log handle is intentionally held open for the fixture lifetime.
+"tests/integration/test_live_proxy.py" = ["SIM115"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

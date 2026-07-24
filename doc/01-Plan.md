@@ -46,12 +46,13 @@
 - [x] `docs/compatibility.md` 作成（対応バージョン・確認済み hook）
 - [x] ADR 0001〜0005 作成（guardrail 統合 / pip+venv / argparse / Presidio in-process / alias HMAC+AES-GCM）
 - [x] no-op `SecurityMaskerCallback`（`CustomGuardrail` 継承）実装＋ config 例
-- [ ] （ライブ Proxy）`litellm --config` 起動で `/v1/responses`・`/v1/messages` 疎通確認
-- [ ] （ライブ Proxy）`/v1/responses`・`/v1/messages` の実 SSE 構造を fixture 化
-- [ ] （ライブ Proxy）LiteLLM logging が pre-call hook より前に raw request を保存しないか検証（§25）
+- [x] （ライブ Proxy）`litellm --config` 起動で `/v1/chat/completions`・`/v1/responses`・`/v1/messages` 疎通確認
+- [x] （ライブ Proxy）3 プロトコルの実 SSE 構造を fixture 化（`tests/integration/*.sse`）
+- [x] （ライブ Proxy）`set_verbose:false` で proxy ログに秘密・API キーが残らないことを検証（§25）
+- [x] guardrail ロード方式の判明（config 相対ファイル解決）→ shim 同梱で解決
 
-**完了条件**: 固定バージョンで LiteLLM Proxy が起動し、no-op の `SecurityMaskerCallback` が hook に載ることをテストで確認できる。
-→ 契約テストで hook 適合は確認済み。ライブ Proxy 起動の統合確認が残タスク（`tests/integration/`）。
+**完了条件**: 固定バージョンで LiteLLM Proxy が起動し、no-op の `SecurityMaskerCallback` が hook に載ることを確認 → **達成**。
+契約テスト（12 passed）＋ ライブ統合テスト（`SM_RUN_LIVE=1`、6 passed）。**Phase 0 完了。**
 
 ## 4. Phase 1: コア MVP
 

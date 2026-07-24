@@ -25,8 +25,10 @@ model_list:
 guardrails:
   - guardrail_name: securitymasker
     litellm_params:
-      # Points at SecurityMaskerCallback (a CustomGuardrail subclass).
-      guardrail: securitymasker.integrations.litellm.SecurityMaskerCallback
+      # LiteLLM resolves this dotted path as a file relative to THIS config's
+      # directory, so it points at config/securitymasker_guardrail.py (a shim
+      # re-exporting the installed SecurityMaskerCallback). See docs/compatibility.md.
+      guardrail: securitymasker_guardrail.SecurityMaskerCallback
       mode: pre_call          # masking happens before the upstream call
       default_on: true
 
