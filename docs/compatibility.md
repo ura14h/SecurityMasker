@@ -104,10 +104,21 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
 7. **post_call のレスポンスは pydantic オブジェクト**（dict ではない）。属性で in-place 復元する
    （`ResponsesAPIResponse.output[].content[].text` / `ModelResponse.choices[].message`）。
 
-### 残（Phase 3 で深掘り）
+### Phase 3 で判明した重要事項（2026-07-24、実測）
 
-- Responses の tool call / function call argument delta の実イベント列（Phase 2）
-- Anthropic の tool_use / input_json_delta / thinking blocks の実イベント列（Phase 3）
+8. **Anthropic `/v1/messages` ストリーミングは iterator hook で生 SSE の `bytes` を流す**
+   （chat/Responses が型付きオブジェクトを流すのと異なる）。→ `streaming/anthropic_stream.py`
+   で UTF-8 逐次デコード → SSE パース → `text_delta` はブロック index 毎 carry buffer で復元、
+   `input_json_delta` はブロック完了まで蓄積し 1 イベントに再構成、その他は透過。
+9. **ルーティングは `call_type`**（`anthropic_messages` を含む）で判定。復元は chat/Responses
+   （`choices`/`output`）と Anthropic（`content`）が排他フィールドのため両復元器を無条件適用
+   しても二重復元にならない。
+10. Anthropic 非ストリームのレスポンスは pydantic オブジェクト（`.content[].text` / `tool_use .input`）。
+
+### 残（後続フェーズ）
+
+- thinking blocks / citations の詳細処理（現状は透過、text は復元対象）
+- Codex / Claude Code 実バージョンでの E2E（optional integration）
 - 外部ログ連携（Langfuse 等）は raw request 非送信を保証できるまで既定無効（デプロイ検証で担保）
 
 暫定の安全既定（§25）: 本番では詳細デバッグログを無効化し、外部ログ連携は raw request

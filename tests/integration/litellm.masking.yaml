@@ -7,6 +7,11 @@ model_list:
       model: openai/gpt-4o
       api_base: http://127.0.0.1:8082
       api_key: sk-mock-not-a-real-key
+  - model_name: securitymasker-anthropic
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_base: http://127.0.0.1:8082
+      api_key: sk-ant-mock-not-a-real-key
 litellm_settings:
   set_verbose: false
   callbacks: ["securitymasker_guardrail.securitymasker_callback"]

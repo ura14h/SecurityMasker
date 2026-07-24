@@ -126,6 +126,8 @@ def test_responses_stream(proxy) -> None:
 
 
 def test_anthropic_messages_stream(proxy) -> None:
+    import json
+
     with httpx.stream(
         "POST", f"{proxy['base']}/v1/messages",
         headers={"anthropic-version": "2023-06-01"},
@@ -134,7 +136,19 @@ def test_anthropic_messages_stream(proxy) -> None:
         timeout=15,
     ) as r:
         body = "".join(r.iter_text())
-    assert "content_block_delta" in body and ALIAS in body
+    assert "content_block_delta" in body
+    # The mock streams small chunks; reassemble text_delta pieces before checking.
+    text = ""
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("data: "):
+            try:
+                ev = json.loads(line[6:])
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "content_block_delta" and ev.get("delta", {}).get("type") == "text_delta":
+                text += ev["delta"]["text"]
+    assert ALIAS in text
 
 
 def test_secret_not_in_proxy_log(proxy) -> None:

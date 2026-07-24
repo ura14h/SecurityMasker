@@ -100,10 +100,21 @@ tool 引数バッファ（複数 delta → parse → 復元 → 再 serialize）
 **Phase 2 で未対応（後続）**: WebSocket 版 Responses（§22）、Hosted tool 実値、
 tool call/function call の実 delta イベント経路（fixture は合成、Codex 実バージョンは optional）、Anthropic（Phase 3）。
 
-## 6. Phase 3: Claude Code 対応
+## 6. Phase 3: Claude Code 対応 ✅ 完了
 
 Anthropic Messages adapter、content block 処理、tool use/result、input JSON delta、
 beta header 透過、unknown block 透過、Claude Code E2E fixture。
+
+- [x] protocols/anthropic_messages（system/messages/content blocks/tool_use input/
+      tool_result/tools description マスク、content text / tool_use input 復元、構造キー不変、unknown block 透過）
+- [x] callback ルーティング（call_type で Anthropic/OpenAI 判定、復元は排他フィールドで両適用）
+- [x] streaming/anthropic_stream（**iterator hook は生 SSE bytes** → UTF-8 逐次デコード＋SSE パース、
+      text_delta をブロック毎 carry buffer で復元、input_json_delta を蓄積→1 イベント再構成、fail-closed、透過）
+- [x] beta header 等は LiteLLM 転送に委ね、SecurityMasker は認証以外を削らない
+- [x] unit（adapter 7 + stream 7）+ **ライブ Anthropic 非stream/stream 復元・0 漏えい**
+- [x] **合計 132 passed**、ruff + mypy --strict クリーン
+
+**受け入れ**: §38 の Claude Code 相当（content blocks / tool use / input JSON delta / unknown 透過）も充足。
 
 ## 7. Phase 4: 日本語 PII
 

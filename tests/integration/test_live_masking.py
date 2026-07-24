@@ -147,6 +147,41 @@ def test_responses_stream_restores(proxy) -> None:
     assert PERSON in deltas and HOST in deltas
 
 
+def _anthropic_headers(session: str) -> dict[str, str]:
+    return {**_headers(session), "anthropic-version": "2023-06-01"}
+
+
+def test_anthropic_non_stream_restores(proxy) -> None:
+    r = httpx.post(
+        f"{proxy['base']}/v1/messages", headers=_anthropic_headers("a1"),
+        json={"model": "securitymasker-anthropic", "max_tokens": 64,
+              "messages": [{"role": "user", "content": PROMPT}]},
+        timeout=15,
+    )
+    text = r.json()["content"][0]["text"]
+    assert PERSON in text and HOST in text
+
+
+def test_anthropic_stream_restores(proxy) -> None:
+    with httpx.stream(
+        "POST", f"{proxy['base']}/v1/messages", headers=_anthropic_headers("a2"),
+        json={"model": "securitymasker-anthropic", "max_tokens": 64, "stream": True,
+              "messages": [{"role": "user", "content": PROMPT}]},
+        timeout=15,
+    ) as r:
+        text = ""
+        for line in "".join(r.iter_text()).splitlines():
+            line = line.strip()
+            if line.startswith("data: "):
+                try:
+                    ev = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("type") == "content_block_delta" and ev["delta"].get("type") == "text_delta":
+                    text += ev["delta"]["text"]
+    assert PERSON in text and HOST in text  # aliases split across deltas were restored
+
+
 def test_no_original_leaked_to_upstream(proxy) -> None:
     """The single most important acceptance test (§30.5): nothing original left."""
     record = Path(proxy["record"]).read_text(encoding="utf-8", errors="replace")

@@ -29,8 +29,9 @@ from securitymasker.errors import SecurityMaskerError
 from securitymasker.integrations.runtime import Runtime, resolve_session_id
 from securitymasker.logging import get_logger
 from securitymasker.models import MaskingSession
-from securitymasker.protocols import openai_responses
+from securitymasker.protocols import anthropic_messages, openai_responses
 from securitymasker.protocols.base import TEXT_KEYS
+from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
 from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 
@@ -64,7 +65,10 @@ class SecurityMaskerCallback(CustomGuardrail):
             session_id = resolve_session_id(data)
             session = await self._runtime.store.get_or_create(session_id)
             async with self._runtime.store.lock(session_id):
-                await openai_responses.mask_request(self._runtime.engine, session, data)
+                if _is_anthropic(call_type, data):
+                    await anthropic_messages.mask_request(self._runtime.engine, session, data)
+                else:
+                    await openai_responses.mask_request(self._runtime.engine, session, data)
                 await self._runtime.store.save(session)
         except SecurityMaskerError:
             # Fail closed: block the request rather than forward original data (§26).
@@ -84,10 +88,15 @@ class SecurityMaskerCallback(CustomGuardrail):
         session = await self._runtime.store.get(session_id)
         if session is None:
             return response
+        engine = self._runtime.engine
         if isinstance(response, dict):
-            openai_responses.restore_response(self._runtime.engine, session, response)
+            # Apply both restorers: they touch disjoint fields (choices/output vs
+            # content), so this is protocol-agnostic and never double-restores.
+            openai_responses.restore_response(engine, session, response)
+            anthropic_messages.restore_response(engine, session, response)
         else:
-            _restore_response_object(self._runtime.engine, session, response)
+            _restore_response_object(engine, session, response)
+            anthropic_messages.restore_response_object(engine, session, response)
         return response
 
     async def async_post_call_streaming_iterator_hook(
@@ -108,14 +117,32 @@ class SecurityMaskerCallback(CustomGuardrail):
                 yield chunk
             return
 
-        restorer = StreamingRestorer(self._runtime.engine.literal_restorations(session))
+        engine = self._runtime.engine
+        restorer = StreamingRestorer(engine.literal_restorations(session))
+        anthropic_proc: AnthropicStreamProcessor | None = None
+        last_chunk: Any = None
         async for chunk in response:
-            _restore_chunk_text(chunk, restorer, self._runtime.engine, session)
-            yield chunk
-        # Flush any carried tail onto a final synthetic-safe chunk if possible.
-        tail = restorer.flush()
-        if tail and (last := _make_text_chunk(chunk, tail)) is not None:
-            yield last
+            last_chunk = chunk
+            if isinstance(chunk, bytes | bytearray):
+                # Anthropic /v1/messages passthrough streams raw SSE bytes.
+                if anthropic_proc is None:
+                    anthropic_proc = AnthropicStreamProcessor(
+                        engine.literal_restorations(session), engine.make_restorer(session)
+                    )
+                out = anthropic_proc.feed(bytes(chunk))
+                if out:
+                    yield out
+            else:
+                _restore_chunk_text(chunk, restorer, engine, session)
+                yield chunk
+        if anthropic_proc is not None:
+            tail_bytes = anthropic_proc.flush()
+            if tail_bytes:
+                yield tail_bytes
+        else:
+            tail = restorer.flush()
+            if tail and (last := _make_text_chunk(last_chunk, tail)) is not None:
+                yield last
 
     async def async_post_call_failure_hook(
         self,
@@ -129,6 +156,13 @@ class SecurityMaskerCallback(CustomGuardrail):
 
 
 # --------------------------------------------------------------------------- utils
+
+
+def _is_anthropic(call_type: Any, data: dict[str, Any]) -> bool:
+    """Route masking by LiteLLM call_type (authoritative), falling back to shape."""
+    if "anthropic" in str(call_type).lower():
+        return True
+    return anthropic_messages.is_anthropic_request(data) and "input" not in data
 
 
 def _restore_response_object(

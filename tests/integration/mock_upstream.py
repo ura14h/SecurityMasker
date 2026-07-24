@@ -175,11 +175,16 @@ async def responses(request: Request):
 # ---- Anthropic Messages ------------------------------------------------------
 async def messages(request: Request):
     body = await _read(request)
+    text = _reply_text(body)
     if body.get("stream"):
+        delta_lines = [
+            f'event: content_block_delta\ndata: {json.dumps({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": tok}})}\n\n'
+            for tok in _chunk(text)  # small chunks split aliases across deltas (§20)
+        ]
         lines = [
             f'event: message_start\ndata: {json.dumps({"type": "message_start", "message": {"id": "msg-mock", "role": "assistant", "content": []}})}\n\n',
             f'event: content_block_start\ndata: {json.dumps({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})}\n\n',
-            f'event: content_block_delta\ndata: {json.dumps({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": f"Connected to {ALIAS_IN_RESPONSE}."}})}\n\n',
+            *delta_lines,
             f'event: content_block_stop\ndata: {json.dumps({"type": "content_block_stop", "index": 0})}\n\n',
             f'event: message_stop\ndata: {json.dumps({"type": "message_stop"})}\n\n',
         ]
@@ -190,7 +195,7 @@ async def messages(request: Request):
             "type": "message",
             "role": "assistant",
             "model": body.get("model", "claude"),
-            "content": [{"type": "text", "text": f"Connected to {ALIAS_IN_RESPONSE}."}],
+            "content": [{"type": "text", "text": text}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 1, "output_tokens": 1},
         }
