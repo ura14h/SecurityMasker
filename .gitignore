@@ -1,0 +1,34 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Secrets / local config — 機密は絶対にコミットしない
+.env
+.env.*
+*.pem
+*.key
+secrets/
+config/*.local.yaml
+
+# Editor
+.idea/
+.vscode/
+*.swp
