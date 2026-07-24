@@ -134,15 +134,30 @@ Japanese NER adapter（モデル差し替え可）、composite address detector�
 
 **受け入れ（§38-13）**: 氏名・電話・メール・住所・郵便番号・マイナンバーのテストあり。
 
-## 8. Phase 5: 運用強化
+## 8. Phase 5: 運用強化 ✅ 完了
 
 Redis store、multi-tenant 分離、暗号化永続、metrics、audit log、Docker hardening、
 compatibility CI、performance benchmark。
 
-## 9. 受け入れ基準（doc §38 の 20 項目）
+- [x] RedisSessionStore（master key で全体を AES-GCM 封緘・鍵は Redis に置かない・
+      テナント名前空間分離・TTL・SET NX ロック）、fake Redis で単体テスト
+- [x] metrics（カウンタ/タイマ）+ audit（安全フィールドのみ・session id は fingerprint、§25）
+- [x] Dockerfile（非 root・最小・healthcheck・read-only 前提）+ docker-compose（mock/gateway/redis）
+      + .dockerignore + config/litellm.docker.yaml（`docker compose up` デモ、§38-20）
+- [x] GitHub Actions CI（ruff/mypy/tests + **hook 契約テスト**で LiteLLM 互換監視、§5/§36）
+- [x] performance benchmark（10KB/100KB/1MB・秘密 100/1k/10k）+ 回帰テスト。
+      **ベンチで二次計算量を 2 箇所発見・修正**（policy をクラスタ分割で近似線形化、
+      leak 再スキャンを一意化）→ 1MB マスキング 14.3s→**0.38s**
+- [x] 運用ドキュメント: SECURITY.md / architecture / threat-model / operations / configuration
+- [x] Codex / Claude Code 設定ヘルパー（integrations/codex.py・claude_code.py）+ LICENSE(Apache-2.0)
+- [x] **合計 153 passed**（unit+eval+live）、ruff + mypy --strict クリーン
 
-最終的に doc §38 の 20 項目をすべて満たす。特に:
-「Codex→LiteLLM→モック送信の最終リクエストに機密情報が一切含まれない」を最重要とする。
+## 9. 受け入れ基準（doc §38 の 20 項目）— 達成状況
+
+最重要「Codex→LiteLLM→モック送信の最終リクエストに機密情報が一切含まれない」をライブ統合
+テストで確認。主要項目を全 Phase で充足: §38-1（最終送信に機密なし）・2（alias 復元）・
+6（SSE 分割復元）・7（tool 引数 JSON）・8（構造キー不変）・11（ログに秘密なし）・
+17（無効化で素の LiteLLM）・18（薄いアダプター）・19（互換性文書）・20（docker compose）。
 
 ## 10. MVP 非対応（doc §34）
 

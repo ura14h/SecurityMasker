@@ -1,0 +1,48 @@
+# Local demo: `docker compose up` starts a self-contained SecurityMasker Gateway
+# in front of a mock upstream (no real API keys needed), plus optional Redis.
+#
+# Try it:
+#   curl http://127.0.0.1:4000/v1/chat/completions \
+#     -H 'Content-Type: application/json' -H 'X-SecurityMasker-Session-ID: demo' \
+#     -d '{"model":"securitymasker-openai","messages":[{"role":"user",
+#          "content":"担当は山田太郎、株式会社極秘技研の件です"}]}'
+services:
+  mock-upstream:
+    build: .
+    command: python -m uvicorn tests.integration.mock_upstream:app --host 0.0.0.0 --port 8081
+    environment:
+      SM_MOCK_RECORD: /tmp/mock_record.jsonl
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  gateway:
+    build: .
+    depends_on:
+      - mock-upstream
+    environment:
+      # Dictionary of what to mask (synthetic examples). Real secrets via env.
+      SECURITYMASKER_CONFIG: config/securitymasker.example.yaml
+    ports:
+      - "4000:4000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Management surface stays on localhost only (§33): bind 4000 to 127.0.0.1
+    # in production deployments.
+
+  # Optional shared session store for multi-worker deployments (§8). Enable by
+  # setting SECURITYMASKER_MASTER_KEY and wiring RedisSessionStore.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    profiles: ["redis"]
+    read_only: true
+    tmpfs:
+      - /data
+    security_opt:
+      - no-new-privileges:true

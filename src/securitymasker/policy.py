@@ -14,33 +14,61 @@ from __future__ import annotations
 from securitymasker.models import DetectionResult, EntityType, RestorePolicy
 
 
-def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:
-    return a.start < b.end and b.start < a.end
-
-
 def _preference(d: DetectionResult) -> tuple[int, int, float]:
     priority = int(d.metadata.get("priority", 100))
     return (priority, d.length, d.score)
 
 
-def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
-    """Return non-overlapping detections to act on, ordered by start position."""
-    protected = [d for d in detections if d.entity_type == EntityType.EXISTING_ALIAS.value]
-    candidates = [d for d in detections if d.entity_type != EntityType.EXISTING_ALIAS.value]
+def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:
+    return a.start < b.end and b.start < a.end
 
-    # Drop anything overlapping a protected alias region.
-    candidates = [c for c in candidates if not any(_overlaps(c, p) for p in protected)]
 
-    # Greedily accept the most-preferred non-overlapping candidates.
-    candidates.sort(key=_preference, reverse=True)
+def _resolve_cluster(cluster: list[DetectionResult]) -> list[DetectionResult]:
+    """Preference-greedy within a small cluster of mutually-reachable overlaps.
+
+    Existing-alias spans are protected: they suppress overlapping candidates and are
+    themselves excluded from the result (idempotency, §11).
+    """
+    protected = [d for d in cluster if d.entity_type == EntityType.EXISTING_ALIAS.value]
+    candidates = [d for d in cluster if d.entity_type != EntityType.EXISTING_ALIAS.value]
     accepted: list[DetectionResult] = []
-    for cand in candidates:
+    for cand in sorted(candidates, key=_preference, reverse=True):
+        if any(_overlaps(cand, p) for p in protected):
+            continue
         if any(_overlaps(cand, a) for a in accepted):
             continue
         accepted.append(cand)
-
-    accepted.sort(key=lambda d: d.start)
     return accepted
+
+
+def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
+    """Return non-overlapping detections to act on, ordered by start position.
+
+    Near-linear: sort by start, sweep into clusters of transitively-overlapping
+    spans, and run the preference greedy (priority, then length, then score, §11)
+    only *within* each cluster. Non-overlapping detections — e.g. the same secret
+    repeated thousands of times in a large input — become singleton clusters, so
+    there is no all-pairs blowup (§32).
+    """
+    if not detections:
+        return []
+    ordered = sorted(detections, key=lambda d: (d.start, d.end))
+
+    result: list[DetectionResult] = []
+    cluster: list[DetectionResult] = [ordered[0]]
+    cluster_end = ordered[0].end
+    for det in ordered[1:]:
+        if det.start < cluster_end:  # overlaps the running cluster
+            cluster.append(det)
+            cluster_end = max(cluster_end, det.end)
+        else:
+            result.extend(_resolve_cluster(cluster))
+            cluster = [det]
+            cluster_end = det.end
+    result.extend(_resolve_cluster(cluster))
+
+    result.sort(key=lambda d: d.start)
+    return result
 
 
 def blocking_entities(resolved: list[DetectionResult]) -> list[str]:

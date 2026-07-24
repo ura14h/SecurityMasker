@@ -111,12 +111,19 @@ class MaskingEngine:
         resolved: list[DetectionResult],
         request_id: str | None,
     ) -> None:
-        """Pre-send re-scan (§18 step 11): no masked original may remain."""
+        """Pre-send re-scan (§18 step 11): no masked original may remain.
+
+        Deduplicate the originals first so a value repeated thousands of times in a
+        large input is checked once, keeping this linear in the input size (§32).
+        """
+        seen: dict[str, str] = {}
         for det in resolved:
-            if det.restore_policy == RestorePolicy.BLOCK.value:
+            if det.restore_policy == RestorePolicy.BLOCK.value or not det.original_value:
                 continue
-            if det.original_value and det.original_value in masked:
-                raise LeakageError(entity_type=det.entity_type, request_id=request_id)
+            seen.setdefault(det.original_value, det.entity_type)
+        for original, entity_type in seen.items():
+            if original in masked:
+                raise LeakageError(entity_type=entity_type, request_id=request_id)
 
     def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
         """Alias→original map for THIS session's ``literal`` aliases only (§19).

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (pinned deps + litellm for the compatibility test)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,litellm]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests
+
+      - name: Type check (mypy --strict)
+        run: mypy
+
+      - name: Unit + evaluation tests
+        run: pytest tests/unit tests/evaluation -q
+
+      # Compatibility guard (§5, §37): the hook-contract test fails if a LiteLLM
+      # upgrade changes the callback signatures SecurityMasker depends on.
+      - name: LiteLLM hook contract
+        run: pytest tests/unit/test_litellm_hook_contract.py -q
+
+      - name: Live gateway integration (boots the real proxy + mock upstream)
+        run: SM_RUN_LIVE=1 pytest tests/integration -q

@@ -1,0 +1,19 @@
+# LiteLLM config for the docker-compose demo. Routes to the in-compose mock
+# upstream (no real provider / API keys needed) so `docker compose up` gives a
+# self-contained masking demo (§38-20). Swap api_base/api_key for real providers.
+model_list:
+  - model_name: securitymasker-openai
+    litellm_params:
+      model: openai/gpt-4o
+      api_base: http://mock-upstream:8081
+      api_key: sk-mock-not-a-real-key
+  - model_name: securitymasker-anthropic
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_base: http://mock-upstream:8081
+      api_key: sk-ant-mock-not-a-real-key
+
+litellm_settings:
+  set_verbose: false
+  # Full mask+restore lifecycle via the callbacks path (see docs/compatibility.md).
+  callbacks: ["securitymasker_guardrail.securitymasker_callback"]
