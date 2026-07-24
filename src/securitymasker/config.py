@@ -17,8 +17,14 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from securitymasker.detectors.base import SensitiveDataDetector
+from securitymasker.detectors.date_of_birth import DateOfBirthDetector
 from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
 from securitymasker.detectors.existing_alias import ExistingAliasDetector
+from securitymasker.detectors.formats import FormatsDetector
+from securitymasker.detectors.japanese_address import CompositeAddressDetector
+from securitymasker.detectors.japanese_my_number import JapaneseMyNumberDetector
+from securitymasker.detectors.japanese_phone import JapanesePhoneDetector
+from securitymasker.detectors.japanese_postal_code import JapanesePostalCodeDetector
 from securitymasker.detectors.regex import RegexDetector, RegexEntry
 from securitymasker.detectors.secret_patterns import build_secret_detector
 from securitymasker.engine import MaskingEngine
@@ -105,12 +111,39 @@ class RegexConfig(BaseModel):
         return v
 
 
+class JapanesePiiConfig(BaseModel):
+    enabled: bool = True
+    my_number_restore_policy: str = RestorePolicy.BLOCK.value
+
+    @field_validator("my_number_restore_policy")
+    @classmethod
+    def _policy(cls, v: str) -> str:
+        if v not in _VALID_POLICIES:
+            raise ValueError(f"unknown restore_policy: {v}")
+        return v
+
+
+class PresidioConfig(BaseModel):
+    enabled: bool = False
+    language: str = "ja"
+    min_score: float = 0.5
+
+
+class NerConfig(BaseModel):
+    model: str | None = None  # HF token-classification model id; None disables (§14.1)
+    min_score: float = 0.85
+
+
 class SecurityMaskerConfig(BaseModel):
     version: int = 1
     defaults: Defaults = Field(default_factory=Defaults)
     entities: list[EntityConfig] = Field(default_factory=list)
     patterns: list[RegexConfig] = Field(default_factory=list)
     enable_secret_detector: bool = True
+    enable_format_detectors: bool = True
+    japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
+    presidio: PresidioConfig = Field(default_factory=PresidioConfig)
+    ner: NerConfig = Field(default_factory=NerConfig)
 
     @model_validator(mode="after")
     def _unique_ids(self) -> SecurityMaskerConfig:
@@ -164,6 +197,28 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
         detectors.append(RegexDetector(regex_entries, name="user_regex"))
     if config.enable_secret_detector:
         detectors.append(build_secret_detector())
+    if config.enable_format_detectors:
+        detectors.append(FormatsDetector())
+    if config.japanese_pii.enabled:
+        detectors.extend([
+            JapaneseMyNumberDetector(restore_policy=config.japanese_pii.my_number_restore_policy),
+            JapanesePhoneDetector(),
+            JapanesePostalCodeDetector(),
+            CompositeAddressDetector(),
+            DateOfBirthDetector(),
+        ])
+    if config.presidio.enabled:
+        from securitymasker.detectors.presidio import PresidioDetector
+
+        detectors.append(
+            PresidioDetector(language=config.presidio.language, min_score=config.presidio.min_score)
+        )
+    if config.ner.model:
+        from securitymasker.detectors.japanese_ner import JapaneseNerDetector
+
+        detectors.append(
+            JapaneseNerDetector(model=config.ner.model, min_score=config.ner.min_score)
+        )
     return detectors
 
 

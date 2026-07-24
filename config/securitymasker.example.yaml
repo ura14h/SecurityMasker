@@ -66,3 +66,23 @@ patterns:
 
 # Built-in developer-secret detector (API keys, JWT, PEM, DB URLs, ...).
 enable_secret_detector: true
+# Built-in format recognizers (email, IPv4, credit card with Luhn).
+enable_format_detectors: true
+
+# Japanese PII recognizers (phone, postal, My Number, address, date of birth).
+japanese_pii:
+  enabled: true
+  my_number_restore_policy: block   # マイナンバーは既定でブロック（§10）
+
+# Optional: Microsoft Presidio as an in-process detector (needs the `presidio`
+# extra + a spaCy model). Disabled by default; no-ops if not installed.
+presidio:
+  enabled: false
+  language: ja
+  min_score: 0.5
+
+# Optional: Japanese NER. Set a Hugging Face token-classification model id to
+# enable (needs `transformers`). The model is never hardcoded (§14.1).
+ner:
+  model: null
+  min_score: 0.85

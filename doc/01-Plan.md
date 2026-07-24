@@ -116,10 +116,23 @@ beta header 透過、unknown block 透過、Claude Code E2E fixture。
 
 **受け入れ**: §38 の Claude Code 相当（content blocks / tool use / input JSON delta / unknown 透過）も充足。
 
-## 7. Phase 4: 日本語 PII
+## 7. Phase 4: 日本語 PII ✅ 完了
 
 Presidio adapter、JP phone / postal / My Number（チェックディジット）、DOB 文脈、
 Japanese NER adapter（モデル差し替え可）、composite address detector、評価コーパス（precision/recall/F1）。
+
+- [x] japanese_my_number（公式チェックディジット検証・文脈語・チェック不一致は非検知）
+- [x] japanese_phone（各形式・区切りなしは文脈必須）/ japanese_postal_code（〒/県名/文脈）
+- [x] date_of_birth（生年月日文脈で昇格）/ japanese_address（複合・1スパン統合）
+- [x] formats（email / IPv4 レンジ検証 / credit card Luhn→block）
+- [x] presidio adapter（in-process・import ガード・未導入で no-op、ADR-0004）
+- [x] japanese_ner adapter（HF モデル差し替え可・未設定で無効・§14.1）
+- [x] config 配線（japanese_pii / presidio / ner / enable_format_detectors）
+- [x] 評価コーパス（正例・負例、prose/code）+ P/R/F1 ハーネス（`tests/evaluation/`、**現状 P/R/F1=1.00**）
+- [x] docs/japanese-pii.md、example config 更新
+- [x] unit **129 passed**、ruff + mypy --strict クリーン（合成データのみ、§30）
+
+**受け入れ（§38-13）**: 氏名・電話・メール・住所・郵便番号・マイナンバーのテストあり。
 
 ## 8. Phase 5: 運用強化
 
