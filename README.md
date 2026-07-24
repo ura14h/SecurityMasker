@@ -8,8 +8,10 @@ LiteLLM Proxy へ薄い拡張として組み込む、**可逆マスキング・�
 - 実装計画: [`doc/01-Plan.md`](doc/01-Plan.md)
 - 開発エージェント向けルール: [`AGENTS.md`](AGENTS.md)
 
-> ⚠️ 開発中: Phase 0（互換性固定）と Phase 1（コアマスキング MVP）が完了。
-> Gateway への実接続（プロトコル walker / ストリーミング復元）は Phase 2 以降です。
+> ✅ Phase 0〜5 完了。Codex（OpenAI Responses / Chat）と Claude Code（Anthropic Messages）を
+> 実 LiteLLM Proxy 経由でマスク・復元します（非ストリーム／ストリーム）。`docker compose up` で
+> 自己完結デモが動きます。詳細は [`doc/01-Plan.md`](doc/01-Plan.md)、運用は
+> [`docs/operations.md`](docs/operations.md) を参照。
 
 ## デモ（§39 / CLI で再現可能）
 
