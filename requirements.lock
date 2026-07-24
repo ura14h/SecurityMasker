@@ -104,6 +104,7 @@ structlog==25.5.0
 tiktoken==0.13.0
 tokenizers==0.23.1
 tqdm==4.69.0
+types-PyYAML==6.0.12.20260724
 typing-inspection==0.4.2
 typing_extensions==4.16.0
 tzlocal==5.4.4

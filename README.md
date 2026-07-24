@@ -8,7 +8,30 @@ LiteLLM Proxy へ薄い拡張として組み込む、**可逆マスキング・�
 - 実装計画: [`doc/01-Plan.md`](doc/01-Plan.md)
 - 開発エージェント向けルール: [`AGENTS.md`](AGENTS.md)
 
-> ⚠️ 開発初期（Phase 0: 互換性固定）です。まだ動作する Gateway は提供していません。
+> ⚠️ 開発中: Phase 0（互換性固定）と Phase 1（コアマスキング MVP）が完了。
+> Gateway への実接続（プロトコル walker / ストリーミング復元）は Phase 2 以降です。
+
+## デモ（§39 / CLI で再現可能）
+
+```bash
+export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
+securitymasker entities test "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
+```
+
+```text
+入力:
+  株式会社極秘技研の山田太郎です。 key=sk-...
+
+外部LLMへ送信（マスク後）:
+  SM_ORG_2121B2のSM_PERSON_81FEB6です。 key=${SECURITYMASKER_SECRET_5F7B78}
+
+（レスポンスに含まれる alias は、このセッションで生成したものだけをローカルで復元）
+  SM_ORG_... → 株式会社極秘技研 / SM_PERSON_... → 山田太郎
+  ${SECURITYMASKER_SECRET_...} は実値へ戻さず環境変数参照のまま
+```
+
+- 同一セッションでは同じ機密値が常に同じ alias に、別セッションでは別 alias になります（§6）。
+- API キー・秘密鍵は既定で `${SECURITYMASKER_SECRET_...}` へ変換し、実値をレスポンスへ戻しません（§10, §27）。
 
 ## 対応バージョン
 

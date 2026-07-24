@@ -53,6 +53,7 @@ dev = [
     "ruff>=0.5,<0.9",
     "mypy>=1.10,<2",
     "respx>=0.21,<0.23",
+    "types-PyYAML>=6.0,<7",
 ]
 
 [project.scripts]
@@ -69,8 +70,12 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
+# Test data / fixture strings are naturally long.
+"tests/**/*.py" = ["E501"]
 # Mock upstream emits inline JSON SSE lines that are naturally long.
 "tests/integration/mock_upstream.py" = ["E501"]
+# Secret-pattern table rows are naturally long (regex + metadata on one line).
+"src/securitymasker/detectors/secret_patterns.py" = ["E501"]
 # Proxy log handle is intentionally held open for the fixture lifetime.
 "tests/integration/test_live_proxy.py" = ["SIM115"]
 

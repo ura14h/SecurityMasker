@@ -54,11 +54,27 @@
 **完了条件**: 固定バージョンで LiteLLM Proxy が起動し、no-op の `SecurityMaskerCallback` が hook に載ることを確認 → **達成**。
 契約テスト（12 passed）＋ ライブ統合テスト（`SM_RUN_LIVE=1`、6 passed）。**Phase 0 完了。**
 
-## 4. Phase 1: コア MVP
+## 4. Phase 1: コア MVP ✅ 完了
 
 辞書 / Regex / Secret detector、インメモリセッション、HMAC alias、AES-GCM mapping、
 replacement profiles、非ストリーム mask/unmask、fail-closed、CLI、unit test。
-**受け入れ**: 同一セッション=同 alias / 別セッション=別 alias / 復元可 / 衝突検出 / leakage test。
+
+- [x] models / errors / normalization(NFKC+offset) / crypto(HMAC+AES-GCM)
+- [x] aliases: profiles（prose/host/email/ipv4/ipv6/uuid/numeric/env_ref）+ factory（衝突延長・冪等）
+- [x] sessions: Protocol + InMemory（TTL・per-session lock）
+- [x] detectors: existing_alias / dictionary / regex / secret_patterns
+- [x] policy: 重複解決（長一致・優先度）+ existing alias 保護
+- [x] engine: mask（正規化→検出→統合→alias→置換→漏えい再スキャン）/ unmask（当該セッションのみ）
+- [x] config: YAML 辞書ローダー（value_from_env・起動時検証）+ build_engine
+- [x] CLI（argparse）: config validate / entities list・test / doctor / run / sessions
+- [x] unit tests **75 passed**、ruff + mypy --strict クリーン
+
+**受け入れ達成**: 同一=同 alias / 別=別 alias / 復元 / 衝突検出 / HMAC 型分離 / 復元ポリシー /
+NFKC・全半角・日本語スペース / 長一致 / 二重マスクなし / JSON エスケープ安全 / TTL / AES-GCM 改ざん検知 /
+Secret→env_reference / block→fail-closed。
+
+**Phase 1 で未対応（Phase 2+）**: プロトコル walker・SSE ストリーミング復元・ツール引数バッファ、
+LiteLLM callback への実配線（現状 callback は no-op、engine は単体で検証済み）。
 
 ## 5. Phase 2: Codex 対応
 
