@@ -1,7 +1,7 @@
 # ADR-0004: Presidio は in-process Python ライブラリとして利用
 
-- Status: Accepted (provisional — Phase 4 で実装時に再確認)
-- Date: 2026-07-24
+- Status: Accepted (実装・実モデル検証済み)
+- Date: 2026-07-24 (updated 2026-07-25)
 - 関連: `doc/00-First-Order.md` §13, §14
 
 ## Context

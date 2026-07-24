@@ -33,6 +33,33 @@ Presidio は**検出器**としてのみ利用（in-process、`presidio` extra�
 復元・構造保持・ストリーミング復元は SecurityMasker が管理。Presidio 未インストール時は当該
 Detector が安全に no-op します。
 
+### 実モデルの導入（日本語 NER を有効化）
+
+```bash
+pip install -e ".[presidio]"
+python -m spacy download ja_core_news_md      # 約72MB、SudachiPy トークナイザ同梱
+```
+
+固定バージョン: `presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0`
+（[`../requirements-presidio.lock`](../requirements-presidio.lock)）。
+
+config で有効化:
+
+```yaml
+presidio:
+  enabled: true
+  language: ja
+  model_name: ja_core_news_md
+  min_score: 0.5
+  skip_code_contexts: true   # §17: コード領域では NER を無効化
+```
+
+spaCy 日本語モデルの NER（PERSON/ORG/LOC）を Presidio 経由で取得します。**辞書未登録の氏名・
+組織・地名**を検出できます（例: 佐藤花子 → `PERSON`、未来創研株式会社 → `ORGANIZATION`）。
+NER は最も信頼度が低い層のため **priority=80**（辞書・決定論 Recognizer が重複時に優先、§40-10）、
+コード文脈では既定で無効（§17）。実モデルの検証テストは `tests/unit/test_presidio.py`
+（Presidio 未導入環境では自動 skip）。
+
 ## 評価（§31）
 
 `tests/evaluation/`（`corpus.py` + `test_evaluation.py`）に匿名化・合成の日本語コーパス（自然文/

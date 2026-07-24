@@ -126,7 +126,9 @@ class JapanesePiiConfig(BaseModel):
 class PresidioConfig(BaseModel):
     enabled: bool = False
     language: str = "ja"
+    model_name: str = "ja_core_news_md"
     min_score: float = 0.5
+    skip_code_contexts: bool = True
 
 
 class NerConfig(BaseModel):
@@ -211,7 +213,12 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
         from securitymasker.detectors.presidio import PresidioDetector
 
         detectors.append(
-            PresidioDetector(language=config.presidio.language, min_score=config.presidio.min_score)
+            PresidioDetector(
+                language=config.presidio.language,
+                model_name=config.presidio.model_name,
+                min_score=config.presidio.min_score,
+                skip_code_contexts=config.presidio.skip_code_contexts,
+            )
         )
     if config.ner.model:
         from securitymasker.detectors.japanese_ner import JapaneseNerDetector
