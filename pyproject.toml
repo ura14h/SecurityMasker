@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "securitymasker"
+version = "0.0.1"
+description = "Reversible pseudonymization security boundary for LiteLLM Proxy (Codex / Claude Code)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SecurityMasker maintainers" }]
+keywords = ["litellm", "pii", "masking", "security", "llm-gateway", "presidio"]
+
+# Runtime dependencies are pinned. LiteLLM/Presidio/OpenAI/Anthropic SDKs are
+# intentionally fixed (see docs/compatibility.md). The March 2026 LiteLLM
+# supply-chain incident affected only 1.82.7/1.82.8; >=1.83.0 is clean.
+# NOTE: upper bounds are set to co-exist with litellm[proxy]==1.93.0's transitive
+# pins (cryptography 48, click 8.4, openai 2.x, redis 8). See docs/compatibility.md.
+# The CLI uses stdlib argparse (no typer/click) to avoid clashing with litellm's
+# hard click pin and to keep the core package dependency-light.
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "cryptography>=42,<49",
+    "httpx>=0.27,<0.30",
+    "structlog>=24.1,<26",
+    "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+# LiteLLM proxy integration (heavy; needed to run the gateway).
+litellm = [
+    "litellm[proxy]==1.93.0",
+]
+# Presidio-based detection (in-process). Pulls spaCy; JA model installed separately.
+presidio = [
+    "presidio-analyzer>=2.2.355,<3",
+]
+# Provider SDKs. openai is aligned with litellm 1.93.0's transitive pin (2.x).
+providers = [
+    "openai>=2,<3",
+    "anthropic>=0.40,<1",
+]
+# Redis-backed session store (Phase 5). Aligned with litellm's redis 8.x.
+redis = [
+    "redis>=5.0,<9",
+]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<0.25",
+    "hypothesis>=6.100,<7",
+    "ruff>=0.5,<0.9",
+    "mypy>=1.10,<2",
+    "respx>=0.21,<0.23",
+]
+
+[project.scripts]
+securitymasker = "securitymasker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["securitymasker"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

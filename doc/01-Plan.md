@@ -36,21 +36,22 @@
 - [ ] Python 3.12+ の venv 用意（システムは 3.9.6）
 - [ ] `pyproject.toml` 骨格 + `requirements`/lock 方針決定
 
-## 3. Phase 0: 調査と互換性固定（次に着手）
+## 3. Phase 0: 調査と互換性固定（進行中）
 
-- [ ] LiteLLM の最新安定版を Web 確認 → バージョン 1 点固定
-- [ ] Presidio (`presidio-analyzer`) / OpenAI SDK / Anthropic SDK のバージョン固定
-- [ ] Python 3.12 venv 構築、上記を pin して install、lock 相当を生成
-- [ ] LiteLLM の custom callback / guardrail hook の**正確なシグネチャ**をソースで確認
-      （`async_pre_call_hook` / `async_post_call_success_hook` /
-       `async_post_call_streaming_iterator_hook` / `async_post_call_failure_hook` を想定）
-- [ ] hook シグネチャを固定するテストを追加（アップデート検知用）
-- [ ] `/v1/responses`（OpenAI Responses）と `/v1/messages`（Anthropic）の実 SSE 構造を fixture 化
-- [ ] LiteLLM logging が pre-call hook より前に raw request を保存しないか検証
-- [ ] `docs/compatibility.md` 作成（対応バージョン・確認済み hook）
-- [ ] ADR 作成: (a) Presidio インプロセス採用 (b) pip+venv 採用 (c) alias=HMAC+AES-GCM (d) セッションストア抽象化
+- [x] LiteLLM の最新安定版を Web 確認 → **`litellm[proxy]==1.93.0` に固定**（供給網インシデントは 1.82.7/1.82.8 のみ、本版は安全）
+- [x] OpenAI SDK（`openai==2.48.0`、litellm 推移固定）等のバージョン固定。Presidio は Phase 4、Anthropic SDK は Phase 3 で確定
+- [x] Python 3.12 venv 構築（3.12.13）、install、`requirements.lock` 生成（115 パッケージ）
+- [x] LiteLLM の guardrail hook の**正確なシグネチャ**をソースで確認（`CustomGuardrail`）→ [compatibility.md](../docs/compatibility.md)
+- [x] hook シグネチャを固定するテスト追加（`tests/unit/test_litellm_hook_contract.py`、12 passed）
+- [x] `docs/compatibility.md` 作成（対応バージョン・確認済み hook）
+- [x] ADR 0001〜0005 作成（guardrail 統合 / pip+venv / argparse / Presidio in-process / alias HMAC+AES-GCM）
+- [x] no-op `SecurityMaskerCallback`（`CustomGuardrail` 継承）実装＋ config 例
+- [ ] （ライブ Proxy）`litellm --config` 起動で `/v1/responses`・`/v1/messages` 疎通確認
+- [ ] （ライブ Proxy）`/v1/responses`・`/v1/messages` の実 SSE 構造を fixture 化
+- [ ] （ライブ Proxy）LiteLLM logging が pre-call hook より前に raw request を保存しないか検証（§25）
 
 **完了条件**: 固定バージョンで LiteLLM Proxy が起動し、no-op の `SecurityMaskerCallback` が hook に載ることをテストで確認できる。
+→ 契約テストで hook 適合は確認済み。ライブ Proxy 起動の統合確認が残タスク（`tests/integration/`）。
 
 ## 4. Phase 1: コア MVP
 

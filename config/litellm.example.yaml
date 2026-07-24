@@ -1,0 +1,41 @@
+# LiteLLM Proxy config example — registers SecurityMasker as a guardrail.
+# Verified against litellm==1.93.0 (see docs/compatibility.md).
+#
+# Phase 0: SecurityMaskerCallback is a no-op pass-through. Registering it here
+# proves the gateway boots with the guardrail loaded. Phase 1+ makes it mask.
+#
+# Run (with the .venv active and litellm extra installed):
+#   litellm --config config/litellm.example.yaml
+#
+# Secrets/keys come from the environment — never hardcode them here (§25).
+
+model_list:
+  # Codex / OpenAI Responses API path.
+  - model_name: securitymasker-openai
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Claude Code / Anthropic Messages API path.
+  - model_name: securitymasker-anthropic
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+guardrails:
+  - guardrail_name: securitymasker
+    litellm_params:
+      # Points at SecurityMaskerCallback (a CustomGuardrail subclass).
+      guardrail: securitymasker.integrations.litellm.SecurityMaskerCallback
+      mode: pre_call          # masking happens before the upstream call
+      default_on: true
+
+litellm_settings:
+  # §25: do not enable verbose/raw-request logging in production.
+  set_verbose: false
+  # External log integrations (e.g. langfuse) are intentionally omitted until
+  # raw-request non-forwarding is verified (docs/compatibility.md open item).
+
+general_settings:
+  # Keep the admin/management surface off any public interface (§33).
+  # master_key: os.environ/LITELLM_MASTER_KEY
