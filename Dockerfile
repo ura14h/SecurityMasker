@@ -1,4 +1,4 @@
-# SecurityMasker Gateway image (LiteLLM + SecurityMasker in one process).
+# SecurityMasker proxy image (purpose-built gateway, no LiteLLM — ADR-0006).
 # Hardened: minimal base, non-root, no build caches, healthcheck (§35).
 FROM python:3.12-slim AS base
 
@@ -8,12 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (better layer caching). LiteLLM is pinned in pyproject.
+# Install dependencies first (better layer caching). Lightweight: Starlette+httpx.
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir ".[litellm]"
+RUN pip install --no-cache-dir .
 
-# App configs, the loader shim, and the demo mock upstream.
+# App config and the demo mock upstream (for the compose demo).
 COPY config ./config
 COPY tests/integration/mock_upstream.py ./tests/integration/mock_upstream.py
 COPY tests/integration/__init__.py ./tests/integration/__init__.py
@@ -26,8 +26,9 @@ USER securitymasker
 
 EXPOSE 4000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" || exit 1
 
-# SECURITYMASKER_CONFIG must be set for masking to be active (else no-op).
-CMD ["litellm", "--config", "config/litellm.docker.yaml", "--port", "4000"]
+# SECURITYMASKER_CONFIG selects the dictionary; SECURITYMASKER_OPENAI_UPSTREAM /
+# SECURITYMASKER_ANTHROPIC_UPSTREAM select the upstreams (set in compose).
+CMD ["securitymasker", "gateway", "--host", "0.0.0.0", "--port", "4000"]

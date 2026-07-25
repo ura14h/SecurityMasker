@@ -82,11 +82,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     try:
         from importlib.metadata import version
 
-        import litellm  # noqa: F401
-
-        print(f"litellm {version('litellm')} (integration available)")
+        print(f"gateway deps: starlette {version('starlette')}, uvicorn {version('uvicorn')}")
     except Exception:  # noqa: BLE001
-        print("litellm not installed (install extra: pip install -e '.[litellm]')")
+        ok = False
+        print("gateway deps missing (pip install -e .)")
+    try:
+        from securitymasker.detectors.presidio import PresidioDetector
+
+        avail = "available" if PresidioDetector().available else "not installed"
+        print(f"presidio (JA NER): {avail}")
+    except Exception:  # noqa: BLE001
+        print("presidio: not installed")
     if args.config:
         try:
             config = load_config(args.config)
@@ -112,6 +118,23 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     os.execvpe(args.tool[0], args.tool, env)  # replaces this process
     return 0  # unreachable
+
+
+def cmd_gateway(args: argparse.Namespace) -> int:
+    """Launch the SecurityMasker proxy (ADR-0006). Uses SECURITYMASKER_CONFIG."""
+    import uvicorn
+
+    from securitymasker.gateway.app import create_app
+
+    if args.config:
+        os.environ["SECURITYMASKER_CONFIG"] = args.config
+    print(
+        f"[securitymasker] gateway on http://{args.host}:{args.port} "
+        f"(config={'set' if os.environ.get('SECURITYMASKER_CONFIG') else 'none — transparent'})",
+        file=sys.stderr,
+    )
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
 
 
 def cmd_sessions(args: argparse.Namespace) -> int:
@@ -153,6 +176,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="environment and config sanity checks")
     add_config(p_doctor)
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_gateway = sub.add_parser("gateway", help="run the SecurityMasker proxy")
+    p_gateway.add_argument("--host", default="127.0.0.1")
+    p_gateway.add_argument("--port", type=int, default=4000)
+    add_config(p_gateway)
+    p_gateway.set_defaults(func=cmd_gateway)
 
     p_run = sub.add_parser("run", help="launch a tool under a fresh masking session")
     p_run.add_argument("tool", nargs=argparse.REMAINDER, help="tool and args, e.g. codex")

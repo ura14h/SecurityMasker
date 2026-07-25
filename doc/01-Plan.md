@@ -152,6 +152,22 @@ compatibility CI、performance benchmark。
 - [x] Codex / Claude Code 設定ヘルパー（integrations/codex.py・claude_code.py）+ LICENSE(Apache-2.0)
 - [x] **合計 153 passed**（unit+eval+live）、ruff + mypy --strict クリーン
 
+## 8.5 Phase 6: LiteLLM 撤廃・自作透過プロキシ ✅ 進行中（コア完了）
+
+[ADR-0006](../docs/adr/0006-drop-litellm-purpose-built-proxy.md) / [doc/05-Phase6-Design.md](05-Phase6-Design.md)。
+LiteLLM は Responses HTTP ストリーミング応答を書き換え不能（3 hook 実測）＋ ChatGPT 認証を扱いにくい
+ため撤廃。Codex/Claude Code 専用の薄い透過プロキシ（Starlette+httpx）を新設。masking core は温存。
+
+- [x] **透過 ChatGPT OAuth パススルーを実測検証**（`requires_openai_auth=true` で Codex が自分の
+      OAuth JWT をカスタム base_url へ送る）
+- [x] `gateway/`（session/forwarder/responses_stream/runtime/app）実装。認証は素通し・保存/ログしない（§25）
+- [x] **Responses ストリーミング復元がクライアントまで届く**（LiteLLM で不可能だった点を解消）
+- [x] Anthropic 経路（stream/非stream）も同プロキシで動作
+- [x] LiteLLM 統合・extra・関連テスト/config を撤去。starlette/uvicorn を直接依存化。lock 再生成（36 行）
+- [x] CLI `gateway` サブコマンド / codex・claude_code 設定 helper 更新 / Dockerfile・compose・CI 更新
+- [x] unit+eval **137 passed** ＋ live gateway（Responses/Anthropic × stream/非stream・0 漏えい）、
+      ruff + mypy --strict クリーン
+
 ## 9. 受け入れ基準（doc §38 の 20 項目）— 達成状況
 
 最重要「Codex→LiteLLM→モック送信の最終リクエストに機密情報が一切含まれない」をライブ統合

@@ -1,5 +1,6 @@
-"""LiteLLM / Codex / Claude Code integration adapters.
+"""Client integration helpers for Codex and Claude Code (ADR-0006).
 
-All LiteLLM-version-specific coupling is intentionally confined to this package
-(``litellm.py``) so that the masking core never imports LiteLLM directly.
+Config/env helpers that point Codex and Claude Code at the SecurityMasker proxy
+(``securitymasker.gateway``). No LiteLLM: the proxy is a purpose-built transparent
+masking gateway.
 """

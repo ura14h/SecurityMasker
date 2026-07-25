@@ -1,11 +1,10 @@
-# Local demo: `docker compose up` starts a self-contained SecurityMasker Gateway
-# in front of a mock upstream (no real API keys needed), plus optional Redis.
+# Local demo: `docker compose up` starts the SecurityMasker proxy in front of a
+# mock upstream (no real API keys), plus optional Redis.
 #
-# Try it:
-#   curl http://127.0.0.1:4000/v1/chat/completions \
+# Try it (Responses API):
+#   curl http://127.0.0.1:4000/responses \
 #     -H 'Content-Type: application/json' -H 'X-SecurityMasker-Session-ID: demo' \
-#     -d '{"model":"securitymasker-openai","messages":[{"role":"user",
-#          "content":"担当は山田太郎、株式会社極秘技研の件です"}]}'
+#     -d '{"model":"m","input":"担当は山田太郎、株式会社極秘技研の件です"}'
 services:
   mock-upstream:
     build: .
@@ -23,20 +22,20 @@ services:
     depends_on:
       - mock-upstream
     environment:
-      # Dictionary of what to mask (synthetic examples). Real secrets via env.
       SECURITYMASKER_CONFIG: config/securitymasker.example.yaml
+      # Point the upstreams at the in-compose mock (swap for real providers /
+      # https://chatgpt.com/backend-api/codex / https://api.anthropic.com).
+      SECURITYMASKER_OPENAI_UPSTREAM: http://mock-upstream:8081
+      SECURITYMASKER_ANTHROPIC_UPSTREAM: http://mock-upstream:8081
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"   # keep the admin/proxy surface on localhost (§33)
     read_only: true
     tmpfs:
       - /tmp
     security_opt:
       - no-new-privileges:true
-    # Management surface stays on localhost only (§33): bind 4000 to 127.0.0.1
-    # in production deployments.
 
-  # Optional shared session store for multi-worker deployments (§8). Enable by
-  # setting SECURITYMASKER_MASTER_KEY and wiring RedisSessionStore.
+  # Optional shared session store for multi-worker deployments (§8).
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
