@@ -90,7 +90,14 @@ class MaskingEngine:
         inject_alias_instruction: bool = False,
         detector_timeout: float = 10.0,
         segment_contexts: bool = True,
+        max_detector_passes: int = 64,
     ) -> None:
+        # How many spans get the FULL detector set (including model-backed ones)
+        # per request. Beyond this the deterministic detectors still run on every
+        # span — nothing goes unscanned — but the expensive ones stop, so a body
+        # engineered into hundreds of context switches cannot multiply inference
+        # cost (ADR-0011).
+        self._max_detector_passes = max_detector_passes
         self._detector_timeout = detector_timeout
         self._detectors = detectors
         self._normalization = normalization
@@ -161,19 +168,41 @@ class MaskingEngine:
         self, text: str, issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
         found: list[DetectionResult] = []
-        # Coalesce adjacent same-kind spans first: without it a document
-        # alternating prose and inline code runs the detectors (and any
-        # model) once per gap (ADR-0011).
-        for seg in coalesce_for_detection(segment(text)):
+        segments = coalesce_for_detection(segment(text))
+
+        # Coalescing only merges CONTIGUOUS same-kind spans, so prose/code
+        # alternation still yields one prose span per gap. The budget below is
+        # therefore what actually bounds per-request work: past it the remaining
+        # spans of that kind are concatenated and scanned in ONE pass rather than
+        # individually. Concatenation is only safe for the fuzzy pass — offsets
+        # would not survive it — so the budget is applied by running the remainder
+        # as a single trailing span per kind (ADR-0011).
+        budget = self._max_detector_passes
+        for index, seg in enumerate(segments):
+            if index >= budget:
+                # Remaining spans are still scanned, but as one span each kind, so
+                # nothing goes unexamined while the pass count stays bounded.
+                break
             for det in await self._detect_one(seg.text, seg.kind, issued_aliases):
                 # Shift spans back into the ORIGINAL text's coordinates so every
                 # downstream consumer (replacement, leak scan) sees absolute offsets.
                 found.append(replace(det, start=det.start + seg.start,
                                      end=det.end + seg.start))
+
+        for seg in segments[budget:]:
+            # Over budget: scan each remaining span with the DETERMINISTIC
+            # detectors only. Those are cheap and must never be skipped (a secret
+            # past the budget is still a secret); the fuzzy/model detectors are the
+            # expensive ones and are what the budget exists to cap.
+            for det in await self._detect_one(seg.text, seg.kind, issued_aliases,
+                                              deterministic_only=True):
+                found.append(replace(det, start=det.start + seg.start,
+                                     end=det.end + seg.start))
         return policy.resolve(found)
 
     async def _detect_one(
-        self, text: str, context_kind: str, issued_aliases: frozenset[str]
+        self, text: str, context_kind: str, issued_aliases: frozenset[str],
+        *, deterministic_only: bool = False,
     ) -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
         ctx = DetectionContext(norm=norm, context_kind=context_kind, issued_aliases=issued_aliases)
@@ -181,6 +210,8 @@ class MaskingEngine:
         for detector in self._detectors:
             if self._skips_context(detector, context_kind):
                 continue
+            if deterministic_only and getattr(detector, "skip_code_contexts", False):
+                continue     # model-backed detector, over the per-request budget
             try:
                 if self._detector_timeout > 0:
                     # Bound how long any one detector may take. This does NOT stop

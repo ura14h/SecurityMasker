@@ -28,6 +28,7 @@ policy and does not try to understand the code inside a fence.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 
 from securitymasker.errors import MaskingError
@@ -77,6 +78,29 @@ _APPLY_PATCH = re.compile(
 )
 # A shell transcript: consecutive lines that start with a prompt marker.
 _SHELL_BLOCK = re.compile(r"(?:^[ \t]*[$#>][ \t]+\S.*\n?)+", re.MULTILINE)
+# A bare command line with no prompt: a known binary followed by a pipe, a
+# redirect, or a flag. Anchored on the COMMAND NAME so ordinary prose that merely
+# contains "|" cannot match — the previous rule needed a "$ " prompt and so missed
+# every pasted one-liner.
+_SHELL_COMMAND = re.compile(
+    r"^[ \t]*(?:sudo[ \t]+)?(?:grep|rg|awk|sed|cat|ls|cp|mv|rm|curl|wget|kubectl|"
+    r"docker|git|psql|mysql|ssh|scp|tar|find|xargs|jq|echo|export|chmod|chown|"
+    r"systemctl|journalctl|npm|pip|python|node)\b"
+    r"(?=.*(?:[|><]|[ \t]-{1,2}[A-Za-z]))[^\n]*$",
+    re.MULTILINE,
+)
+# A single SQL statement.
+_SQL_STATEMENT = re.compile(
+    r"^[ \t]*(?:SELECT|INSERT[ \t]+INTO|UPDATE|DELETE[ \t]+FROM|CREATE[ \t]+(?:TABLE|INDEX)|"
+    r"ALTER[ \t]+TABLE|DROP[ \t]+TABLE)\b[^\n]*;[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+# A single-line declaration/assignment in a C-family or scripting language.
+_CODE_STATEMENT = re.compile(
+    r"^[ \t]*(?:const|let|var|public|private|protected|static|final)[ \t]+"
+    r"[A-Za-z_$][\w$]*[^\n]*[;{][ \t]*$",
+    re.MULTILINE,
+)
 # A bare JSON object/array occupying whole lines.
 _JSON_BLOCK = re.compile(r"^[ \t]*[{\[][\s\S]*?^[ \t]*[}\]][ \t]*$", re.MULTILINE)
 # A YAML document or a run of `key: value` lines (2+, so a prose colon is safe).
@@ -91,6 +115,12 @@ _SOURCE_BLOCK = re.compile(
     r"public |private |const |let |var |package |#include|SELECT |INSERT |UPDATE )"
     r".*\n(?:^(?![ \t]*$).*\n?)*)",
     re.MULTILINE,
+)
+
+
+_LIMIT_MESSAGE = (
+    f"input produced more than {MAX_CLAIMS} structural spans; refusing to process "
+    "it rather than analysing it partially"
 )
 
 
@@ -133,6 +163,11 @@ _UNFENCED: tuple[tuple[re.Pattern[str], str], ...] = (
     (_YAML_BLOCK, ContextKind.YAML_SCALAR.value),
     (_SHELL_BLOCK, ContextKind.SHELL.value),
     (_SOURCE_BLOCK, ContextKind.SOURCE_CODE.value),
+    # Single-line forms last: a multi-line block that already matched above keeps
+    # its (more specific) classification.
+    (_SQL_STATEMENT, ContextKind.SOURCE_CODE.value),
+    (_CODE_STATEMENT, ContextKind.SOURCE_CODE.value),
+    (_SHELL_COMMAND, ContextKind.SHELL.value),
 )
 
 
@@ -174,30 +209,35 @@ def segment(
         claims.append((match.start(), match.end(), _fence_kind(match.group("info"))))
     fenced = _resolve_claims(list(claims))
 
+    # Binary search over the sorted fence starts. A scan-from-the-front is O(n·m)
+    # once there are many fences AND many candidates — the "linear" claim only
+    # holds with an actual O(log n) lookup.
+    fence_starts = [f_start for f_start, _, _ in fenced]
+
     def _outside_fence(start: int, end: int) -> bool:
-        # Fenced regions win over everything inside them. Linear scan of a small,
-        # sorted list rather than a pairwise test against every claim.
-        for f_start, f_end, _ in fenced:
-            if f_start >= end:
-                return True
-            if start < f_end:
-                return False
-        return True
+        index = bisect_right(fence_starts, start) - 1
+        if index >= 0 and start < fenced[index][1]:
+            return False                     # begins inside a fence
+        nxt = index + 1
+        return not (nxt < len(fenced) and fenced[nxt][0] < end)   # overlaps the next
+
+    def _over_ceiling() -> bool:
+        # Checked DURING collection: finishing the scan first would do exactly the
+        # work the ceiling exists to avoid.
+        return len(claims) > MAX_CLAIMS
 
     for pattern, kind in _UNFENCED:
         for match in pattern.finditer(text):
             if match.end() > match.start() and _outside_fence(match.start(), match.end()):
                 claims.append((match.start(), match.end(), kind))
+                if _over_ceiling():
+                    raise SegmentationLimitError(_LIMIT_MESSAGE)
     for match in _INLINE_CODE.finditer(text):
         if _outside_fence(match.start(), match.end()):
             claims.append((match.start(), match.end(),
                            ContextKind.MARKDOWN_INLINE_CODE.value))
-
-    if len(claims) > MAX_CLAIMS:
-        raise SegmentationLimitError(
-            f"input produced {len(claims)} structural spans, over the {MAX_CLAIMS} "
-            "limit; refusing to process it rather than analysing it partially"
-        )
+            if _over_ceiling():
+                raise SegmentationLimitError(_LIMIT_MESSAGE)
 
     kept = _resolve_claims(claims)
 
@@ -218,13 +258,13 @@ def segment(
 
 
 def coalesce_for_detection(segments: list[Segment]) -> list[Segment]:
-    """Merge consecutive same-kind segments so detectors run once per RUN.
+    """Merge CONTIGUOUS same-kind segments.
 
-    A document alternating prose and inline code produces one prose fragment per
-    gap; scanning each separately multiplies detector calls (and model inferences)
-    by the number of code spans. Merging adjacent same-kind spans keeps the count
-    proportional to the number of context CHANGES, not to the number of spans.
-    Merging is only valid for contiguous spans, so offsets are preserved exactly.
+    Note the limit, because it used to be overstated: this only merges spans that
+    actually touch. In prose/code/prose/code alternation nothing is contiguous, so
+    the count is unchanged — which is why the per-request detector budget in
+    ``engine`` exists and is the thing that actually bounds the work. Merging is
+    valid only for contiguous spans; anything else would corrupt offsets.
     """
     if not segments:
         return []
