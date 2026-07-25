@@ -120,9 +120,15 @@ defaults:
 ```
 
 User regexes are linted at load and known catastrophic-backtracking shapes
-(`(a+)+`, `(a|a)*`, huge bounded repeats) are refused. Python's `re` cannot be
-interrupted mid-match, so the timeout bounds how long we WAIT, not the match
-itself — both defences are needed and neither alone is sufficient.
+(`(a+)+`, `(a|a)*`, huge bounded repeats) are refused.
+
+**A timeout does not stop a runaway detector.** Neither `re` nor CPU-bound model
+code can be interrupted in Python: the timeout bounds how long the REQUEST waits,
+and the worker keeps running. Runaway work is contained separately — dangerous
+regexes are refused at load, and model inference runs on a fixed-size pool with an
+admission limit, so abandoned inferences keep their slot until they finish and
+further requests are REFUSED rather than queued behind them (ADR-0011). Refusal is
+a `DetectionError`, so the request fails closed.
 
 ## Optional Japanese NER (ADR-0009)
 

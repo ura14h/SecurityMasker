@@ -21,17 +21,20 @@ ways that are silent:
   triggers a download and user text never reaches the Hub.
 - **No remote code.** ``trust_remote_code`` is never set; only safetensors
   weights are accepted.
-- **Off the event loop.** Inference is synchronous and CPU-bound, so it runs in a
-  worker thread; the engine's per-detector timeout then actually bounds it.
+- **Off the event loop, on a bounded pool.** Inference is synchronous and
+  CPU-bound. A timeout does NOT stop it — nothing can interrupt CPU-bound Python —
+  so what protects us is the admission limit in ``detectors.inference``: an
+  abandoned inference keeps occupying its slot until it finishes, and further
+  requests are refused rather than queued behind it (ADR-0011).
 """
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.detectors.context import has_context
+from securitymasker.detectors.inference import InferenceOverloaded, shared_runner
 from securitymasker.errors import ConfigError, DetectionError
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
@@ -94,7 +97,9 @@ class JapaneseNerDetector:
         skip_code_contexts: bool = True,
         local_files_only: bool = True,
         allow_unverified_model: bool = False,
+        inference_timeout: float | None = None,
     ) -> None:
+        self._inference_timeout = inference_timeout
         # Fuzzy NER opts out of code-like spans (§17); the dictionary and the
         # deterministic detectors keep running there.
         self.skip_code_contexts = skip_code_contexts
@@ -240,9 +245,16 @@ class JapaneseNerDetector:
             return []
         text = context.norm.normalized
         try:
-            # Synchronous, CPU-bound inference: run it off the event loop so one
-            # request cannot stall every other connection (doc/06 P1-5).
-            entities = await asyncio.to_thread(self._pipeline, text)
+            # Synchronous, CPU-bound inference on a BOUNDED pool. A timeout cannot
+            # stop the worker (nothing can interrupt CPU-bound Python), so the
+            # protection is the admission limit: abandoned work keeps its slot
+            # until it finishes, and further requests are refused rather than
+            # queued behind it (ADR-0011).
+            entities = await shared_runner().run(
+                self._pipeline, text, timeout=self._inference_timeout
+            )
+        except (InferenceOverloaded, TimeoutError):
+            raise
         except Exception as exc:  # noqa: BLE001
             raise DetectionError(
                 f"jp_ner pipeline failed at runtime: {type(exc).__name__}"

@@ -177,11 +177,12 @@ class MaskingEngine:
                 continue
             try:
                 if self._detector_timeout > 0:
-                    # Bound how long any one detector may take. `re` cannot be
-                    # interrupted mid-match, so this does not stop a runaway
-                    # pattern — it stops us WAITING for it, and the request then
-                    # fails closed instead of hanging (doc/06 P1-5). Dangerous
-                    # patterns are additionally refused at config load.
+                    # Bound how long any one detector may take. This does NOT stop
+                    # a runaway detector — neither `re` nor CPU-bound model code
+                    # can be interrupted — it stops us WAITING, so the request
+                    # fails closed instead of hanging. Runaway work is contained
+                    # separately: dangerous regexes are refused at config load, and
+                    # model inference runs on a bounded pool (ADR-0011).
                     found.extend(
                         await asyncio.wait_for(
                             detector.detect(ctx), timeout=self._detector_timeout
