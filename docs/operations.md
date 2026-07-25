@@ -55,7 +55,12 @@ openssl rand -base64 32
   and map `X-SecurityMasker-Session-ID` from `SECURITYMASKER_SESSION_ID`. Generate
   the block: `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`.
 - **Claude Code**: `ANTHROPIC_BASE_URL=http://127.0.0.1:4000` + the session header.
-- Wrapper: `securitymasker run codex` / `securitymasker run claude` generates a
+- Wrapper: `securitymasker run codex` / `securitymasker run claude` GUARANTEES the
+  proxy route or refuses to start the tool: it requires `/ready` to report
+  `ready: true`, sets `ANTHROPIC_BASE_URL` + session header for Claude Code and
+  per-process `-c` overrides for Codex (never editing `~/.codex/config.toml`), and
+  refuses outright if `ANTHROPIC_API_URL`/`OPENAI_BASE_URL`/`OPENAI_API_BASE` would
+  bypass it or if the tool is one it cannot route. It generates a
   session UUID and launches the tool.
 - The proxy passes the client's own credentials through and never stores/logs them (§25).
 
@@ -141,3 +146,23 @@ The four "not implemented" rows are real residual risk, not oversights being
 papered over: a pinned digest tells you *what* you built, not that it is free of
 known vulnerabilities, and nothing here proves the image you run is the image this
 repository built.
+
+
+## Diagnosing a deployment
+
+```bash
+securitymasker doctor --config <dictionary.yaml>          # human-readable
+securitymasker doctor --config <dictionary.yaml> --json   # for monitoring
+```
+
+Exits non-zero if any check FAILED. Checks cover Python and dependency versions,
+config load + engine build, every `value_from_env`, the detector pipeline,
+Presidio/HF model availability, fail mode, session TTLs, store backend, Redis
+package/URL, master-key shape, an AES-GCM round-trip, a live store
+write/read/delete probe (with cleanup verified), identity mode and its secret,
+upstream scheme/host, dev-transparent mode, public bind, gateway readiness, and
+whether the local clients look routed.
+
+`doctor` never prints a secret — not the master key, not URL credentials, not
+dictionary values — and never contacts a provider: upstreams are validated
+syntactically only.

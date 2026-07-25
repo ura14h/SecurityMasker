@@ -38,11 +38,11 @@
 |---|---|---|
 | P0-7 発行済みaliasのメンバーシップ確認 | done | `detectors/existing_alias.py` |
 | P0-8 tool-argument trust（既定未信頼、allowlistのみliteral復元、stream両対応） | done | `tool_trust.py`, 両adapter, 両stream |
-| P0-9 テナント分離 | **partial** | tenantはHMAC証明で分離済み。**同一tenant内のuser分離は未実装**（第3回監査 指摘7／下記参照） |
+| P0-9 テナント/ユーザー分離 | **done**（第2次で完了） | `tenant` / `tenant_user` の2モード。ADR-0008 |
 | P1-1 session選択の安定化＋alias有・stable無でblock | done | `gateway/session.py`, `test_multiturn_session.py` |
 | P1-9 Redis配線＋lock | **partial** | owner token・bounded wait・atomic release・TTL更新・書き込み前の所有権再確認まで実装。**fencing tokenによる完全な原子性は未実装**（下記「残存リスク」） |
 
-## Milestone D — 検出・構造保持（一部実装、一部deferred）
+## Milestone D — 検出・構造保持
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
@@ -51,11 +51,11 @@
 | P1-4 Secret Detector拡張（prefix/format固定、低FP） | done | `detectors/secret_patterns.py` |
 | §5.6 My Number min_scoreゲート | done | `detectors/japanese_my_number.py` |
 | §5.7 法人番号（check digit＋文脈/ T接頭辞、公開情報でliteral既定・opt-in） | done | `detectors/japanese_corporate_number.py` |
-| P1-6 URL/file_path/numericの完全な構造保持 | **deferred** | 現状はnumericのみ桁数保持。url/file_pathは不透明alias（安全だが構造非保持）。下記「既知の制限」参照 |
-| P1-7 コード/Markdown/shell等の文脈分類 | **deferred** | NERはcode文脈skipを実装済みだが、本文の文脈分類器は未実装 |
-| P1-8 alias長のADR | **deferred** | 現行token長は既存実装のまま。定量評価とADRは未 |
-| §5.3 未登録の氏名/法人/地名のNER補完 | **deferred（要依存承認）** | HF `transformers` 追加が必要。未承認のため未実装 |
-| §5.7/§5.8 旅券/免許/在留/年金/保険/銀行/クラウド識別子 | **deferred** | 多くは公式checksum確認かユーザーRegex委譲。EntityType宣言のみで「対応済み」とはしない |
+| P1-6 URL/file_path/numericの構造保持 | **done** | `aliases/structure.py`。再構築できない値はblock |
+| P1-7 コード/Markdown/shell等の文脈分類 | **done**（第2次で完了） | `context/segmenter.py` |
+| P1-8 alias長のADR | **done** | ADR-0007。48bit へ引き上げ、IPv4は762通り、枯渇はfail-closed |
+| §5.3 未登録の氏名/法人/地名のNER補完 | **done（optional・既定OFF）** | ADR-0009。実測比較のうえ採用 |
+| §5.7 旅券/免許/在留/年金/保険/銀行 | **partial** | `japanese_identifiers.py`。在留カードのみcheck digit検証、他は形式＋文脈語。§5.8 クラウド識別子はユーザーRegex委譲 |
 
 ## Milestone E — streaming・運用・供給網・文書
 
@@ -63,25 +63,18 @@
 |---|---|---|
 | P1-10 stream buffer上限＋done欠落で部分literal復元しない | done | `test_limits.py` |
 | P1-5 session mapping上限（fail-closed） | done | `aliases/factory.py` |
-| P1-5 detector timeout / ReDoS対策 | **partial** | body/field上限は実施。同期detectorのtimeout/circuit breakerは未。ReDoSはユーザーRegex設計依存 |
+| P1-5 detector timeout / ReDoS対策 | **done**（第2次で完了） | `detectors/safety.py` ＋ 検出器ごとの時間予算 |
 | P2-1 doctor実設定検証・CLI sessions honesty | done | `sessions`コマンドは未実装として非0終了 |
 | P2-2 metrics/audit のGateway接続 | **partial** | 安全labelのlogは有。網羅的metrics/audit配線は未 |
-| P2-3 再現ビルド（Docker lock導入・prod非mock・段分離） | done | `Dockerfile`（runtime/demo段）, `docker-compose.yml`。base image digest固定は運用者向けに手順記載 |
+| P2-3 再現ビルド | **done** | runtime/demo段分離、lock分離、**base image digest固定＋静的検査**|
 | P2-4 ドキュメント整合 | done（本書＋主要doc修正） | 設定なし=透過等の誤記を修正 |
 
-## 既知の制限（誇大保証を避けるための明示）
+## 既知の制限（第1次時点。第2次での解消状況は後段の表を参照）
 
-- **URL / file_path プロファイルは構造保持ではない。** 現状は不透明alias（`SM_VALUE_...`）で、
-  漏えいはしないが URL/パス構文としての妥当性は保証しない。構造保持が必要な用途は
-  ユーザーRegexで対象コンポーネントを個別指定するか、P1-6 実装まで待つこと。
-- **文脈分類（code/markdown/shell/JSON）は未実装。** 本文は概ね prose として扱う。
-  辞書・高信頼Secret・決定論的検出器はコード文脈でも動作するが、あいまいNERの
-  文脈別ポリシーは未整備。
-- **未登録の日本語氏名/法人/地名の自動検出には NER（`transformers`）が必要で未導入。**
-  ユーザー辞書が最優先・最信頼。NER 追加は依存承認後に実施する。
-- **日本固有の公的/業務識別子（旅券・免許・在留・年金・保険・銀行・クラウド）は限定的。**
-  EntityType の宣言のみでは「対応済み」としない。必要なものはユーザーRegex/辞書で登録する。
-- **同期detectorのtimeout/circuit breakerは未実装。** 入力サイズ上限で最悪ケースを抑制する。
+> 以下のうち URL/file_path・文脈分類・NER・detector timeout は**第2次作業で解消済み**。
+> 残っているものだけを「なお残る制限」として後段に再掲する。
+
+- **日本固有の公的/業務識別子は限定的。** EntityType の宣言のみでは「対応済み」としない。
 - **CLI の `sessions` 系は未実装**（共有ストア前提）。非0終了で明示する。
 
 ## 第2回監査の是正（`Audit fix 1..5`）
@@ -180,13 +173,26 @@ HMACは**tenant IDのみ**の静的proofで、store keyにuser IDが入らない
 実運用の日本語PII性能を意味しない。コーパスは検出器の実装者が作成しており、
 未登録氏名・法人名・地名は依然としてNER無しでは検出できない。
 
-## 製品ギャップの残り（未実装）
+## 製品ギャップの解消（第2次・branch `codex/close-product-gaps`）
 
-- **未登録の日本語氏名・法人名・地名** — HF `transformers` 等の追加が必要。**依存追加は未承認のため未着手**。
-- **文脈分類**（code/markdown/shell/diff/patch の判別）— 大きめの機能。未実装。
-- **同一tenant内のuser分離** — 認証主体がuser IDを表明・署名する仕組みが必要。未実装。
-- **image digest固定 / doctorの完全配線 / `securitymasker run` のproxy設定自動化**。
-- 住所の「番地なし」「建物名の空白分離」は一部改善したが網羅的ではない。
+前節で「未実装」としていた項目は、オーナー承認のもとすべて実装した。
+
+| 項目 | 状態 | 実装 |
+|---|---|---|
+| `securitymasker run` のproxy経路保証 | **done** | `/ready` が `ready:true` でなければ**子プロセスを起動しない**。Claude は `ANTHROPIC_BASE_URL`＋セッションヘッダ（既存 `ANTHROPIC_CUSTOM_HEADERS` は保全マージ）、Codex は**プロセス単位 `-c` override**（`~/.codex/config.toml` は不変更）。direct provider 環境変数、未知ツールは**拒否**。引数・生session IDはログしない |
+| 文脈分類 | **done** | `context/segmenter.py`。prose / fenced・inline code / shell / JSON / YAML / diff を**ロスレス**に分割（property test 済み）。offsetは原文絶対座標へ復元。fuzzy NER のみ code 系を skip、辞書と決定論的検出器は全context動作 |
+| 同一tenant内のuser分離 | **done** | ADR-0008。`local` / `tenant` / `tenant_user` の3モード。tenant+user+timestamp を**長さ前置・版付き canonical payload で一体署名**、constant-time 比較。store key・response binding・session読取検証すべてに適用 |
+| 未登録の日本語氏名・法人名・地名 | **done（optional）** | ADR-0009。Presidio と HF 2候補を**実測比較**して `tsmatz/xlm-roberta-ner-japanese` を採用。既定OFF・revision/digest固定・`local_files_only`・safetensorsのみ・`trust_remote_code` 不使用 |
+| doctor の runtime 検査 | **done** | 20項目超を個別checkとして列挙。失敗時 non-zero、secret非出力、実provider不接触、`--json` 対応 |
+| image digest 固定 | **done** | python/redis を multi-arch index digest で固定。**未固定を検出する静的テスト**を追加（dev lock の redis 欠落を実際に検出） |
+| Detector timeout / ReDoS | **done** | 破滅的パターンを設定読込時に拒否＋検出器ごとの時間予算 |
+
+### なお残る制限（`done` とは書かない）
+
+- **NERの評価は合成コーパス上の値**である。ADR-0009 の F1 は回帰ベースラインであり、実運用性能の主張ではない。
+- **Python パッケージの hash 検証・image 署名/provenance・SBOM・CIでの脆弱性scan は未実装**（`docs/operations.md` の表に明記）。
+- 住所の「番地なし」「建物名の空白分離」は一部改善にとどまる。
+- 識別子系のうち公開チェックディジットが無いもの（旅券・免許・年金・雇用保険・健康保険・銀行口座）は**形式＋文脈語のみ**の判定である。
 
 ## 完了検証コマンド
 

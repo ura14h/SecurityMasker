@@ -22,6 +22,11 @@ is disabled by default (§5).
 | Cross-session / cross-tenant leakage | per-session HMAC keys; restore only this session's aliases; tenant-namespaced, master-key-sealed Redis (§7, §8) |
 | Provider correlates users across sessions | different alias per session for the same secret (§6) |
 | Model mutates aliases (case/split/translate) | restore only exact, this-session-issued aliases; no approximate restore (§24, doc/06 P0-7) |
+| Client bypasses the proxy entirely | `securitymasker run` refuses to launch unless /ready reports ready and it can route that tool; direct-provider env vars are refused (doc/06 P2-1) |
+| Two users of one tenant share an alias table | `tenant_user` mode: tenant+user jointly signed, store keys and response bindings namespaced by both, stores verify identity on read (ADR-0008) |
+| Fuzzy NER corrupts code or misses a secret in it | bodies are segmented; only fuzzy detectors skip code spans, dictionary and deterministic detectors run everywhere (§17) |
+| Unpinned model/base image changes under us | model revision + file digests pinned and verified on fetch; base images pinned by digest with a test that fails if a pin is dropped (ADR-0009, doc/06 P2-3) |
+| Catastrophic-backtracking user regex | known blow-up shapes refused at config load; per-detector timeout blocks rather than hangs (doc/06 P1-5) |
 | Real secret restored into an external/MCP tool | tool-argument restore is default-untrusted; only allowlisted local tools get real values, else aliases (doc/06 P0-8) |
 | Prompt injection via model output | output is treated as data; only alias→original substitution, structure re-validated (§19) |
 | Alias collision | detect + lengthen token; exhaustion raises (§7) |

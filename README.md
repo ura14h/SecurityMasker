@@ -8,11 +8,18 @@
 - 実装計画: [`doc/01-Plan.md`](doc/01-Plan.md) / アーキテクチャ転換: [`docs/adr/0006-drop-litellm-purpose-built-proxy.md`](docs/adr/0006-drop-litellm-purpose-built-proxy.md)
 - 開発エージェント向けルール: [`AGENTS.md`](AGENTS.md) / 運用: [`docs/operations.md`](docs/operations.md)
 - **セキュリティ是正の到達状況と既知の制限**: [`doc/07-Remediation-Status.md`](doc/07-Remediation-Status.md)
-  （実装済み／partial／deferred を明示。URL/パスの完全な構造保持や未登録名の NER は未実装）
+  （implemented / partial / 未実装 を明示）
+- 主要な設計判断: [ADR-0007 alias長](docs/adr/0007-alias-token-length.md) /
+  [ADR-0008 tenant+user identity](docs/adr/0008-tenant-user-identity.md) /
+  [ADR-0009 日本語NER](docs/adr/0009-japanese-ner-backend.md)
 
 > ⚠️ `SECURITYMASKER_CONFIG`（マスキング辞書）は**必須**です。未設定だと起動に失敗します
 > （fail-closed）。マスキングなしの開発モードは `SECURITYMASKER_DEV_TRANSPARENT=1` を明示した
 > ときだけで、実プロバイダーには決して向けないでください。
+>
+> ✅ `securitymasker run codex` / `run claude` は、**Gateway が `/ready` を返し、かつ経路を
+> 設定できたときだけ**ツールを起動します。経路を保証できない場合は起動しません
+> （「保護されているつもり」で直接送信されることを防ぐため）。
 
 > ✅ Codex（OpenAI Responses）と Claude Code（Anthropic Messages）を、**自作の薄い透過プロキシ**
 > （Starlette+httpx、LiteLLM 非依存 — [ADR-0006](docs/adr/0006-drop-litellm-purpose-built-proxy.md)）で
