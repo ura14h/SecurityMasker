@@ -1,6 +1,10 @@
 # 07 — doc/06 Remediation Status
 
-作成日: 2026-07-25
+作成日: 2026-07-25 / 更新: 2026-07-25（第2回監査の是正を反映）
+
+> **第2回監査（HEAD `50925d6`）の結果、本書の初版にあった複数の `done` 判定は実装と一致していなかった。**
+> 指摘された8件のリリースブロッカーはすべて再現確認のうえ修正し、回帰テストを追加した（`Audit fix 1..5`）。
+> 判定の誤りの内訳と是正内容は末尾「第2回監査の是正」を参照。
 
 `doc/06-Issue.md` の是正実装の到達状況を、コードとテストに一致する形で記録する。
 「implemented / tested」「partial」「deferred」を区別し、誇大な保証を残さない（doc/06 §10, P2-4）。
@@ -79,6 +83,44 @@
   EntityType の宣言のみでは「対応済み」としない。必要なものはユーザーRegex/辞書で登録する。
 - **同期detectorのtimeout/circuit breakerは未実装。** 入力サイズ上限で最悪ケースを抑制する。
 - **CLI の `sessions` 系は未実装**（共有ストア前提）。非0終了で明示する。
+
+## 第2回監査の是正（`Audit fix 1..5`）
+
+初版で `done` としたが**実装が伴っていなかった**項目と、その是正。すべて再現テストを先に追加した。
+
+| # | 監査指摘（再現済み） | 是正 | 回帰テスト |
+|---|---|---|---|
+| 1 | 最終ガードがSecretパターンとマイナンバーしか再検査せず、未知フィールドのカード/メール/電話が通過。登録値の比較もcase-sensitive | ガードを**全決定論的検出器**（fuzzy NER以外）へ拡張。登録リテラルはcasefold比較。自セッションのaliasは除外 | `test_leak_gate.py` |
+| 2 | ヘッダー素通しで、カスタムヘッダーの秘密・他Provider認証が到達 | **Provider別allowlist**（deny by default）。非認証ヘッダーは検査して**block** | `test_leak_gate.py` |
+| 3 | multi-tenantがクライアント指定ヘッダーを信用（偽装可能） | tenantを**HMAC証明**必須化。秘密未設定なら起動失敗。公開bindは明示承認制 | `test_tenant_auth.py` |
+| 4 | `previous_response_id` を stable 扱いし3ターン目で対応表が分岐 | **response-id → session binding**（memory/Redis両対応）。未解決なら fail-closed | `test_multiturn_session.py` |
+| 5 | alias保護が4profileのみで IPv4/UUID/numeric が再マスク | 保護を**発行済みalias集合の厳密一致**へ変更（全profile対応） | `test_alias_stability.py` |
+| 6 | 上限超過後もbufferへappendし続け、上限が機能せず | 超過で**蓄積停止＋破棄**。overflow/done欠落は`error`イベントで**可視的にfail-closed** | `test_limits.py` |
+| 7 | Redis lockが固定30秒・更新なしで処理中に失効 | **owner検証付きTTL更新（watchdog）** | `test_redis_store.py` |
+| 8 | readinessがstore障害を検出せず。dev透過モードが実Providerへ送信可 | `/ready`が**storeを実プローブ**。dev透過は**loopback上流のみ**許可 | `test_tenant_auth.py` |
+
+その他の是正:
+
+- policy安全格子が entity floor しか比較せず、低priorityの `block` が高priorityの `literal` に負けた
+  → **実効強度**（自身のpolicyとfloorの厳しい方）で比較。
+- strict config: 空値・重複値・範囲外 priority/score/group を**起動時に拒否**。
+- request body: `Content-Length` 事前判定＋**ストリーム読み込み中**に上限強制（全量メモリ化しない）。
+- 供給網: lock を **runtime専用**（21パッケージ）と **dev用**に分離。本番イメージから
+  pytest/mypy/ruff/hypothesis が消えたことを実イメージで確認。CI は lock からインストール。
+- composeデモが `PROD_DB_HOST`/`INTERNAL_API_KEY` 未設定で起動失敗した問題を修正（合成値を供給）。
+
+### 第2回監査で指摘され、なお未対応の項目
+
+以下は**引き続き未実装**であり、「対応済み」とは表現しない（上記「既知の制限」と同じ扱い）:
+
+- URL/file path の構造保持、alias長のADR（24bit初期値・IPv4は254通り）
+- detector timeout / ReDoS対策 / 文脈分類 / metrics・audit の完全配線
+- `securitymasker run` のproxy設定自動化、doctorのstore/master key/upstream/public bind検査
+- Docker/Redis image の digest 固定
+- 日本固有: 未登録の氏名・法人名・地名、EAIメール、番地なし住所、旅券・免許・在留・年金・
+  雇用保険・健康保険・銀行/業務ID、クラウド資源識別子
+- 評価コーパスは依然として小規模（正例8・負例5、氏名/法人は辞書登録済み）。
+  **表示される F1=1.00 は日本語PIIの実用性能を意味しない。**
 
 ## 完了検証コマンド
 

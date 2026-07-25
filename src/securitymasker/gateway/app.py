@@ -114,10 +114,21 @@ async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JS
     if ctype and "json" not in ctype.lower():
         return None, _error(415, "unsupported_media_type",
                             "Only application/json request bodies are supported.")
-    raw = await request.body()
-    if len(raw) > MAX_BODY_BYTES:
+    # Reject on the declared length first, then enforce while streaming, so an
+    # oversized (or lying) body is never fully materialised in memory (doc/06 P1-5).
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         return None, _error(413, "payload_too_large",
                             f"Request body exceeds the {MAX_BODY_BYTES}-byte limit.")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_BODY_BYTES:
+            return None, _error(413, "payload_too_large",
+                                f"Request body exceeds the {MAX_BODY_BYTES}-byte limit.")
+        chunks.append(chunk)
+    raw = b"".join(chunks)
     try:
         data = json.loads(raw) if raw else {}
     except (json.JSONDecodeError, UnicodeDecodeError):

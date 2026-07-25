@@ -88,7 +88,7 @@ class EntityConfig(BaseModel):
     value_from_env: str | None = None
     replacement_profile: str
     restore_policy: str = RestorePolicy.LITERAL.value
-    priority: int = 100
+    priority: int = Field(default=100, ge=0, le=1000)
     case_sensitive: bool = True
 
     @field_validator("replacement_profile")
@@ -109,6 +109,15 @@ class EntityConfig(BaseModel):
     def _has_values(self) -> EntityConfig:
         if not self.values and not self.value_from_env:
             raise ValueError(f"entity {self.id!r} needs 'values' or 'value_from_env'")
+        # An empty/whitespace value would match everywhere (or nothing) and is
+        # always a config mistake; duplicates silently double the work. Both are
+        # rejected at load rather than tolerated (doc/06 P1-2).
+        for value in self.values:
+            if not value.strip():
+                raise ValueError(f"entity {self.id!r} has an empty value")
+        duplicates = {v for v in self.values if self.values.count(v) > 1}
+        if duplicates:
+            raise ValueError(f"entity {self.id!r} has duplicate values: {sorted(duplicates)}")
         return self
 
     def resolved_values(self) -> tuple[str, ...]:
@@ -128,8 +137,8 @@ class RegexConfig(BaseModel):
     type: str
     replacement_profile: str
     restore_policy: str = RestorePolicy.LITERAL.value
-    priority: int = 150
-    group: int = 0
+    priority: int = Field(default=150, ge=0, le=1000)
+    group: int = Field(default=0, ge=0)
 
     @field_validator("replacement_profile")
     @classmethod
@@ -167,7 +176,7 @@ class JapanesePiiConfig(BaseModel):
     # Confidence gate for My Number (§5.6). 0.0 = catch any valid checksum
     # (fail-closed); ~0.6 = require My Number context words, avoiding false blocks
     # of unrelated checksum-valid 12-digit business ids.
-    my_number_min_score: float = 0.0
+    my_number_min_score: float = Field(default=0.0, ge=0.0, le=1.0)
     # 法人番号 (corporate number) is public info; masking is opt-in (doc/06 §5.7).
     corporate_number: bool = False
 
@@ -185,7 +194,7 @@ class PresidioConfig(BaseModel):
     enabled: bool = False
     language: str = "ja"
     model_name: str = "ja_core_news_md"
-    min_score: float = 0.5
+    min_score: float = Field(default=0.5, ge=0.0, le=1.0)
     skip_code_contexts: bool = True
 
 
@@ -193,7 +202,7 @@ class NerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str | None = None  # HF token-classification model id; None disables (§14.1)
-    min_score: float = 0.85
+    min_score: float = Field(default=0.85, ge=0.0, le=1.0)
 
 
 class ToolTrustConfig(BaseModel):

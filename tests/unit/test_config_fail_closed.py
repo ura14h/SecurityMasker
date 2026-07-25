@@ -69,6 +69,41 @@ def test_regex_invalid_profile_rejected(tmp_path) -> None:
         ))
 
 
+def test_empty_entity_value_rejected(tmp_path) -> None:
+    with pytest.raises(ConfigError):
+        _load_raw(tmp_path, (
+            "version: 1\n"
+            "entities:\n"
+            "  - id: e1\n    type: PERSON\n    values: ['  ']\n"
+            "    replacement_profile: prose_identifier\n"
+        ))
+
+
+def test_duplicate_entity_values_rejected(tmp_path) -> None:
+    with pytest.raises(ConfigError):
+        _load_raw(tmp_path, (
+            "version: 1\n"
+            "entities:\n"
+            "  - id: e1\n    type: PERSON\n    values: ['A', 'A']\n"
+            "    replacement_profile: prose_identifier\n"
+        ))
+
+
+def test_out_of_range_priority_rejected(tmp_path) -> None:
+    with pytest.raises(ConfigError):
+        _load_raw(tmp_path, (
+            "version: 1\n"
+            "entities:\n"
+            "  - id: e1\n    type: PERSON\n    values: ['A']\n"
+            "    replacement_profile: prose_identifier\n    priority: -5\n"
+        ))
+
+
+def test_out_of_range_min_score_rejected(tmp_path) -> None:
+    with pytest.raises(ConfigError):
+        _load_raw(tmp_path, "version: 1\npresidio:\n  min_score: 4.2\n")
+
+
 def test_parse_duration_units() -> None:
     assert parse_duration("90s").total_seconds() == 90
     assert parse_duration("30m").total_seconds() == 1800

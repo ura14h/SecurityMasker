@@ -49,6 +49,23 @@ def test_secret_literal_is_clamped_up_to_floor() -> None:
     assert resolved[0].restore_policy == RestorePolicy.ENV_REFERENCE.value
 
 
+def test_low_priority_block_beats_high_priority_literal() -> None:
+    # Re-audit "その他": ranking on the entity-type floor alone let a high-priority
+    # `literal` win an overlap against a lower-priority `block` and weaken it.
+    blocked = _det(EntityType.CUSTOMER_ID.value, 0, 12, RestorePolicy.BLOCK.value, priority=10)
+    weak = _det(EntityType.PERSON.value, 0, 12, RestorePolicy.LITERAL.value, priority=999)
+    resolved = policy.resolve([blocked, weak])
+    assert len(resolved) == 1
+    assert resolved[0].restore_policy == RestorePolicy.BLOCK.value
+
+
+def test_low_priority_redacted_beats_high_priority_literal() -> None:
+    redacted = _det(EntityType.EMPLOYEE_ID.value, 0, 12, RestorePolicy.REDACTED.value, priority=1)
+    weak = _det(EntityType.PERSON.value, 0, 12, RestorePolicy.LITERAL.value, priority=900)
+    resolved = policy.resolve([redacted, weak])
+    assert resolved[0].restore_policy == RestorePolicy.REDACTED.value
+
+
 def test_stricter_policy_can_still_be_applied() -> None:
     # A stricter-than-floor policy (block) is preserved for a critical secret.
     api = _det(EntityType.API_KEY.value, 0, 20, RestorePolicy.BLOCK.value, profile=ENV)

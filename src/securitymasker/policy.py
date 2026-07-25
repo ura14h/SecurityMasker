@@ -54,11 +54,19 @@ def _clamp_policy(d: DetectionResult) -> DetectionResult:
     return replace(d, restore_policy=floor)
 
 
+def _safety_rank(d: DetectionResult) -> int:
+    """How strictly this detection would be handled: its own restore policy or its
+    entity type's floor, whichever is stricter."""
+    return max(_floor_rank(d.entity_type), _POLICY_STRENGTH.get(d.restore_policy, 0))
+
+
 def _preference(d: DetectionResult) -> tuple[int, int, int, float]:
-    # Safety floor dominates priority (P1-3): a critical secret wins an overlap over
-    # any weaker candidate, so it can't be suppressed and weakened.
+    # Safety dominates priority (P1-3). Ranking on the *effective* strictness — not
+    # just the entity-type floor — is what stops a high-priority `literal` from
+    # winning an overlap against a lower-priority `block`/`redacted` and quietly
+    # weakening it.
     priority = int(d.metadata.get("priority", 100))
-    return (_floor_rank(d.entity_type), priority, d.length, d.score)
+    return (_safety_rank(d), priority, d.length, d.score)
 
 
 def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:

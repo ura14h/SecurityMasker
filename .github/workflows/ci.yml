@@ -17,10 +17,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (pinned, lightweight — no LiteLLM)
+      - name: Install from the lock (reproducible — doc/06 P2-3)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          # Exact pins first, then the package itself without re-resolving, so CI
+          # tests the same dependency set the image ships.
+          pip install -r requirements-dev.lock
+          pip install --no-deps -e .
 
       - name: Lint (ruff)
         run: ruff check src tests
