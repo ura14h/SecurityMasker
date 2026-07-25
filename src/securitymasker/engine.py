@@ -94,11 +94,24 @@ class MaskingEngine:
         self.tool_trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
         self.inject_alias_instruction = inject_alias_instruction
         # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
-        # literals (pre-normalized) and high-precision, deterministic detectors.
+        # literals (pre-normalized) and the deterministic detectors.
         self._registered_literals = tuple(
             lit for lit in (normalize_value(v, normalization) for v in registered_literals) if lit
         )
+        # Case-folded copies so a case variant of a registered value cannot slip
+        # through the final guard in a field the adapter never masks (P0-4).
+        self._registered_literals_ci = tuple(
+            lit.casefold() for lit in self._registered_literals
+        )
         self._leak_scanners = leak_scanners or []
+        # Header scanning uses a NARROWER set than the body: headers legitimately
+        # carry IPs and hostnames (Host, X-Forwarded-For), so scanning them with the
+        # full PII set would block ordinary traffic. doc/06 P0-4 scopes headers to
+        # "registered secrets" — registered literals plus the secret patterns.
+        self._header_scanners = [
+            d for d in self._leak_scanners
+            if getattr(d, "name", "") in {"secret_patterns", "dictionary", "user_regex"}
+        ]
 
     async def detect(
         self,
@@ -182,7 +195,11 @@ class MaskingEngine:
                 raise LeakageError(entity_type=entity_type, request_id=request_id)
 
     async def assert_no_leak_in_payload(
-        self, data: Any, *, request_id: str | None = None
+        self,
+        data: Any,
+        *,
+        session: MaskingSession | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Final block-only leakage guard over the WHOLE masked payload (doc/06 P0-4).
 
@@ -195,19 +212,53 @@ class MaskingEngine:
         values — not the serialized bytes — means JSON escaping (``\\n``, ``\\"``,
         ``\\\\``) is already undone, so an escaped secret is caught the same way.
         """
-        if not self._registered_literals and not self._leak_scanners:
+        await self._assert_no_leak(data, self._leak_scanners, session, request_id)
+
+    async def assert_no_leak_in_headers(
+        self,
+        headers: dict[str, str],
+        *,
+        session: MaskingSession | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        """Block if a *registered* secret appears in non-auth headers (doc/06 P0-4).
+
+        Deliberately narrower than the body guard: headers legitimately carry IPs
+        and hostnames, so only registered dictionary/regex values and secret
+        patterns are grounds to block. Callers must exclude provider auth headers
+        before calling — those are never scanned, logged, or stored (§25).
+        """
+        await self._assert_no_leak(headers, self._header_scanners, session, request_id)
+
+    async def _assert_no_leak(
+        self,
+        data: Any,
+        scanners: list[SensitiveDataDetector],
+        session: MaskingSession | None,
+        request_id: str | None,
+    ) -> None:
+        if not self._registered_literals and not scanners:
             return
+        # Our own replacements must not self-trigger the scanners (an email-shaped
+        # alias, a doc-range IPv4, a digit-preserving numeric alias ...).
+        issued = frozenset(session.mappings_by_alias) if session is not None else frozenset()
         for text in iter_strings(data):
             norm = normalize(text, self._normalization)
             hay = norm.normalized
-            for literal in self._registered_literals:
-                if literal in hay:
+            hay_ci = hay.casefold()
+            for literal, literal_ci in zip(
+                self._registered_literals, self._registered_literals_ci, strict=True
+            ):
+                if literal in hay or literal_ci in hay_ci:
                     raise LeakageError(entity_type="registered", request_id=request_id)
-            if self._leak_scanners:
-                ctx = DetectionContext(norm=norm, request_id=request_id)
-                for scanner in self._leak_scanners:
-                    if await scanner.detect(ctx):
-                        raise LeakageError(entity_type="secret", request_id=request_id)
+            if not scanners:
+                continue
+            ctx = DetectionContext(norm=norm, request_id=request_id, issued_aliases=issued)
+            for scanner in scanners:
+                for hit in await scanner.detect(ctx):
+                    if hit.original_value in issued or hit.normalized_value in issued:
+                        continue  # one of this session's own aliases
+                    raise LeakageError(entity_type=hit.entity_type, request_id=request_id)
 
     def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
         """Alias→original map for THIS session's ``literal`` aliases only (§19).

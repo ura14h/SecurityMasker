@@ -340,21 +340,29 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
     return detectors
 
 
-def build_leak_scanners(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
-    """High-precision, deterministic detectors for the final-payload block guard.
+# Fuzzy, model-backed detectors are excluded from the final block-only guard: they
+# scan structural/unknown fields too, where an NER false positive would block a
+# legitimate request. Every DETERMINISTIC detector is included (doc/06 P0-4).
+_FUZZY_DETECTOR_NAMES = frozenset({"presidio", "jp_ner", "existing_alias"})
 
-    Kept to low-false-positive detectors only (registered secrets, secret patterns,
-    My Number's checksum): they scan structural/unknown fields too, so a fuzzy
-    detector here would over-block legitimate config values (doc/06 P0-4).
+
+def build_leak_scanners(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
+    """Deterministic detectors for the final-payload block-only guard (doc/06 P0-4).
+
+    Invariant 1 (never send original secrets) outranks "unknown fields pass
+    through": anything a deterministic detector would have masked in text must not
+    reach the upstream through an unknown, structural, or schema field either. So
+    this mirrors the full masking pipeline minus the fuzzy NER detectors — the
+    dictionary detector is included precisely so ``case_sensitive: false`` entries
+    are matched the same way here as during masking.
+
+    Aliases this session already issued are skipped by the caller, so our own
+    replacements (an email-shaped alias, a doc-range IPv4, ...) never self-trigger.
     """
-    scanners: list[SensitiveDataDetector] = []
-    if config.enable_secret_detector:
-        scanners.append(build_secret_detector())
-    if config.japanese_pii.enabled:
-        scanners.append(
-            JapaneseMyNumberDetector(restore_policy=config.japanese_pii.my_number_restore_policy)
-        )
-    return scanners
+    return [
+        d for d in build_detectors(config)
+        if getattr(d, "name", "") not in _FUZZY_DETECTOR_NAMES
+    ]
 
 
 def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
