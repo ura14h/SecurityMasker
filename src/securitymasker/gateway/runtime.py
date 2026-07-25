@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 from securitymasker.config import build_engine, load_config, parse_duration
 from securitymasker.engine import MaskingEngine
@@ -20,6 +21,15 @@ from securitymasker.sessions.store import SessionStore
 # Codex (ChatGPT auth) backend; the client's OAuth bearer is passed through (§25).
 DEFAULT_OPENAI_UPSTREAM = "https://chatgpt.com/backend-api/codex"
 DEFAULT_ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _is_loopback(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    # In-compose/demo service names are not loopback; only real loopback counts.
+    return host in LOOPBACK_HOSTS
 
 
 def _build_store(*, idle_ttl: Any, absolute_ttl: Any) -> SessionStore:
@@ -60,15 +70,18 @@ class GatewayRuntime:
         anthropic_upstream: str,
         mode: str = "local",
         tenant_header: str = "x-securitymasker-tenant-id",
+        tenant_auth_secret: str | None = None,
     ) -> None:
         self.engine = engine
         self.store = store
         self.openai_upstream = openai_upstream.rstrip("/")
         self.anthropic_upstream = anthropic_upstream.rstrip("/")
         # Tenant isolation mode (doc/06 P0-9): "local" = one implicit tenant;
-        # "multitenant" = tenant read from a header a trusted authenticator sets.
+        # "multitenant" = tenant id proven by an HMAC the authenticator computes
+        # with ``tenant_auth_secret`` (a bare header is never trusted).
         self.mode = mode
         self.tenant_header = tenant_header
+        self.tenant_auth_secret = tenant_auth_secret
 
     @classmethod
     def from_env(cls) -> GatewayRuntime:
@@ -95,17 +108,42 @@ class GatewayRuntime:
         mode = os.environ.get("SECURITYMASKER_MODE", "local")
         if mode not in {"local", "multitenant"}:
             raise ConfigError("SECURITYMASKER_MODE must be 'local' or 'multitenant'")
+
+        openai_upstream = os.environ.get(
+            "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
+        )
+        anthropic_upstream = os.environ.get(
+            "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
+        )
+
+        if engine is None:
+            # Dev transparent mode forwards raw bodies, so it must never sit in
+            # front of a real provider (doc/06 P0-1). Loopback upstreams only.
+            for name, url in (("OPENAI", openai_upstream), ("ANTHROPIC", anthropic_upstream)):
+                if not _is_loopback(url):
+                    raise ConfigError(
+                        f"SECURITYMASKER_DEV_TRANSPARENT=1 forwards UNMASKED bodies and "
+                        f"refuses non-loopback upstreams; SECURITYMASKER_{name}_UPSTREAM "
+                        f"points at {urlsplit(url).hostname!r}. Set a masking config instead."
+                    )
+
+        tenant_auth_secret = os.environ.get("SECURITYMASKER_TENANT_AUTH_SECRET")
+        if mode == "multitenant" and not tenant_auth_secret:
+            # Without a secret the tenant header is unverifiable and any client
+            # could claim any tenant (doc/06 P0-9).
+            raise ConfigError(
+                "SECURITYMASKER_MODE=multitenant requires SECURITYMASKER_TENANT_AUTH_SECRET; "
+                "the trusted authenticator signs the tenant id with it "
+                "(HMAC-SHA256 hex in X-SecurityMasker-Tenant-Auth)."
+            )
         return cls(
             engine,
             store,
-            openai_upstream=os.environ.get(
-                "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
-            ),
-            anthropic_upstream=os.environ.get(
-                "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
-            ),
+            openai_upstream=openai_upstream,
+            anthropic_upstream=anthropic_upstream,
             mode=mode,
             tenant_header=os.environ.get(
                 "SECURITYMASKER_TENANT_HEADER", "x-securitymasker-tenant-id"
             ),
+            tenant_auth_secret=tenant_auth_secret,
         )

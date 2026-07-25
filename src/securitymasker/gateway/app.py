@@ -133,10 +133,22 @@ async def health(request: Request) -> JSONResponse:
 
 
 async def ready(request: Request) -> JSONResponse:
-    """Readiness: the masking engine and store are available (doc/06 P0-1)."""
+    """Readiness: the masking engine AND the session store are usable (doc/06 P0-1).
+
+    Probes the store for real — a configured-but-unreachable Redis (or a bad master
+    key) must not report ready, since every request depends on it (finding 8).
+    """
     rt: GatewayRuntime = request.app.state.runtime
     if rt.engine is None:
         return JSONResponse({"ready": False, "reason": "masking engine not configured"},
+                            status_code=503)
+    try:
+        probe = "__securitymasker_readiness__"
+        await rt.store.get_or_create(probe, tenant_id="_readiness")
+        await rt.store.delete(probe)
+    except Exception as exc:  # noqa: BLE001 - any store fault means not ready
+        _log.warning("sm_not_ready", reason=type(exc).__name__)
+        return JSONResponse({"ready": False, "reason": "session store unavailable"},
                             status_code=503)
     return JSONResponse({"ready": True})
 
@@ -163,7 +175,8 @@ async def _handle(
     if err is not None or data is None:
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
-    tenant = resolve_tenant(rt.mode, rt.tenant_header, request.headers)
+    tenant = resolve_tenant(rt.mode, rt.tenant_header, request.headers,
+                            auth_secret=rt.tenant_auth_secret)
     if tenant is None:
         # Multitenant mode with no trusted tenant: fail closed rather than risk
         # sharing one tenant's alias table with another (doc/06 P0-9).

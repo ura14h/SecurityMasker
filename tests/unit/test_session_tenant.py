@@ -52,6 +52,16 @@ def _engine() -> MaskingEngine:
         registered_literals=(PERSON,))
 
 
+TENANT_SECRET = "unit-test-secret"
+
+
+def _proof(tenant: str) -> str:
+    import hmac
+    from hashlib import sha256
+
+    return hmac.new(TENANT_SECRET.encode(), tenant.encode(), sha256).hexdigest()
+
+
 def _app(monkeypatch, *, mode="local", tenant_header="x-securitymasker-tenant-id"):
     calls: list[dict] = []
 
@@ -67,7 +77,8 @@ def _app(monkeypatch, *, mode="local", tenant_header="x-securitymasker-tenant-id
     monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)
     rt = GatewayRuntime(_engine(), InMemorySessionStore(),
                         openai_upstream="http://oai.test", anthropic_upstream="http://an.test",
-                        mode=mode, tenant_header=tenant_header)
+                        mode=mode, tenant_header=tenant_header,
+                        tenant_auth_secret=TENANT_SECRET)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(rt)),
                                base_url="http://gw")
     return client, calls
@@ -96,9 +107,13 @@ async def test_same_session_id_different_tenant_are_isolated(monkeypatch) -> Non
     client, calls = _app(monkeypatch, mode="multitenant")
     hdr = {"X-SecurityMasker-Session-ID": "s1"}
     async with client:
-        await client.post("/responses", headers={**hdr, "x-securitymasker-tenant-id": "A"},
+        await client.post("/responses",
+                          headers={**hdr, "x-securitymasker-tenant-id": "A",
+                                   "x-securitymasker-tenant-auth": _proof("A")},
                           json={"input": f"担当は{PERSON}"})
-        await client.post("/responses", headers={**hdr, "x-securitymasker-tenant-id": "B"},
+        await client.post("/responses",
+                          headers={**hdr, "x-securitymasker-tenant-id": "B",
+                                   "x-securitymasker-tenant-auth": _proof("B")},
                           json={"input": f"担当は{PERSON}"})
     assert len(calls) == 2
     # Same session id + same secret, but different tenants -> independent sessions

@@ -9,7 +9,13 @@ FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    # A container must bind 0.0.0.0 to be reachable at all; the *publish* mapping
+    # is what limits exposure (compose publishes to 127.0.0.1 only). Acknowledged
+    # here so the CLI's public-bind guard does not block container startup — the
+    # operator is still responsible for not publishing this port to the world
+    # without an authenticator in front (doc/06 P0-9).
+    SECURITYMASKER_ALLOW_PUBLIC_BIND=1
 
 WORKDIR /app
 

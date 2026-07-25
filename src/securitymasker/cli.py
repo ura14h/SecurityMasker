@@ -137,6 +137,30 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
     if args.config:
         os.environ["SECURITYMASKER_CONFIG"] = args.config
+
+    # A non-loopback bind exposes the proxy — and the client credentials flowing
+    # through it — to the network. Refuse unless the operator explicitly accepts
+    # it AND has put an authenticator in front (doc/06 P0-9).
+    from securitymasker.gateway.runtime import LOOPBACK_HOSTS
+
+    if args.host not in LOOPBACK_HOSTS:
+        acknowledged = os.environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
+        multitenant = os.environ.get("SECURITYMASKER_MODE") == "multitenant"
+        if not acknowledged:
+            print(
+                f"error: refusing to bind {args.host} (non-loopback). The proxy has no "
+                "built-in authentication; put a trusted authenticator in front and set "
+                "SECURITYMASKER_ALLOW_PUBLIC_BIND=1 to acknowledge.",
+                file=sys.stderr,
+            )
+            return 2
+        if not multitenant:
+            print(
+                "warning: public bind in single-tenant 'local' mode — every caller "
+                "shares one alias table. Use SECURITYMASKER_MODE=multitenant.",
+                file=sys.stderr,
+            )
+
     configured = bool(os.environ.get("SECURITYMASKER_CONFIG"))
     dev = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
     mode = "masking" if configured else ("DEV transparent (no masking!)" if dev else "will fail")

@@ -19,13 +19,17 @@ caller must fail closed rather than share one tenant's table with another.
 
 from __future__ import annotations
 
+import hmac
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 
 SESSION_HEADER = "x-securitymasker-session-id"
 DEFAULT_TENANT_HEADER = "x-securitymasker-tenant-id"
+# Proof header set by the trusted authenticator, never by the end client.
+TENANT_AUTH_HEADER = "x-securitymasker-tenant-auth"
 LOCAL_TENANT = "local"
 
 
@@ -59,13 +63,35 @@ def resolve_session(
     return ResolvedSession(f"eph:{uuid.uuid4()}", stable=False)
 
 
-def resolve_tenant(mode: str, tenant_header: str, headers: Mapping[str, str]) -> str | None:
-    """Resolve the tenant, or ``None`` if multitenant mode cannot (=> block)."""
+def resolve_tenant(
+    mode: str,
+    tenant_header: str,
+    headers: Mapping[str, str],
+    *,
+    auth_secret: str | None = None,
+    auth_header: str = TENANT_AUTH_HEADER,
+) -> str | None:
+    """Resolve the tenant, or ``None`` if it cannot be *proven* (=> block).
+
+    In multitenant mode the tenant id alone is untrusted — any client can set a
+    header. The fronting authenticator (which alone knows ``auth_secret``) must
+    also send ``HMAC-SHA256(secret, tenant_id)`` hex in ``auth_header``; the tenant
+    is accepted only if that proof verifies for *this* tenant id, so a client can
+    neither invent a tenant nor replay another tenant's proof (doc/06 P0-9).
+    """
     if mode != "multitenant":
         return LOCAL_TENANT
     h = {k.lower(): v for k, v in headers.items()}
-    value = h.get(tenant_header.lower())
-    return value or None
+    tenant = h.get(tenant_header.lower())
+    if not tenant:
+        return None
+    if not auth_secret:
+        return None  # misconfigured: never trust a bare header
+    presented = h.get(auth_header.lower(), "")
+    expected = hmac.new(auth_secret.encode(), tenant.encode(), sha256).hexdigest()
+    if not presented or not hmac.compare_digest(presented, expected):
+        return None
+    return tenant
 
 
 def namespaced_key(tenant: str, session_id: str) -> str:

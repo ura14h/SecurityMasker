@@ -29,6 +29,11 @@ services:
       - mock-upstream
     environment:
       SECURITYMASKER_CONFIG: config/securitymasker.example.yaml
+      # The example config declares these via `value_from_env`, and a missing
+      # env var now fails startup (doc/06 P0-6). Synthetic demo values only —
+      # replace with real ones (from a secret store) outside the demo.
+      PROD_DB_HOST: demo-db01.internal.invalid
+      INTERNAL_API_KEY: sk-demo-0000000000000000000000000
       # Point the upstreams at the in-compose mock (swap for real providers /
       # https://chatgpt.com/backend-api/codex / https://api.anthropic.com).
       SECURITYMASKER_OPENAI_UPSTREAM: http://mock-upstream:8081
