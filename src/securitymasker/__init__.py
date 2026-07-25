@@ -1,4 +1,4 @@
-"""SecurityMasker — reversible pseudonymization security boundary for LiteLLM Proxy.
+"""SecurityMasker — reversible pseudonymization security boundary (transparent proxy).
 
 See ``doc/00-First-Order.md`` (source of truth) and ``AGENTS.md`` for the invariants.
 """

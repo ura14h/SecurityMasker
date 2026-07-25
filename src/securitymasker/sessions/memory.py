@@ -1,7 +1,7 @@
 """Single-process in-memory session store (§8, Phase 1).
 
-Not shared across LiteLLM workers — Phase 5 adds ``RedisSessionStore`` behind the
-same ``SessionStore`` Protocol. Enforces idle + absolute TTL and serializes
+Not shared across worker processes — ``RedisSessionStore`` implements the same
+``SessionStore`` Protocol for that. Enforces idle + absolute TTL and serializes
 per-session writes with an ``asyncio.Lock``.
 """
 

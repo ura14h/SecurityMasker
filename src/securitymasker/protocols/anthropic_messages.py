@@ -26,7 +26,7 @@ from securitymasker.protocols.structured_walker import (
 
 def is_anthropic_request(data: dict[str, Any]) -> bool:
     # Anthropic requests carry `system`/`max_tokens` alongside `messages`; the
-    # authoritative signal is the LiteLLM call_type, checked by the caller.
+    # authoritative signal is the route the client used, checked by the caller.
     return "messages" in data and ("system" in data or "max_tokens" in data)
 
 

@@ -2,7 +2,7 @@
 
 Claude Code talks to the gateway via the Anthropic Messages API. Point
 ``ANTHROPIC_BASE_URL`` at the gateway and propagate the session header; provider
-feature headers (``anthropic-beta`` …) are forwarded transparently by LiteLLM and
+feature headers (``anthropic-beta`` …) are forwarded transparently by the proxy and
 must not be stripped (§23). The ``securitymasker run claude`` wrapper generates the
 session id.
 """

@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import os
 import secrets
-import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -190,12 +189,21 @@ def build_plan(
 
 
 def describe_manual_setup(gateway: str) -> str:
-    """Secret-free instructions shown when we refuse to launch (§25)."""
+    """Secret-free instructions shown when we refuse to launch (§25).
+
+    Delegates to the per-tool helpers so the provider keys are defined in exactly
+    one place: a second copy of this snippet would drift from the overrides
+    ``build_plan`` actually applies, and the drift would only show up as a user
+    silently talking to the provider direct.
+    """
+    from securitymasker.integrations.claude_code import claude_code_shell_snippet
+    from securitymasker.integrations.codex import codex_config_toml
+
     return (
-        "To route manually:\n"
-        f"  Claude Code: export ANTHROPIC_BASE_URL={shlex.quote(gateway)}\n"
-        f"  Codex:       codex -c model_provider=\"securitymasker\" "
-        f"-c model_providers.securitymasker.base_url={shlex.quote(gateway)!s} "
-        "-c model_providers.securitymasker.requires_openai_auth=true\n"
-        "Start the gateway first: securitymasker gateway --config <dictionary.yaml>"
+        "SecurityMasker did not start the tool. To route it manually:\n\n"
+        f"  Claude Code:\n    {claude_code_shell_snippet(gateway)}\n\n"
+        "  Codex — add to ~/.codex/config.toml:\n"
+        + "\n".join(f"    {line}" for line in codex_config_toml(gateway).splitlines())
+        + "\n\n  Start the gateway first:\n"
+        "    securitymasker gateway --config <dictionary.yaml>"
     )

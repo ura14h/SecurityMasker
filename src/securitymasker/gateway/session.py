@@ -1,4 +1,4 @@
-"""Session + tenant resolution from request headers/body (§7, doc/06 P0-9/P1-1).
+"""Session resolution from request headers/body (§7, doc/06 P1-1).
 
 The proxy masks (request) and restores (response) in a *single* handler
 invocation, so one resolved session covers the whole turn. Cross-turn consistency
@@ -11,10 +11,8 @@ otherwise fork the alias table each time:
     3. ``previous_response_id`` (only as a last resort before ephemeral)
     4. a fresh ephemeral id
 
-Tenant (doc/06 P0-9): in ``local`` mode there is one implicit tenant. In
-``multitenant`` mode the tenant is read from a configured header that a trusted
-authenticator (not the end client) is responsible for setting; if it is absent the
-caller must fail closed rather than share one tenant's table with another.
+Caller identity lives in ``gateway.identity``; this module only answers "which
+session", and the two are composed by ``namespaced_key``.
 """
 
 from __future__ import annotations
@@ -82,7 +80,3 @@ def namespaced_key(identity: Identity | str, session_id: str) -> str:
         return f"\x1e{identity}\x1f{session_id}"
     return f"{identity.namespace}\x1f{session_id}"
 
-
-# Backwards-compatible shim used by older call sites/tests.
-def resolve_session_id(headers: Mapping[str, str], body: dict[str, Any] | None = None) -> str:
-    return resolve_session(headers, body).session_id
