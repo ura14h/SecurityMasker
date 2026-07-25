@@ -1,8 +1,14 @@
 # AGENTS.md — SecurityMasker 開発エージェント憲章
 
 このファイルは、本リポジトリで作業するすべてのコーディングエージェント（Claude Code / Codex など）が
-最初に読むべき運用ルールです。**製品の完全な要件は [`doc/00-First-Order.md`](doc/00-First-Order.md) が唯一の正典（source of truth）** です。
-本ファイルはその要約と、作業上の不変ルールを定めます。矛盾した場合は `doc/00-First-Order.md` を優先してください。
+最初に読むべき運用ルールです。[`doc/00-First-Order.md`](doc/00-First-Order.md) は**初期命令（ブリーフ・方針）**
+であり、変更不能な制約宣言ではありません（冒頭が「安全側の前提を置き ADR に明記せよ」と工学判断を招く）。
+
+**拘束力の二層**（[ADR-0006](docs/adr/0006-drop-litellm-purpose-built-proxy.md)）:
+- **不変（製品の目的・ツール非依存）** = 下記 §2 のセキュリティ不変条件。何を選んでも死守する。
+- **手段（工学判断で見直し可・ADR に記録）** = ツール選定など。**LiteLLM 依存は撤廃済み**（ADR-0006）。
+
+矛盾時は「不変条件」＞「最新 ADR」＞「doc/00 の手段記述」の順で優先する。
 
 ---
 
@@ -12,10 +18,15 @@
 ローカルの Codex / Claude Code から外部 LLM（OpenAI / Anthropic）へ送信される機密情報を、送信前にセッション単位の
 安定した仮名（alias）へ可逆置換し、レスポンスをローカルで復元する。
 
-- パッケージ名: `securitymasker` / CLI: `securitymasker` / コールバッククラス: `SecurityMaskerCallback`
+- パッケージ名: `securitymasker` / CLI: `securitymasker`。
 - 「reversible-masker」という名称は**使用しない**。
-- LiteLLM 本体は **fork しない**。カスタムコールバック / Guardrail hook として実装し、
-  LiteLLM 固有部分は `src/securitymasker/integrations/litellm.py` に閉じ込める。
+- **アーキテクチャ（Phase 6〜, ADR-0006）**: LiteLLM を撤廃し、Codex（OpenAI Responses）と
+  Claude Code（Anthropic Messages）専用の**自作の薄い透過マスキングプロキシ**（Starlette+httpx）。
+  masking core（engine/detectors/sessions/crypto/aliases/policy/normalization/protocols/streaming）は
+  LiteLLM 非依存で温存・再利用。理由: litellm は Responses HTTP ストリーミング応答を書き換え不能・
+  ChatGPT 認証を扱いにくい・巨大依存はセキュリティ製品の負債。詳細は [`doc/05-Phase6-Design.md`](doc/05-Phase6-Design.md)。
+- 認証は**透過パススルー**（クライアントの資格情報を素通し・保存/復号/ログしない）。実測で
+  Codex の ChatGPT OAuth パススルーが成立することを確認済み。
 
 ## 2. 破ってはいけない不変ルール（優先順位順）
 
