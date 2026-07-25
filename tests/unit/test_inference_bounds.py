@@ -43,8 +43,12 @@ async def test_slot_is_held_until_the_work_finishes_not_until_the_wait_ends() ->
         # this is what stops repeated timeouts from compounding.
         assert runner.inflight == 1
         release.set()
+        # Poll for the release: the slot is freed by the pool's completion
+        # callback, so there is no awaitable to wait on from here. (ASYNC110's
+        # anyio.Event suggestion does not apply — the event we need is internal
+        # to concurrent.futures.)
         deadline = time.monotonic() + 2
-        while runner.inflight and time.monotonic() < deadline:
+        while runner.inflight and time.monotonic() < deadline:  # noqa: ASYNC110
             await asyncio.sleep(0.01)
         assert runner.inflight == 0      # released once the work actually ended
     finally:
