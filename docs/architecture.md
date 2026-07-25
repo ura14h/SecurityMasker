@@ -23,8 +23,9 @@ correlation problem).
 ## Layers
 
 - **gateway/** — the proxy: `app` (routes), `forwarder` (transparent httpx forward,
-  auth pass-through), `responses_stream` (OpenAI Responses SSE restorer),
-  `session` (session-id resolution), `runtime` (engine/store + upstream config).
+  auth pass-through), `session` (session-id resolution), `identity` (tenant+user
+  binding), `runtime` (engine/store + upstream config). SSE restoration lives in
+  `streaming/`, not here — see the layout note below.
 - **integrations/** — `codex` / `claude_code` client-config helpers (no LiteLLM).
 - **protocols/** — `openai_responses`, `anthropic_messages`, `sse`,
   `structured_walker`. Decide *which* fields carry user text; never touch structure.
@@ -34,7 +35,8 @@ correlation problem).
   `formats`, Japanese recognizers, optional `presidio` / `japanese_ner`.
 - **aliases/** — replacement `profiles` + collision-safe `factory`.
 - **sessions/** — `store` Protocol, `memory`, `redis`, `crypto`.
-- **streaming/** — `text_replacer` (carry buffer), `tool_arguments`, `anthropic_stream`.
+- **streaming/** — `text_replacer` (carry buffer), `tool_arguments`,
+  `openai_responses_stream`, `anthropic_messages_stream`.
 - **policy / normalization / models / config / cli / logging / metrics**.
 
 ## Data flow (request)
@@ -54,11 +56,12 @@ LiteLLM callbacks it replaced).
 
 - Non-streaming: parse the upstream JSON, restore text/tool-arg fields, return it.
 - Streaming (SSE bytes → decode → parse → restore → re-serialize):
-  - OpenAI Responses (`gateway/responses_stream`): `output_text.delta` via a
+  - OpenAI Responses (`streaming/openai_responses_stream`): `output_text.delta` via a
     per-block carry buffer; `output_text.done` / `content_part.*` / `output_item.*`
     / `response.completed` full text; `function_call_arguments` buffered and
     re-emitted as one restored delta.
-  - Anthropic (`streaming/anthropic_stream`): `text_delta` per-block carry buffer;
+  - Anthropic (`streaming/anthropic_messages_stream`): `text_delta` per-block carry
+    buffer;
     `input_json_delta` reassembled to one restored delta.
 - Only this session's `literal` aliases are restored; `env_reference` stays as
   `${...}` (§10, §19, §20, §21).

@@ -211,17 +211,51 @@ SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可�
 
 | 項目 | 第3次の表記 | 実際 | 現在 |
 |---|---|---|---|
-| NER供給網・製品配線 | done | lockなし・Docker不在・safetensors非強制・digest検査が欠落ファイルを見逃す | **done**（`requirements-ner.lock`、`--target ner` stage、manifest完全検査、`use_safetensors=True`強制、未知モデル既定拒否、runtime再検証） |
-| 文脈分類 | done | fenced/inline/bare-diff のみ。裸のshell/JSON/YAML/source/apply_patchはprose。`PATCH`未生成。O(n²) | **done**（6形状を追加、`PATCH`生成、線形化、上限＋fail-closed） |
-| doctor完全配線 | done | Gateway不通でも exit 0、config欠落でtraceback、detector 3重構築 | **done**（`--require-ready`、安全なFAIL、1回構築） |
+| NER供給網・製品配線 | done | lockなし・Docker不在・safetensors非強制・digest検査が欠落ファイルを見逃す | **partial**（第5回で是正 → 下表）。lockが真の推移閉包でなく（`huggingface-hub`欠落）、manifestは6成果物中3件しか固定しておらず「完全検査」は成立していなかった |
+| 文脈分類 | done | fenced/inline/bare-diff のみ。裸のshell/JSON/YAML/source/apply_patchはprose。`PATCH`未生成。O(n²) | **partial**（第5回で是正 → 下表）。1行形のshell/SQL/コード文が prose のままで、`_outside_fence` も線形ではなかった |
+| doctor完全配線 | done | Gateway不通でも exit 0、config欠落でtraceback、detector 3重構築 | **partial**（第5回で是正 → 下表）。`doctor` 自身が engine を2回構築していた |
 | user assertionのreplay対策 | done | timestamp任意で無期限再利用可、`nan`が時刻窓を通過 | **done**（timestamp必須、整数epoch限定、NaN/Inf/小数/前後窓を拒否） |
 | NER timeout | done | `wait_for`は待機を終えるだけでworkerは継続 | **done**（固定プール＋在庫上限＋過負荷拒否。「timeoutが推論を止める」記述は訂正） |
 
 ### なお `partial` / 未実装のまま
 
-- **`securitymasker run` の保証範囲** — 生成した設定を**実Codex CLIがparseすることは検証済み**
-  （`--strict-config` 付きで実バイナリに投入）。ただし実CLIプロセスを起動して
-  実際にproxy経由の通信が行われるところまでの自動テストは、CIに実バイナリが無いため**未実施**。
+- **`securitymasker run` の保証範囲** — 「実Codex CLIでparse検証済み」という第4次の記述は
+  **撤回する**。`--strict-config` は `login` / `mcp` では受け付けられず、`--version` / `--help` は
+  設定を構築する前に終了するため、**当時の検証手順は実際には何も検証していなかった**
+  （不明キーを与えても exit 0 になる）。現在の検証は「生成した各 `-c` 値が単体で妥当な TOML 
+  代入であること」を `tomllib` で確認するところまでであり、実CLIプロセスの起動と
+  proxy経由通信の自動テストは、CIに実バイナリが無いため**未実施**のまま。
 - **供給網**: package hash検証・image署名/provenance・SBOM・CI脆弱性scan は引き続き**未実装**。
 - **日本固有識別子**: 公開チェックディジットが無いものは形式＋文脈語のみ。
 - **NER評価**: 合成コーパス上の値であり、実運用性能ではない。
+
+## 第5回監査の是正（`R10..R16`）
+
+第4次で `done` とした4項目のうち3項目は、監査の指摘どおり**実装はあっても完全ではなかった**。
+上表の「現在」列を `partial` へ戻したうえで是正した結果が下表である。
+
+| 項目 | 第4次の主張 | 実際 | 現在 |
+|---|---|---|---|
+| NER lock | `requirements-ner.lock` は推移閉包 | 手作業で列挙したため `huggingface-hub` 等が欠落 | **done**。インストール済みメタデータの `requires()` から推移閉包を実際に計算して再生成（22パッケージ）。Dockerfile は `--no-deps` で導入し、lockに無い依存が暗黙に入らないようにした |
+| NER manifest | 「完全マニフェスト」 | 6成果物中3件のみ固定。`config.json`（`id2label` = 検出ラベル体系）と tokenizer 設定が未固定 | **done**。6件すべてに SHA-256 とサイズを記録。`config.json` が未固定だと**検出対象ラベルを差し替えられる**ため、これは可用性ではなく検出性能の問題だった |
+| 文脈分類の網羅 | 6形状を追加 | 1行の shell / SQL / コード文が prose 扱いのまま | **done**。`_SHELL_COMMAND`（既知バイナリ＋パイプ/リダイレクト/フラグの後読み）、`_SQL_STATEMENT`、`_CODE_STATEMENT` を追加。複数行形の後に評価し、既存の分類を変えない |
+| 文脈分類の計算量 | 「線形化」 | `_outside_fence` が fence ごとに走査する O(n·m) | **done**。fence開始位置の昇順配列に対する `bisect_right` で判定。セグメント上限も収集中に判定し、上限超過は `SegmentationLimitError` で fail-closed |
+| 検出器の実効上限 | セグメント上限＝上限 | セグメント数を絞ってもセグメントあたり全検出器が走る | **done**。リクエスト単位の検出器予算（既定64）を追加。予算超過分は決定論的検出器のみ。実測: NER呼び出しは 1000セグメントでも32回で頭打ち |
+| Docker demo stage | ビルド可能 | `chown /app/tests` が存在しないパスを参照し `mock-upstream` のビルドが失敗 | **done**。`/app/devtools` へ修正。`docker compose build mock-upstream` の成功を実機で確認 |
+| Codex `-c` override | 正しい設定を生成 | **`http_headers` を JSON オブジェクト記法で生成しており、TOMLとしては構文エラー**（`:` は不正） | **done**。TOML inline table 記法（`{ "k" = "v" }`）へ修正。`-c` は config.toml に重ねられ TOML として解釈されるため、従来の値は Codex に渡した時点で壊れていた |
+| テスト配置 | — | `test_audit_round3.py` / `test_audit_round4.py` が監査回ごとの束になっており、責務からテストを探せない | **done**。21件を責務別ファイル（`test_config_fail_closed` / `test_sessions` / `test_leak_gate` / `test_multiturn_session` / `test_responses_stream` / `test_config` / `test_run_guarantee`）へ移設し、監査回ファイルを削除 |
+
+**この回で分かったこと**: 第4次の「実Codex CLIでparse検証済み」という虚偽の検証を撤回し、
+実際に検証できることだけを検証するテストへ書き換えた結果、**生成していた `http_headers` が
+そもそも妥当な TOML ではない**という実バグが見つかった。検証手順を正直にした副産物であり、
+「検証済み」と書いたまま放置していれば発見されなかった。
+
+## 完了検証コマンド（第5回時点）
+
+```bash
+ruff check src tests devtools
+mypy src
+pytest tests/unit tests/evaluation -q
+docker compose config --quiet && docker compose build mock-upstream
+SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可時のみ
+```

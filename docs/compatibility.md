@@ -127,7 +127,7 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
 ### Phase 3 で判明した重要事項（2026-07-24、実測）
 
 8. **Anthropic `/v1/messages` ストリーミングは iterator hook で生 SSE の `bytes` を流す**
-   （chat/Responses が型付きオブジェクトを流すのと異なる）。→ `streaming/anthropic_stream.py`
+   （chat/Responses が型付きオブジェクトを流すのと異なる）。→ `streaming/anthropic_messages_stream.py`
    で UTF-8 逐次デコード → SSE パース → `text_delta` はブロック index 毎 carry buffer で復元、
    `input_json_delta` はブロック完了まで蓄積し 1 イベントに再構成、その他は透過。
 9. **ルーティングは `call_type`**（`anthropic_messages` を含む）で判定。復元は chat/Responses
