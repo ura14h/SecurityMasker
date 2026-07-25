@@ -23,6 +23,7 @@ from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEn
 from securitymasker.detectors.existing_alias import ExistingAliasDetector
 from securitymasker.detectors.formats import FormatsDetector
 from securitymasker.detectors.japanese_address import CompositeAddressDetector
+from securitymasker.detectors.japanese_corporate_number import JapaneseCorporateNumberDetector
 from securitymasker.detectors.japanese_my_number import JapaneseMyNumberDetector
 from securitymasker.detectors.japanese_phone import JapanesePhoneDetector
 from securitymasker.detectors.japanese_postal_code import JapanesePostalCodeDetector
@@ -163,6 +164,12 @@ class JapanesePiiConfig(BaseModel):
 
     enabled: bool = True
     my_number_restore_policy: str = RestorePolicy.BLOCK.value
+    # Confidence gate for My Number (§5.6). 0.0 = catch any valid checksum
+    # (fail-closed); ~0.6 = require My Number context words, avoiding false blocks
+    # of unrelated checksum-valid 12-digit business ids.
+    my_number_min_score: float = 0.0
+    # 法人番号 (corporate number) is public info; masking is opt-in (doc/06 §5.7).
+    corporate_number: bool = False
 
     @field_validator("my_number_restore_policy")
     @classmethod
@@ -297,12 +304,17 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
         detectors.append(FormatsDetector())
     if config.japanese_pii.enabled:
         detectors.extend([
-            JapaneseMyNumberDetector(restore_policy=config.japanese_pii.my_number_restore_policy),
+            JapaneseMyNumberDetector(
+                restore_policy=config.japanese_pii.my_number_restore_policy,
+                min_score=config.japanese_pii.my_number_min_score,
+            ),
             JapanesePhoneDetector(),
             JapanesePostalCodeDetector(),
             CompositeAddressDetector(),
             DateOfBirthDetector(),
         ])
+        if config.japanese_pii.corporate_number:
+            detectors.append(JapaneseCorporateNumberDetector())
     if config.presidio.enabled:
         from securitymasker.detectors.presidio import PresidioDetector
 
@@ -357,4 +369,5 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         leak_scanners=build_leak_scanners(config),
         fail_mode=config.defaults.fail_mode,
         tool_trust=ToolTrustPolicy(frozenset(config.tool_trust.trusted_local_tools)),
+        inject_alias_instruction=config.defaults.inject_alias_instruction,
     )

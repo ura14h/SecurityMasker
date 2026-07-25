@@ -60,6 +60,35 @@ async def test_secret_detector_jwt_and_pem() -> None:
 
 
 @pytest.mark.asyncio
+async def test_secret_detector_expanded_providers() -> None:
+    det = build_secret_detector()
+    samples = {
+        "xoxb-123456789012-ABCDEFGHIJKLMNOP": EntityType.OAUTH_TOKEN.value,
+        "sk_live_" + "a" * 24: EntityType.API_KEY.value,
+        "AIza" + "B" * 35: EntityType.API_KEY.value,
+        "npm_" + "c" * 36: EntityType.API_KEY.value,
+    }
+    for token, etype in samples.items():
+        res = await det.detect(ctx(f"secret is {token} ok"))
+        assert any(r.entity_type == etype and r.original_value == token for r in res), token
+
+
+@pytest.mark.asyncio
+async def test_generic_secret_assignment_masks_only_value() -> None:
+    det = build_secret_detector()
+    res = await det.detect(ctx('api_key = "ABCDEFGHIJKLMNOPQRST"'))
+    hits = [r for r in res if r.entity_type == EntityType.GENERIC_SECRET.value]
+    assert len(hits) == 1
+    assert hits[0].original_value == "ABCDEFGHIJKLMNOPQRST"
+
+
+@pytest.mark.asyncio
+async def test_secret_detector_no_false_positive_on_prose() -> None:
+    det = build_secret_detector()
+    assert await det.detect(ctx("The quick brown fox jumps over the lazy dog.")) == []
+
+
+@pytest.mark.asyncio
 async def test_basic_auth_url_masks_only_credentials() -> None:
     det = build_secret_detector()
     res = await det.detect(ctx("clone https://user:pass@example.com/repo.git"))

@@ -21,3 +21,12 @@ RestoreTransform = Callable[[str], str]
 
 # Content-part keys that carry user text in OpenAI/Anthropic message structures.
 TEXT_KEYS = frozenset({"text", "input_text", "output_text"})
+
+# Injected (optionally) so the model preserves placeholders verbatim, improving
+# restoration fidelity (doc/06 P1-2 inject_alias_instruction). Contains no secrets.
+ALIAS_INSTRUCTION = (
+    "Note: tokens such as SM_PERSON_XXXXXX, sm-host-xxxxxx.example.invalid, and "
+    "${SECURITYMASKER_SECRET_XXXXXX} are placeholders inserted by a security proxy. "
+    "Treat them as opaque identifiers: preserve them exactly and never alter, "
+    "translate, decode, or invent such tokens."
+)

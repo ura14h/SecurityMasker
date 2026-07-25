@@ -43,3 +43,20 @@ def test_normalized_slice_preserves_original_surface() -> None:
     idx = n.normalized.index("株式会社")
     # Even though detection sees '株式会社', restoration recovers the original '㍿'.
     assert n.original_slice(idx, idx + 4) == "㍿"
+
+
+def test_combining_voiced_mark_composes_across_code_points() -> None:
+    # か + U+3099 (combining voiced mark) must normalize to が (doc/06 P0-7);
+    # per-code-point normalization would leave them separate and evade detection.
+    text = "がぎ"  # -> がぎ
+    n = normalize(text, "nfkc")
+    assert n.normalized == "がぎ"
+    # The composed が maps back to BOTH original code points (base + mark), so a
+    # replacement covers the whole chunk, not just the base.
+    assert n.original_slice(0, 1) == "が"
+
+
+def test_decomposed_and_precomposed_normalize_equal() -> None:
+    precomposed = "が"          # single code point U+304C
+    decomposed = "が"     # base + combining mark
+    assert normalize(precomposed, "nfkc").normalized == normalize(decomposed, "nfkc").normalized

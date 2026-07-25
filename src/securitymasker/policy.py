@@ -11,12 +11,54 @@ non-overlapping spans to act on, plus their restore policy. Rules:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from securitymasker.models import DetectionResult, EntityType, RestorePolicy
 
+# Safety lattice (doc/06 P1-3): strictly-ordered restore policies, strongest last.
+_POLICY_STRENGTH: dict[str, int] = {
+    RestorePolicy.LITERAL.value: 0,
+    RestorePolicy.ENV_REFERENCE.value: 1,
+    RestorePolicy.REDACTED.value: 2,
+    RestorePolicy.BLOCK.value: 3,
+}
 
-def _preference(d: DetectionResult) -> tuple[int, int, float]:
+# Minimum (safest) restore policy per entity type — a high-priority weak dictionary
+# or regex must NOT be able to weaken these below their floor. Critical developer
+# secrets are at least env_reference (real value never returned); My Number and card
+# numbers are at least block. Any priority is powerless against this floor.
+_SAFETY_FLOOR: dict[str, str] = {
+    EntityType.API_KEY.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.OAUTH_TOKEN.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.JWT.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.PRIVATE_KEY.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.PASSWORD.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.DB_CONNECTION_STRING.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.GENERIC_SECRET.value: RestorePolicy.ENV_REFERENCE.value,
+    EntityType.JP_MY_NUMBER.value: RestorePolicy.BLOCK.value,
+    EntityType.CREDIT_CARD.value: RestorePolicy.BLOCK.value,
+}
+
+
+def _floor_rank(entity_type: str) -> int:
+    return _POLICY_STRENGTH.get(_SAFETY_FLOOR.get(entity_type, RestorePolicy.LITERAL.value), 0)
+
+
+def _clamp_policy(d: DetectionResult) -> DetectionResult:
+    """Raise a detection's restore policy to at least its entity-type floor."""
+    floor = _SAFETY_FLOOR.get(d.entity_type)
+    if floor is None:
+        return d
+    if _POLICY_STRENGTH.get(d.restore_policy, 0) >= _POLICY_STRENGTH[floor]:
+        return d
+    return replace(d, restore_policy=floor)
+
+
+def _preference(d: DetectionResult) -> tuple[int, int, int, float]:
+    # Safety floor dominates priority (P1-3): a critical secret wins an overlap over
+    # any weaker candidate, so it can't be suppressed and weakened.
     priority = int(d.metadata.get("priority", 100))
-    return (priority, d.length, d.score)
+    return (_floor_rank(d.entity_type), priority, d.length, d.score)
 
 
 def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:
@@ -37,7 +79,7 @@ def _resolve_cluster(cluster: list[DetectionResult]) -> list[DetectionResult]:
             continue
         if any(_overlaps(cand, a) for a in accepted):
             continue
-        accepted.append(cand)
+        accepted.append(_clamp_policy(cand))
     return accepted
 
 

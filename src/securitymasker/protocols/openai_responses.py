@@ -18,7 +18,12 @@ from typing import Any
 
 from securitymasker.engine import MaskingEngine
 from securitymasker.models import ContextKind, MaskingSession
-from securitymasker.protocols.base import TEXT_KEYS, MaskTransform, RestoreTransform
+from securitymasker.protocols.base import (
+    ALIAS_INSTRUCTION,
+    TEXT_KEYS,
+    MaskTransform,
+    RestoreTransform,
+)
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 
 
@@ -51,6 +56,19 @@ async def mask_request(
     if isinstance(data.get("tools"), list):
         for tool in data["tools"]:
             await _mask_tool_definition(tool, mask)
+
+    # Once masking produced at least one alias, optionally tell the model to keep
+    # placeholders verbatim (doc/06 inject_alias_instruction).
+    if engine.inject_alias_instruction and session.mappings_by_alias:
+        _prepend_instruction(data)
+
+
+def _prepend_instruction(data: dict[str, Any]) -> None:
+    existing = data.get("instructions")
+    if isinstance(existing, str) and existing:
+        data["instructions"] = f"{ALIAS_INSTRUCTION}\n\n{existing}"
+    elif existing is None or existing == "":
+        data["instructions"] = ALIAS_INSTRUCTION
 
 
 async def _mask_input(node: Any, mask: MaskTransform) -> Any:

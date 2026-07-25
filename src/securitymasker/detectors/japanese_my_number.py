@@ -55,9 +55,16 @@ def check_digit(body11: str) -> int:
 class JapaneseMyNumberDetector:
     name = "jp_my_number"
 
-    def __init__(self, *, restore_policy: str = RestorePolicy.BLOCK.value) -> None:
-        # Default block: My Number is high-sensitivity (§10 policy default).
+    def __init__(
+        self, *, restore_policy: str = RestorePolicy.BLOCK.value, min_score: float = 0.0
+    ) -> None:
+        # Default block: My Number is high-sensitivity (§10 policy default). The
+        # min_score gate makes the context score actionable (doc/06 §5.6): raise it
+        # (e.g. 0.6) so a bare checksum-valid 12-digit business id is not masked as
+        # a My Number, while a context-bearing one (score 0.95) still is. Default
+        # 0.0 keeps the safe fail-closed behavior (any valid checksum is caught).
         self._restore_policy = restore_policy
+        self._min_score = min_score
 
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         text = context.norm.normalized
@@ -67,6 +74,8 @@ class JapaneseMyNumberDetector:
             if not is_valid_my_number(digits):
                 continue  # wrong checksum -> not detected (§14.5)
             score = 0.95 if has_context(text, m.start(), m.end(), _CONTEXT) else 0.5
+            if score < self._min_score:
+                continue  # below the configured confidence gate (§5.6)
             o_start, o_end = context.norm.to_original_span(m.start(1), m.end(1))
             results.append(
                 DetectionResult(

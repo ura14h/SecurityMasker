@@ -85,12 +85,14 @@ class MaskingEngine:
         leak_scanners: list[SensitiveDataDetector] | None = None,
         fail_mode: str = "closed",
         tool_trust: ToolTrustPolicy | None = None,
+        inject_alias_instruction: bool = False,
     ) -> None:
         self._detectors = detectors
         self._normalization = normalization
         self._merge_surface_forms = merge_surface_forms
         self._fail_mode = fail_mode
         self.tool_trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
+        self.inject_alias_instruction = inject_alias_instruction
         # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
         # literals (pre-normalized) and high-precision, deterministic detectors.
         self._registered_literals = tuple(

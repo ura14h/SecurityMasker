@@ -26,18 +26,20 @@ _FORMS: dict[str, _PyForm] = {"nfkc": "NFKC", "nfc": "NFC", "nfkd": "NFKD", "nfd
 class NormalizedText:
     original: str
     normalized: str
-    # src[i] = index in ``original`` of the code point that produced normalized[i].
-    # Monotonic non-decreasing; length == len(normalized).
+    # For normalized[i]: _src[i] = start index and _end[i] = end index (exclusive)
+    # in ``original`` of the chunk that produced it. A chunk is a base code point
+    # plus its following combining marks, so canonical composition across code
+    # points (か + U+3099 -> が) is captured while spans still round out to whole
+    # original chunks (doc/06 P0-7). Both tuples have length == len(normalized).
     _src: tuple[int, ...]
+    _end: tuple[int, ...]
 
     def to_original_span(self, n_start: int, n_end: int) -> tuple[int, int]:
         """Map a ``[n_start, n_end)`` span in ``normalized`` to a span in ``original``."""
         if n_end <= n_start:
             at = self._src[n_start] if n_start < len(self._src) else len(self.original)
             return (at, at)
-        orig_start = self._src[n_start]
-        orig_end = self._src[n_end - 1] + 1
-        return (orig_start, orig_end)
+        return (self._src[n_start], self._end[n_end - 1])
 
     def original_slice(self, n_start: int, n_end: int) -> str:
         s, e = self.to_original_span(n_start, n_end)
@@ -50,12 +52,22 @@ def normalize(text: str, form: NormForm = "nfkc") -> NormalizedText:
         raise ValueError(f"unsupported normalization form: {form!r}")
     buf: list[str] = []
     src: list[int] = []
-    for i, ch in enumerate(text):
-        nch = unicodedata.normalize(py_form, ch)
-        for c in nch:
+    end: list[int] = []
+    n = len(text)
+    i = 0
+    while i < n:
+        start = i
+        i += 1
+        # Absorb following combining marks so base+mark compose as a unit.
+        while i < n and unicodedata.combining(text[i]) != 0:
+            i += 1
+        for c in unicodedata.normalize(py_form, text[start:i]):
             buf.append(c)
-            src.append(i)
-    return NormalizedText(original=text, normalized="".join(buf), _src=tuple(src))
+            src.append(start)
+            end.append(i)
+    return NormalizedText(
+        original=text, normalized="".join(buf), _src=tuple(src), _end=tuple(end)
+    )
 
 
 def normalize_value(text: str, form: NormForm = "nfkc") -> str:

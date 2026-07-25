@@ -17,7 +17,7 @@ from typing import Any
 
 from securitymasker.engine import MaskingEngine
 from securitymasker.models import ContextKind, MaskingSession
-from securitymasker.protocols.base import MaskTransform
+from securitymasker.protocols.base import ALIAS_INSTRUCTION, MaskTransform
 from securitymasker.protocols.structured_walker import (
     transform_all_string_values,
     transform_all_string_values_sync,
@@ -52,6 +52,19 @@ async def mask_request(
         for tool in data["tools"]:
             if isinstance(tool, dict) and isinstance(tool.get("description"), str):
                 tool["description"] = await mask(tool["description"])
+
+    if engine.inject_alias_instruction and session.mappings_by_alias:
+        _prepend_instruction(data)
+
+
+def _prepend_instruction(data: dict[str, Any]) -> None:
+    system = data.get("system")
+    if isinstance(system, str) and system:
+        data["system"] = f"{ALIAS_INSTRUCTION}\n\n{system}"
+    elif isinstance(system, list):
+        system.insert(0, {"type": "text", "text": ALIAS_INSTRUCTION})
+    else:
+        data["system"] = ALIAS_INSTRUCTION
 
 
 async def _mask_system(data: dict[str, Any], mask: MaskTransform) -> None:

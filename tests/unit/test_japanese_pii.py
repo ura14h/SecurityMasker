@@ -130,3 +130,67 @@ async def test_composite_address_single_span() -> None:
     # The whole address is one span (no partial-address leakage, §14.2).
     assert "東京都渋谷区神宮前" in hits[0].original_value
     assert "号" in hits[0].original_value
+
+
+# --- §5.6: My Number confidence gate --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_my_number_min_score_gates_bare_number() -> None:
+    # With a 0.6 gate, a bare (no-context) checksum-valid 12-digit is not masked...
+    gated = JapaneseMyNumberDetector(min_score=0.6)
+    assert await gated.detect(ctx(f"番号 {VALID_MYNUMBER} を確認")) == []
+    # ...but with My Number context it still is (score 0.95).
+    hits = await gated.detect(ctx(f"マイナンバーは{VALID_MYNUMBER}です"))
+    assert len(hits) == 1 and hits[0].entity_type == EntityType.JP_MY_NUMBER.value
+
+
+@pytest.mark.asyncio
+async def test_my_number_default_gate_catches_bare_number() -> None:
+    # Default gate (0.0) is fail-closed: any valid checksum is caught.
+    det = JapaneseMyNumberDetector()
+    hits = await det.detect(ctx(f"番号 {VALID_MYNUMBER} を確認"))
+    assert len(hits) == 1
+
+
+# --- §5.7: 法人番号 (corporate number) ------------------------------------------
+
+
+def _valid_corporate() -> str:
+    from securitymasker.detectors.japanese_corporate_number import corporate_check_digit
+
+    base = "000012050002"
+    return str(corporate_check_digit(base)) + base
+
+
+@pytest.mark.asyncio
+async def test_corporate_number_detected_with_context() -> None:
+    from securitymasker.detectors.japanese_corporate_number import (
+        JapaneseCorporateNumberDetector,
+    )
+
+    det = JapaneseCorporateNumberDetector()
+    num = _valid_corporate()
+    hits = await det.detect(ctx(f"法人番号は{num}です"))
+    assert len(hits) == 1 and hits[0].entity_type == EntityType.JP_CORPORATE_NUMBER.value
+
+
+@pytest.mark.asyncio
+async def test_corporate_number_bare_without_context_ignored() -> None:
+    from securitymasker.detectors.japanese_corporate_number import (
+        JapaneseCorporateNumberDetector,
+    )
+
+    det = JapaneseCorporateNumberDetector()
+    num = _valid_corporate()
+    assert await det.detect(ctx(f"連番 {num} 参照")) == []  # no signal -> skip
+
+
+@pytest.mark.asyncio
+async def test_corporate_number_invalid_checksum_ignored() -> None:
+    from securitymasker.detectors.japanese_corporate_number import (
+        JapaneseCorporateNumberDetector,
+    )
+
+    det = JapaneseCorporateNumberDetector()
+    assert await det.detect(ctx("法人番号は1234567890123です")) == []
