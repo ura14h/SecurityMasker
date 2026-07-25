@@ -42,8 +42,12 @@ SECRET = "unit-test-identity-secret"
 PERSON = "山田太郎"
 
 
-def _headers(tenant: str, user: str, *, secret: str = SECRET, timestamp: str = "",
-             proof: str | None = None) -> dict[str, str]:
+def _headers(tenant: str, user: str, *, secret: str = SECRET,
+             timestamp: str | None = None, proof: str | None = None) -> dict[str, str]:
+    """A complete, fresh assertion. Timestamps are mandatory, so one is included
+    by default; pass ``timestamp=""`` to build the (refused) untimed form."""
+    if timestamp is None:
+        timestamp = str(int(time.time()))
     out = {TENANT_HEADER: tenant, USER_HEADER: user,
            AUTH_HEADER: proof if proof is not None else sign(secret, tenant, user, timestamp)}
     if timestamp:
@@ -104,26 +108,6 @@ def test_length_prefixing_prevents_delimiter_confusion() -> None:
     # ("a", "b:c") and ("a:b", "c") must not produce the same signed payload.
     assert sign(SECRET, "a", "b:c") != sign(SECRET, "a:b", "c")
     assert Identity("a", "b\x1fc").namespace != Identity("a\x1fb", "c").namespace
-
-
-def test_expired_proof_is_rejected() -> None:
-    old = str(time.time() - 3600)
-    with pytest.raises(IdentityError):
-        resolve_identity(MODE_TENANT_USER, _headers("acme", "alice", timestamp=old),
-                         auth_secret=SECRET, max_skew_seconds=300)
-
-
-def test_fresh_timestamped_proof_is_accepted() -> None:
-    now = str(time.time())
-    ident = resolve_identity(MODE_TENANT_USER, _headers("acme", "alice", timestamp=now),
-                             auth_secret=SECRET, max_skew_seconds=300)
-    assert ident.user == "alice"
-
-
-def test_non_numeric_timestamp_is_rejected() -> None:
-    headers = _headers("acme", "alice", timestamp="not-a-number")
-    with pytest.raises(IdentityError):
-        resolve_identity(MODE_TENANT_USER, headers, auth_secret=SECRET)
 
 
 def test_missing_user_header_in_user_mode_is_rejected() -> None:
@@ -297,3 +281,92 @@ def test_local_mode_still_needs_no_identity_config(monkeypatch) -> None:
     monkeypatch.delenv("SECURITYMASKER_MODE", raising=False)
     monkeypatch.delenv("SECURITYMASKER_TENANT_AUTH_SECRET", raising=False)
     assert GatewayRuntime.from_env().mode == MODE_LOCAL
+
+
+# --- assertion freshness / replay (ADR-0008) ----------------------------------------
+# A proof with no timestamp is replayable for the lifetime of the secret, and
+# float() happily parses "nan"/"inf" — against which every comparison is False, so
+# a naive window check PASSES. Both were real holes.
+
+
+def _timed(tenant: str, user: str, ts: str) -> dict[str, str]:
+    return {TENANT_HEADER: tenant, USER_HEADER: user, TIMESTAMP_HEADER: ts,
+            AUTH_HEADER: sign(SECRET, tenant, user, ts)}
+
+
+def test_timestamp_is_required_by_default() -> None:
+    headers = _headers("acme", "alice", timestamp="")
+    with pytest.raises(IdentityError) as exc:
+        resolve_identity(MODE_TENANT_USER, headers, auth_secret=SECRET)
+    assert "timestamp" in str(exc.value).lower()
+
+
+def test_untimed_proof_only_with_an_explicit_downgrade() -> None:
+    headers = _headers("acme", "alice", timestamp="")
+    ident = resolve_identity(MODE_TENANT_USER, headers, auth_secret=SECRET,
+                             require_timestamp=False)
+    assert ident == Identity("acme", "alice")
+
+
+@pytest.mark.parametrize("bad", ["nan", "NaN", "inf", "-inf", "1.7e9", "0x64",
+                                 "12.5", " 42 ", "-1", "abc", "9" * 20])
+def test_non_canonical_timestamps_are_rejected(bad) -> None:
+    # Notably "nan": abs(now - nan) > skew is False, so a value check alone PASSES.
+    with pytest.raises(IdentityError):
+        resolve_identity(MODE_TENANT_USER, _timed("acme", "alice", bad),
+                         auth_secret=SECRET)
+
+
+def test_expired_proof_is_rejected() -> None:
+    now = 1_800_000_000
+    stale = str(now - 301)
+    with pytest.raises(IdentityError) as exc:
+        resolve_identity(MODE_TENANT_USER, _timed("acme", "alice", stale),
+                         auth_secret=SECRET, max_skew_seconds=300, now=now)
+    assert "expired" in str(exc.value)
+
+
+def test_future_dated_proof_is_rejected() -> None:
+    now = 1_800_000_000
+    ahead = str(now + 301)
+    with pytest.raises(IdentityError) as exc:
+        resolve_identity(MODE_TENANT_USER, _timed("acme", "alice", ahead),
+                         auth_secret=SECRET, max_skew_seconds=300, now=now)
+    assert "future" in str(exc.value)
+
+
+@pytest.mark.parametrize("offset", [-300, -299, 0, 299, 300])
+def test_proofs_inside_the_window_are_accepted(offset) -> None:
+    now = 1_800_000_000
+    ident = resolve_identity(MODE_TENANT_USER,
+                             _timed("acme", "alice", str(now + offset)),
+                             auth_secret=SECRET, max_skew_seconds=300, now=now)
+    assert ident.user == "alice"
+
+
+@pytest.mark.parametrize("offset", [-301, 301])
+def test_proofs_outside_the_window_are_rejected(offset) -> None:
+    now = 1_800_000_000
+    with pytest.raises(IdentityError):
+        resolve_identity(MODE_TENANT_USER, _timed("acme", "alice", str(now + offset)),
+                         auth_secret=SECRET, max_skew_seconds=300, now=now)
+
+
+def test_timestamp_is_covered_by_the_signature() -> None:
+    # Re-dating a captured proof must invalidate it, or the window buys nothing.
+    now = 1_800_000_000
+    headers = _timed("acme", "alice", str(now))
+    headers[TIMESTAMP_HEADER] = str(now + 100)      # keep the old signature
+    with pytest.raises(IdentityError):
+        resolve_identity(MODE_TENANT_USER, headers, auth_secret=SECRET,
+                         max_skew_seconds=300, now=now)
+
+
+def test_untimed_assertions_are_opt_in_at_startup(monkeypatch) -> None:
+    monkeypatch.setenv("SECURITYMASKER_CONFIG", "tests/integration/securitymasker.masking.yaml")
+    monkeypatch.setenv("SECURITYMASKER_MODE", MODE_TENANT_USER)
+    monkeypatch.setenv("SECURITYMASKER_TENANT_AUTH_SECRET", SECRET)
+    monkeypatch.delenv("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS", raising=False)
+    assert GatewayRuntime.from_env().require_assertion_timestamp is True
+    monkeypatch.setenv("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS", "1")
+    assert GatewayRuntime.from_env().require_assertion_timestamp is False

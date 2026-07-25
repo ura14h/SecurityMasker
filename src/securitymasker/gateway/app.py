@@ -214,6 +214,7 @@ async def _handle(
             rt.mode, request.headers,
             auth_secret=rt.tenant_auth_secret,
             max_skew_seconds=rt.max_clock_skew_seconds,
+            require_timestamp=rt.require_assertion_timestamp,
         )
     except IdentityError as exc:
         # Fail closed: sharing one caller's alias table with another is exactly

@@ -30,6 +30,8 @@ namespace rather than parsing HTTP itself.
 from __future__ import annotations
 
 import hmac
+import math
+import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -111,6 +113,7 @@ def resolve_identity(
     auth_secret: str | None = None,
     max_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
     now: float | None = None,
+    require_timestamp: bool = True,
 ) -> Identity:
     """Verify the caller's identity, or raise ``IdentityError``.
 
@@ -129,15 +132,16 @@ def resolve_identity(
     tenant = _require(lower, TENANT_HEADER)
     user = _require(lower, USER_HEADER) if mode == MODE_TENANT_USER else LOCAL_USER
     timestamp = lower.get(TIMESTAMP_HEADER, "").strip()
-
-    if timestamp:
-        try:
-            issued = float(timestamp)
-        except ValueError:
-            raise IdentityError("authentication timestamp is not a number") from None
-        current = time.time() if now is None else now
-        if abs(current - issued) > max_skew_seconds:
-            raise IdentityError("authentication proof is outside the allowed time window")
+    if not timestamp:
+        if require_timestamp:
+            # Without a timestamp a captured proof is replayable for as long as the
+            # secret lives. Accepting one is a deliberate, argued-for downgrade.
+            raise IdentityError(
+                f"{TIMESTAMP_HEADER} is required; a proof with no timestamp can be "
+                "replayed indefinitely"
+            )
+    else:
+        _check_freshness(timestamp, max_skew_seconds, now)
 
     presented = lower.get(AUTH_HEADER, "").strip()
     expected = sign(auth_secret, tenant, user, timestamp)
@@ -146,6 +150,36 @@ def resolve_identity(
         raise IdentityError("authentication proof is missing or invalid")
 
     return Identity(tenant, user)
+
+
+# Canonical timestamp form: a decimal integer of seconds since the epoch. Fixing
+# the FORM matters as much as checking the value — "1.7e9", "0x1234" and " 42 "
+# all parse as numbers to float(), but none of them is what an authenticator is
+# supposed to send, and accepting them widens what an attacker can experiment with.
+_EPOCH_RE = re.compile(r"^[0-9]{1,12}$")
+
+
+def _check_freshness(timestamp: str, max_skew_seconds: int, now: float | None) -> None:
+    """Reject a timestamp that is malformed, non-finite, or outside the window.
+
+    ``float()`` accepts ``nan`` and ``inf``, and every comparison against NaN is
+    False — so an ``abs(now - nan) > skew`` check silently PASSES. That is how a
+    literal ``nan`` slipped through the previous implementation, and it is why the
+    format is validated before the value is.
+    """
+    if not _EPOCH_RE.match(timestamp):
+        raise IdentityError(
+            "authentication timestamp must be integer seconds since the epoch"
+        )
+    issued = int(timestamp)
+    current = time.time() if now is None else now
+    if not math.isfinite(current):
+        raise IdentityError("cannot evaluate proof freshness")
+    delta = current - issued
+    if delta > max_skew_seconds:
+        raise IdentityError("authentication proof has expired")
+    if -delta > max_skew_seconds:
+        raise IdentityError("authentication proof is dated in the future")
 
 
 def fingerprint(identity: Identity) -> str:

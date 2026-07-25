@@ -47,8 +47,17 @@ keep exactly the isolation they had — no silent upgrade, no silent downgrade.
 - **Versioned**: a future format change cannot be replayed against this one.
 - Verified with `hmac.compare_digest` — a timing oracle would leak the expected
   proof byte by byte.
-- An optional timestamp is checked against a configurable skew
-  (`SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS`, default 300s), bounding replay.
+- A **mandatory** timestamp is checked against a configurable skew
+  (`SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS`, default 300s), bounding replay. It was
+  optional at first, which meant a captured proof stayed valid for the lifetime of
+  the secret — so it is now required, and omitting it takes an explicit downgrade
+  (`SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS=1`).
+- The timestamp must be **decimal integer seconds since the epoch**. Fixing the
+  form matters as much as checking the value: `float()` accepts `nan`, and every
+  comparison against NaN is False, so a naive `abs(now - ts) > skew` check
+  *passes* for `nan`. That hole was real and is now closed by validating the form
+  before the value. `1.7e9`, `0x64`, `12.5` and whitespace-padded values are
+  likewise refused rather than silently coerced.
 
 **The boundary is enforced in depth**, not at one checkpoint:
 
@@ -95,9 +104,10 @@ secret; logs use a truncated SHA-256 fingerprint of the namespace.
 - The shared secret is a symmetric credential: anyone holding it can mint any
   identity. It must live with the authenticator only, and rotating it invalidates
   outstanding proofs immediately (acceptable: they are per-request).
-- Timestamps are optional. Without one, a captured proof is replayable for as long
-  as the secret lives; deployments that care should send timestamps. This is
-  documented rather than silently assumed.
+- Timestamps are required, so an authenticator that does not send one must be
+  updated (or run with the explicit `SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS=1`
+  downgrade, which doctor should flag). This is a deliberate compatibility break:
+  the alternative was leaving every deployment replayable by default.
 
 ## Residual risk
 

@@ -78,6 +78,7 @@ class GatewayRuntime:
         tenant_header: str = "x-securitymasker-tenant-id",
         tenant_auth_secret: str | None = None,
         max_clock_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
+        require_assertion_timestamp: bool = True,
     ) -> None:
         self.engine = engine
         self.store = store
@@ -90,6 +91,9 @@ class GatewayRuntime:
         self.tenant_header = tenant_header
         self.tenant_auth_secret = tenant_auth_secret
         self.max_clock_skew_seconds = max_clock_skew_seconds
+        # Timestamps are required by default: without one a captured proof is
+        # replayable for the lifetime of the secret (ADR-0008).
+        self.require_assertion_timestamp = require_assertion_timestamp
 
     @classmethod
     def from_env(cls) -> GatewayRuntime:
@@ -164,5 +168,8 @@ class GatewayRuntime:
             max_clock_skew_seconds=int(
                 os.environ.get("SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS",
                                DEFAULT_MAX_SKEW_SECONDS)
+            ),
+            require_assertion_timestamp=(
+                os.environ.get("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS") != "1"
             ),
         )

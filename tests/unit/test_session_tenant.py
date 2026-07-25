@@ -55,10 +55,16 @@ def _engine() -> MaskingEngine:
 TENANT_SECRET = "unit-test-secret"
 
 
-def _proof(tenant: str) -> str:
+def _tenant_headers(tenant: str) -> dict[str, str]:
+    """A complete tenant assertion (timestamps are mandatory, ADR-0008)."""
+    import time
+
     from securitymasker.gateway.identity import LOCAL_USER, sign
 
-    return sign(TENANT_SECRET, tenant, LOCAL_USER)
+    ts = str(int(time.time()))
+    return {"x-securitymasker-tenant-id": tenant,
+            "x-securitymasker-auth-timestamp": ts,
+            "x-securitymasker-tenant-auth": sign(TENANT_SECRET, tenant, LOCAL_USER, ts)}
 
 
 def _app(monkeypatch, *, mode="local", tenant_header="x-securitymasker-tenant-id"):
@@ -106,13 +112,9 @@ async def test_same_session_id_different_tenant_are_isolated(monkeypatch) -> Non
     client, calls = _app(monkeypatch, mode="tenant")
     hdr = {"X-SecurityMasker-Session-ID": "s1"}
     async with client:
-        await client.post("/responses",
-                          headers={**hdr, "x-securitymasker-tenant-id": "A",
-                                   "x-securitymasker-tenant-auth": _proof("A")},
+        await client.post("/responses", headers={**hdr, **_tenant_headers("A")},
                           json={"input": f"担当は{PERSON}"})
-        await client.post("/responses",
-                          headers={**hdr, "x-securitymasker-tenant-id": "B",
-                                   "x-securitymasker-tenant-auth": _proof("B")},
+        await client.post("/responses", headers={**hdr, **_tenant_headers("B")},
                           json={"input": f"担当は{PERSON}"})
     assert len(calls) == 2
     # Same session id + same secret, but different tenants -> independent sessions

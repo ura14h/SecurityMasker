@@ -10,6 +10,8 @@ must not be usable in front of a real provider.
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 from starlette.responses import Response
@@ -28,9 +30,16 @@ def _engine():
     return build_engine(SecurityMaskerConfig.model_validate({"version": 1}))
 
 
+def _tenant_headers(tenant: str, secret: str = SECRET) -> dict[str, str]:
+    """A complete tenant assertion: id, fresh timestamp, and the joint signature."""
+    ts = str(int(time.time()))
+    return {"x-securitymasker-tenant-id": tenant,
+            "x-securitymasker-auth-timestamp": ts,
+            "x-securitymasker-tenant-auth": sign(secret, tenant, LOCAL_USER, ts)}
+
+
 def _tenant_proof(tenant: str, secret: str = SECRET) -> str:
-    # The authenticator signs the versioned canonical payload, not the bare id.
-    return sign(secret, tenant, LOCAL_USER)
+    return _tenant_headers(tenant, secret)["x-securitymasker-tenant-auth"]
 
 
 @pytest.fixture
@@ -91,8 +100,7 @@ async def test_valid_tenant_proof_accepted(multitenant) -> None:
     client, calls = multitenant
     async with client:
         r = await client.post("/responses", json={"input": "hi"},
-                              headers={"x-securitymasker-tenant-id": "A",
-                                       "x-securitymasker-tenant-auth": _tenant_proof("A")})
+                              headers=_tenant_headers("A"))
     assert r.status_code == 200 and len(calls) == 1
 
 
