@@ -25,9 +25,15 @@ from pathlib import Path
 from securitymasker import __version__
 from securitymasker.config import SecurityMaskerConfig, build_engine, load_config
 from securitymasker.errors import ConfigError, SecurityMaskerError
+from securitymasker.integrations.launcher import (
+    DEFAULT_GATEWAY,
+    LaunchRefused,
+    build_plan,
+    describe_manual_setup,
+    new_session_id,
+)
+from securitymasker.integrations.readiness import check_readiness
 from securitymasker.sessions.memory import InMemorySessionStore
-
-SESSION_ENV = "SECURITYMASKER_SESSION_ID"
 
 
 def _load(path: str | None) -> SecurityMaskerConfig:
@@ -117,22 +123,46 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Generate a session id, export it, and exec the wrapped tool (§7)."""
+    """Launch a tool with its traffic GUARANTEED to traverse the proxy (§7).
+
+    Fail-closed: if the gateway is not ready, or we cannot route this particular
+    tool, the child process is never started — reporting success while the tool
+    talks straight to the provider would be the worst possible outcome.
+    """
     if not args.tool:
         print("usage: securitymasker run <tool> [args...]", file=sys.stderr)
         return 2
-    session_id = os.environ.get(SESSION_ENV) or str(uuid.uuid4())
-    env = {**os.environ, SESSION_ENV: session_id}
-    # Log the executable NAME only and a fingerprint of the session id (§25): the
-    # wrapped command line routinely carries tokens/connection strings as flags,
-    # and the raw session id is a correlatable identifier.
+
+    gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
+
+    status = check_readiness(gateway)
+    if not status.ok:
+        print(f"error: {status.detail}. Refusing to launch "
+              f"{Path(args.tool[0]).name!r} unprotected.", file=sys.stderr)
+        print(describe_manual_setup(gateway), file=sys.stderr)
+        return 3
+
+    session_id = new_session_id()
+    try:
+        plan = build_plan(list(args.tool), gateway=gateway, session_id=session_id,
+                          allow_unknown_tool=args.unsafe_unknown_tool)
+    except LaunchRefused as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print(describe_manual_setup(gateway), file=sys.stderr)
+        return 3
+
+    # Log the executable NAME, a fingerprint of the session id, and the route —
+    # never the command line (it routinely carries tokens as flags), the raw
+    # session id, or any credential (§25).
     digest = hashlib.sha256(session_id.encode()).hexdigest()[:12]
+    for warning in plan.warnings:
+        print(f"[securitymasker] WARNING: {warning}", file=sys.stderr)
     print(
-        f"[securitymasker] session {digest}… — launching: {Path(args.tool[0]).name} "
-        f"({len(args.tool) - 1} arg(s) not shown)",
+        f"[securitymasker] session {digest}… — launching {Path(plan.argv[0]).name} "
+        f"({len(args.tool) - 1} arg(s) not shown) via {plan.route_note}",
         file=sys.stderr,
     )
-    os.execvpe(args.tool[0], args.tool, env)  # replaces this process
+    os.execvpe(plan.argv[0], plan.argv, plan.env)  # replaces this process
     return 0  # unreachable
 
 
@@ -229,7 +259,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
 
-    p_run = sub.add_parser("run", help="launch a tool under a fresh masking session")
+    p_run = sub.add_parser(
+        "run", help="launch codex/claude with traffic guaranteed to go via the proxy")
+    p_run.add_argument("--gateway", default=None,
+                       help=f"gateway base URL (default {DEFAULT_GATEWAY})")
+    p_run.add_argument("--unsafe-unknown-tool", action="store_true",
+                       help="launch an unroutable tool UNPROTECTED (not recommended)")
     p_run.add_argument("tool", nargs=argparse.REMAINDER, help="tool and args, e.g. codex")
     p_run.set_defaults(func=cmd_run)
 

@@ -75,16 +75,20 @@ def test_empty_value_error_does_not_leak_siblings(tmp_path) -> None:
 
 def test_run_does_not_echo_arguments(monkeypatch, capsys) -> None:
     from securitymasker import cli
+    from securitymasker.integrations.readiness import Readiness
 
     token = "sk-ant-" + "z" * 30
+    # `run` is now fail-closed on readiness, so the probe must pass to reach the
+    # launch path this test is about (see test_run_guarantee.py for the refusals).
+    monkeypatch.setattr(cli, "check_readiness", lambda gw, **kw: Readiness(True, "ready"))
     monkeypatch.setattr(cli.os, "execvpe", lambda *a, **k: None)
-    monkeypatch.setenv(cli.SESSION_ENV, "session-abc-123")
-    args = cli.build_parser().parse_args(["run", "mytool", "--token", token])
+    args = cli.build_parser().parse_args(["run", "claude", "--token", token])
     cli.cmd_run(args)
     err = capsys.readouterr().err
     assert token not in err, "wrapped command line leaked to stderr"
-    assert "session-abc-123" not in err, "raw session id leaked to stderr"
-    assert "mytool" in err  # the executable name is still useful and safe
+    assert "claude" in err  # the executable name is still useful and safe
+    # Only a fingerprint of the session id is shown, never the id itself.
+    assert "session " in err and "…" in err
 
 
 # --- finding 4 [P1]: deleting an expired session must not drop a held lock ------
