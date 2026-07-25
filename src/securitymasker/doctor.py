@@ -398,10 +398,20 @@ def run_checks(
     require_ready: bool = False,
 ) -> Iterator[CheckResult]:
     """Yield every check in a stable order. Pure except for the store probe."""
+    yield from _run_checks(config_path=config_path, environ=environ, gateway=gateway,
+                           require_ready=require_ready, captured=None)
+
+
+def _run_checks(
+    *, config_path: str | None, environ: dict[str, str], gateway: str,
+    require_ready: bool, captured: dict[str, Any] | None,
+) -> Iterator[CheckResult]:
     yield check_python()
     yield check_runtime_dependencies()
 
     config_result, config, engine = check_config(config_path)
+    if captured is not None:
+        captured["config"], captured["engine"] = config, engine
     yield config_result
 
     # Reuse the pipeline check_config already built. Building another would load
@@ -448,3 +458,23 @@ def render_json(results: list[CheckResult]) -> str:
 
 
 ProbeRunner = Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class BuiltArtifacts:
+    """What ``run_checks`` constructed, so callers can reuse it (ADR-0011)."""
+
+    config: Any = None
+    engine: Any = None
+
+
+def run_checks_with_engine(
+    *, config_path: str | None, environ: dict[str, str], gateway: str,
+    require_ready: bool = False,
+) -> tuple[list[CheckResult], BuiltArtifacts]:
+    """``run_checks`` plus the artefacts it built, so nothing is built twice."""
+    captured: dict[str, Any] = {}
+    results = list(_run_checks(config_path=config_path, environ=environ,
+                               gateway=gateway, require_ready=require_ready,
+                               captured=captured))
+    return results, BuiltArtifacts(captured.get("config"), captured.get("engine"))

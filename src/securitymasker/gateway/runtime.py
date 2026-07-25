@@ -96,7 +96,14 @@ class GatewayRuntime:
         self.require_assertion_timestamp = require_assertion_timestamp
 
     @classmethod
-    def from_env(cls) -> GatewayRuntime:
+    def from_env(cls, *, engine: MaskingEngine | None = None,
+                 config: Any = None) -> GatewayRuntime:
+        """Build the runtime from the environment.
+
+        ``engine``/``config`` let a caller that has ALREADY built them (doctor)
+        hand them over instead of paying for a second construction — with NER
+        enabled that is a second ~1GB model load for one diagnosis.
+        """
         # Fail-closed startup (§26, doc/06 P0-1): a masking config is REQUIRED. The
         # engine-less transparent mode exists only as an explicit, dev-only opt-in.
         config_path = os.environ.get("SECURITYMASKER_CONFIG")
@@ -111,8 +118,10 @@ class GatewayRuntime:
             engine = None
             store: SessionStore = InMemorySessionStore()
         else:
-            config = load_config(config_path)
-            engine = build_engine(config)
+            if config is None:
+                config = load_config(config_path)
+            if engine is None:
+                engine = build_engine(config)
             store = _build_store(
                 idle_ttl=parse_duration(config.defaults.session_idle_ttl),
                 absolute_ttl=parse_duration(config.defaults.session_absolute_ttl),

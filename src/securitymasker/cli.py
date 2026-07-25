@@ -92,9 +92,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # An explicitly requested gateway means the operator expects one to be there,
     # so its absence is a failure rather than a pre-flight note.
     require_ready = args.require_ready or args.gateway is not None
-    results = list(checks.run_checks(config_path=config_path,
-                                     environ=dict(os.environ), gateway=gateway,
-                                     require_ready=require_ready))
+    results, built = checks.run_checks_with_engine(
+        config_path=config_path, environ=dict(os.environ), gateway=gateway,
+        require_ready=require_ready)
     # Probing the store needs an event loop and a built runtime, so it runs here
     # rather than inside the pure check sequence.
     if config_path:
@@ -103,7 +103,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
             # `--config` must drive the probe too, not just the pure checks.
             os.environ["SECURITYMASKER_CONFIG"] = config_path
-            runtime = GatewayRuntime.from_env()
+            # Hand over the engine/config the checks already built: constructing
+            # them again would load the NER model a second time.
+            runtime = GatewayRuntime.from_env(engine=built.engine, config=built.config)
             results.append(asyncio.run(checks.check_store_probe(runtime.store)))
         except (SecurityMaskerError, OSError) as exc:
             # Any operator-facing failure (bad config, unreadable path, unreachable
