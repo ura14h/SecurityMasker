@@ -1,23 +1,27 @@
 # Configuration
 
-Two files: the **LiteLLM proxy config** (models + registering SecurityMasker) and
-the **SecurityMasker dictionary** (`SECURITYMASKER_CONFIG`). Examples are in
-[`config/`](../config/).
+The proxy (ADR-0006) is configured by the **SecurityMasker dictionary**
+(`SECURITYMASKER_CONFIG`) plus a few environment variables. Example dictionary in
+[`config/securitymasker.example.yaml`](../config/securitymasker.example.yaml).
 
-## Registering SecurityMasker (LiteLLM config)
+## Running the proxy
 
-Register as a **callback** (runs the full mask + restore + streaming lifecycle):
-
-```yaml
-litellm_settings:
-  set_verbose: false
-  callbacks: ["securitymasker_guardrail.securitymasker_callback"]
+```bash
+export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
+securitymasker gateway --port 4000
 ```
 
-`securitymasker_guardrail.py` is a one-line shim placed next to the config that
-re-exports the installed callback instance. LiteLLM resolves the dotted path as a
-file relative to the config dir, and the callbacks path needs an instance, not a
-class — see [compatibility.md](compatibility.md).
+Environment:
+
+- `SECURITYMASKER_CONFIG` — dictionary/policy YAML (below). Unset → transparent (no masking).
+- `SECURITYMASKER_OPENAI_UPSTREAM` — default `https://chatgpt.com/backend-api/codex`
+  (Codex ChatGPT auth). For API-key OpenAI: `https://api.openai.com/v1`.
+- `SECURITYMASKER_ANTHROPIC_UPSTREAM` — default `https://api.anthropic.com`.
+- `SECURITYMASKER_MASTER_KEY` — 32 bytes base64, required by the Redis session store (§8).
+
+Clients: Codex uses a `requires_openai_auth = true` provider pointing at the proxy
+(the ChatGPT OAuth token is passed through — no API key); Claude Code sets
+`ANTHROPIC_BASE_URL`. See [operations.md](operations.md).
 
 ## Dictionary (SECURITYMASKER_CONFIG)
 

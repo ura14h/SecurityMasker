@@ -1,12 +1,32 @@
-# Compatibility — 対応バージョンと確認済みフック
+# Compatibility — 対応バージョンと検証済み経路
 
-`doc/00-First-Order.md` §4・§37（Phase 0）に基づく互換性固定の記録。
-ここに記載したバージョン・シグネチャは `tests/unit/test_litellm_hook_contract.py` で機械的に固定している。
-アップグレード時はまず当該テストを実行し、失敗したら `src/securitymasker/integrations/litellm.py` を先に見直すこと。
+> **重要（2026-07-25, ADR-0006）**: LiteLLM 依存は**撤廃**した。以下「§Phase 0〜3」「§Codex 実 E2E」の
+> LiteLLM 関連記述は、撤廃の**理由**を残す歴史的記録。現行アーキテクチャは自作透過プロキシ
+> （`securitymasker.gateway`）。
 
-最終確認日: 2026-07-24
+## 現行構成の検証（自作プロキシ・実機、2026-07-25）
 
-## 固定バージョン
+- **透過 ChatGPT OAuth パススルー成立**: Codex を `requires_openai_auth=true` ＋ カスタム base_url に設定
+  すると、Codex は自分の ChatGPT OAuth JWT（Bearer）＋ `chatgpt-account-id` をプロキシへ送る
+  （`/models`・`/responses`）。プロキシは Authorization を素通し転送（保存/復号/ログなし §25）。
+- **実 Codex 0.145 → 新プロキシ → 本物の ChatGPT バックエンド E2E 成功**:
+  - chatgpt.com への実送信ボディに登録機密 **0 件**（alias のみ）。gateway ログにも 0。
+  - **Codex 画面に原本が復元表示**（山田太郎 / 株式会社極秘技研）— LiteLLM で不可能だった
+    Responses ストリーミング復元がクライアントまで到達。
+- Anthropic Messages（stream/非stream）も同プロキシで mask+restore・0 漏えいを確認。
+- 依存: Python 3.12 / Starlette / uvicorn / httpx / pydantic / cryptography（`requirements.lock`、36 pkg）。
+  Presidio 日本語 NER は任意（`presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0`）。
+
+---
+
+## （歴史的記録）LiteLLM 撤廃の理由と Phase 0 互換性固定
+
+以下は撤廃前の LiteLLM 1.93.0 に対する検証記録。撤廃の判断根拠（特に §13・Codex 実 E2E の
+「Responses HTTP ストリーミング応答をどのコールバックでも書き換え不能」）を保存する。
+
+最終確認日: 2026-07-24（LiteLLM 撤廃: 2026-07-25）
+
+## 固定バージョン（撤廃前）
 
 | コンポーネント | 固定バージョン | 備考 |
 |---|---|---|
