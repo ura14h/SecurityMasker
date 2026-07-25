@@ -1,4 +1,8 @@
-# Full dev lock: runtime + test/lint/type tooling. Used by CI, never by the image.
+# Full dev lock: runtime + redis + test/lint/type tooling.
+# CI installs from THIS file, so it tests the same runtime set production ships.
+# The production image installs requirements.lock (runtime only) instead.
+PyYAML==6.0.3
+Pygments==2.20.0
 annotated-types==0.8.0
 anyio==4.14.2
 certifi==2026.7.22
@@ -8,7 +12,7 @@ cryptography==48.0.1
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-hypothesis==6.161.2
+hypothesis==6.161.4
 idna==3.18
 iniconfig==2.3.0
 librt==0.13.0
@@ -18,14 +22,13 @@ packaging==26.2
 pathspec==1.1.1
 pluggy==1.6.0
 pycparser==3.0
-pydantic==2.13.4
 pydantic-settings==2.14.2
+pydantic==2.13.4
 pydantic_core==2.46.4
-Pygments==2.20.0
-pytest==8.4.2
 pytest-asyncio==0.24.0
+pytest==8.4.2
 python-dotenv==1.2.2
-PyYAML==6.0.3
+redis==8.0.1
 respx==0.22.0
 ruff==0.8.6
 sortedcontainers==2.4.0

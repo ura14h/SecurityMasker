@@ -2,10 +2,15 @@
 # Hardened: minimal base, non-root, no build caches, healthcheck (§35).
 #
 # Reproducible install: runtime deps come from requirements.lock (exact pins), then
-# the package is installed --no-deps so nothing is re-resolved (doc/06 P2-3). For a
-# fully reproducible production build, pin the base image by digest, e.g.
-#   FROM python:3.12-slim@sha256:<digest>
-FROM python:3.12-slim AS runtime
+# the package is installed --no-deps so nothing is re-resolved (doc/06 P2-3).
+#
+# The base image is pinned by DIGEST, not just by tag: `python:3.12-slim` is
+# republished continuously, so a tag-only reference means two builds of the same
+# commit can contain different bases. The tag is kept alongside for readability —
+# Docker uses the digest and ignores the tag. This is a multi-arch index digest,
+# so it resolves correctly on both arm64 and amd64.
+# Refresh procedure: docs/operations.md ("Updating pinned base images").
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

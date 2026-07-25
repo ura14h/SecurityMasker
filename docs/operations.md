@@ -95,3 +95,49 @@ python -m tests.evaluation.benchmark                        # latency benchmark
 
 CI (`.github/workflows/ci.yml`) runs ruff, mypy --strict, the test suites, and the
 live gateway integration test.
+
+
+## Updating pinned base images
+
+Base images are pinned by **digest**, not only by tag: `python:3.12-slim` and
+`redis:7-alpine` are republished continuously, so a tag-only reference means two
+builds of the same commit can contain different bases. `tests/unit/test_supply_chain.py`
+fails if any image loses its digest, so this cannot silently regress.
+
+To refresh a pin (do this deliberately — for a CVE fix, or on a routine cadence):
+
+```bash
+IMAGE=python TAG=3.12-slim
+TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/$IMAGE:pull" | python3 -c "import json,sys;print(json.load(sys.stdin)['token'])")
+curl -sI -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+  "https://registry-1.docker.io/v2/library/$IMAGE/manifests/$TAG" | grep -i docker-content-digest
+```
+
+Put the result in `Dockerfile` / `docker-compose.yml` as `tag@sha256:...`, keeping
+the tag for readability. Use the **index** digest shown above (not a
+per-architecture manifest digest) so the pin resolves on both arm64 and amd64.
+Then rebuild and re-run the suite.
+
+**Vulnerability response.** A pinned digest does not become safe by being pinned —
+it freezes a known state, including known CVEs. Re-pin when the upstream image
+publishes a security update, and scan the built image (for example
+`docker scout cves` or `trivy image`) before promoting it. Pinning gives you
+reproducibility and a defined thing to scan; it is not a substitute for scanning.
+
+### Supply-chain status, honestly
+
+| Control | State |
+|---|---|
+| Base image digest pinning | **done** (Dockerfile, compose, enforced by a test) |
+| Runtime dependency pinning | **done** (`requirements.lock`, installed with `--no-deps`) |
+| Dev/CI dependency pinning | **done** (`requirements-dev.lock`, a superset of runtime) |
+| Python package hash verification | **not implemented** — the locks pin versions, not hashes. `pip install --require-hashes` needs a hash-bearing lock; a follow-up. |
+| Image signing / provenance attestation | **not implemented** — no cosign signature or SLSA provenance is produced. |
+| SBOM generation | **not implemented** — no SBOM is emitted at build time. |
+| Vulnerability scanning in CI | **not implemented** — scanning is a manual step today. |
+
+The four "not implemented" rows are real residual risk, not oversights being
+papered over: a pinned digest tells you *what* you built, not that it is free of
+known vulnerabilities, and nothing here proves the image you run is the image this
+repository built.
