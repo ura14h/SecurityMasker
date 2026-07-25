@@ -28,6 +28,7 @@ from securitymasker.detectors.japanese_my_number import JapaneseMyNumberDetector
 from securitymasker.detectors.japanese_phone import JapanesePhoneDetector
 from securitymasker.detectors.japanese_postal_code import JapanesePostalCodeDetector
 from securitymasker.detectors.regex import RegexDetector, RegexEntry
+from securitymasker.detectors.safety import check_regex_safety
 from securitymasker.detectors.secret_patterns import build_secret_detector
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError
@@ -64,6 +65,8 @@ class Defaults(BaseModel):
     session_idle_ttl: str = "4h"
     session_absolute_ttl: str = "24h"
     inject_alias_instruction: bool = True
+    # Per-detector wall-clock budget (doc/06 P1-5). 0 disables the bound.
+    detector_timeout_seconds: float = Field(default=10.0, ge=0.0, le=300.0)
 
     @field_validator("fail_mode")
     @classmethod
@@ -178,6 +181,9 @@ class RegexConfig(BaseModel):
                 f"pattern {self.id!r}: capture group {self.group} is out of range "
                 f"(the expression has {compiled.groups} group(s))"
             )
+        # Refuse known catastrophic-backtracking shapes at load: `re` cannot be
+        # interrupted mid-match, so a bad user pattern is a DoS (doc/06 P1-5).
+        check_regex_safety(self.pattern, rule_id=self.id)
         return self
 
 
@@ -441,4 +447,5 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         fail_mode=config.defaults.fail_mode,
         tool_trust=ToolTrustPolicy(frozenset(config.tool_trust.trusted_local_tools)),
         inject_alias_instruction=config.defaults.inject_alias_instruction,
+        detector_timeout=config.defaults.detector_timeout_seconds,
     )

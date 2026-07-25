@@ -11,6 +11,7 @@ than letting original data through (§26).
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -86,7 +87,9 @@ class MaskingEngine:
         fail_mode: str = "closed",
         tool_trust: ToolTrustPolicy | None = None,
         inject_alias_instruction: bool = False,
+        detector_timeout: float = 10.0,
     ) -> None:
+        self._detector_timeout = detector_timeout
         self._detectors = detectors
         self._normalization = normalization
         self._merge_surface_forms = merge_surface_forms
@@ -125,7 +128,24 @@ class MaskingEngine:
         found: list[DetectionResult] = []
         for detector in self._detectors:
             try:
-                found.extend(await detector.detect(ctx))
+                if self._detector_timeout > 0:
+                    # Bound how long any one detector may take. `re` cannot be
+                    # interrupted mid-match, so this does not stop a runaway
+                    # pattern — it stops us WAITING for it, and the request then
+                    # fails closed instead of hanging (doc/06 P1-5). Dangerous
+                    # patterns are additionally refused at config load.
+                    found.extend(
+                        await asyncio.wait_for(
+                            detector.detect(ctx), timeout=self._detector_timeout
+                        )
+                    )
+                else:
+                    found.extend(await detector.detect(ctx))
+            except TimeoutError as exc:
+                name = getattr(detector, "name", "detector")
+                raise DetectionError(
+                    f"detector {name!r} exceeded its {self._detector_timeout}s budget"
+                ) from exc
             except DetectionError:
                 name = getattr(detector, "name", "")
                 if self._fail_mode == "open" and name in _FAIL_OPEN_ELIGIBLE:
