@@ -1,23 +1,30 @@
 # Exact lock for the OPTIONAL Japanese NER extra (ADR-0009/0010).
-# Installed only by the 'ner' Docker stage / an explicit opt-in install:
+# COMPLETE transitive closure of transformers/torch/sentencepiece, computed
+# from installed metadata rather than a hand-written name filter — which is
+# how huggingface-hub (a hard transformers dependency) went missing before.
+# Packages already pinned by requirements.lock are omitted: the ner stage
+# layers on top of it, so repeating them would create two sources of truth.
+#
 #   pip install -r requirements.lock -r requirements-ner.lock
-# Regenerate: pip install '.[ner]' in a clean venv, then pip freeze.
-Jinja2==3.1.6
-MarkupSafe==3.0.3
+#
+# The ner Docker stage installs this with --no-deps, so anything missing here
+# fails the build rather than being resolved dynamically at build time.
 charset-normalizer==3.4.9
 filelock==3.32.0
 fsspec==2026.6.0
 hf-xet==1.5.2
-idna==3.18
+huggingface_hub==0.36.2
+Jinja2==3.1.6
+MarkupSafe==3.0.3
 mpmath==1.3.0
 networkx==3.6.1
 numpy==2.4.6
 packaging==26.2
 regex==2026.7.19
-requests-file==3.0.1
 requests==2.34.2
 safetensors==0.8.0
 sentencepiece==0.2.2
+setuptools==83.0.0
 sympy==1.14.0
 tokenizers==0.22.2
 torch==2.13.0

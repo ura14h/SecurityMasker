@@ -63,7 +63,9 @@ CMD ["securitymasker", "gateway", "--host", "0.0.0.0", "--port", "4000"]
 FROM runtime AS ner
 USER root
 COPY requirements-ner.lock ./
-RUN pip install --no-cache-dir -r requirements-ner.lock
+# --no-deps: the lock is the complete set, so nothing may be resolved
+# dynamically at build time (that is what 'exact lock' has to mean).
+RUN pip install --no-cache-dir --no-deps -r requirements-ner.lock
 USER securitymasker
 # Set HF_HOME to a writable, mountable location so the fetched model survives
 # container restarts and can be verified once per deploy rather than per start.
@@ -76,5 +78,5 @@ ENV HF_HOME=/app/.cache/huggingface
 FROM runtime AS demo
 USER root
 COPY devtools ./devtools
-RUN chown -R securitymasker /app/tests
+RUN chown -R securitymasker /app/devtools
 USER securitymasker

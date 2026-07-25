@@ -69,6 +69,11 @@ MANIFESTS: dict[str, ModelManifest] = {
         ModelManifest(
             model="tsmatz/xlm-roberta-ner-japanese",
             revision="aba094e118d5ffc622e9b25e07edc49f9dd85feb",
+            # EVERY file transformers reads, not just the weights. config.json
+            # carries id2label — the label schema we validate against — and the
+            # architecture; the tokenizer files decide how text is split. Altering
+            # any of them changes what gets detected, so leaving them unpinned made
+            # "complete manifest" untrue.
             artifacts=(
                 Artifact("model.safetensors",
                          "a042d71446dd23e16dc2dbb1c7bf5b56b616dd8a53cdbb9af26597ba978b40be",
@@ -79,6 +84,15 @@ MANIFESTS: dict[str, ModelManifest] = {
                 Artifact("tokenizer.json",
                          "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
                          17082660),
+                Artifact("config.json",
+                         "ac1e8e80168c16674bfb9f66d5b7684fb4f118010e02667b7e5da3e608712c4c",
+                         1028),
+                Artifact("special_tokens_map.json",
+                         "a09b8a9068400a40034c888de76f7f2f616bc49ff73da42078b46eb0992f6b71",
+                         279),
+                Artifact("tokenizer_config.json",
+                         "6ec486a78f25d56b2de7000ddf9efd7d31b6aca4807ebce1edb9da9fa1308e76",
+                         450),
             ),
         ),
 }

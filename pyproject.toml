@@ -71,7 +71,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 # Test data / fixture strings are naturally long.
 "tests/**/*.py" = ["E501"]
 # Mock upstream emits inline JSON SSE lines that are naturally long.
-"tests/integration/mock_upstream.py" = ["E501"]
+"devtools/mock_upstream.py" = ["E501"]
 # Secret-pattern table rows are naturally long (regex + metadata on one line).
 "src/securitymasker/detectors/secret_patterns.py" = ["E501"]
 # Entity/label mapping tables are naturally long (tuple rows on one line).

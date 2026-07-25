@@ -1,8 +1,8 @@
 """Mock upstream LLM server for leakage / SSE-structure verification.
 
 A single ASGI app that emulates just enough of the OpenAI (chat/completions +
-Responses) and Anthropic (Messages) wire protocols for LiteLLM Proxy to route to
-it as a fake provider. Every received request body is appended (as JSON lines) to
+Responses) and Anthropic (Messages) wire protocols for the proxy to route to it
+as a fake provider. Every received request body is appended (as JSON lines) to
 the file named by ``$SM_MOCK_RECORD`` so tests can assert what actually left the
 gateway (``doc/00-First-Order.md`` §30.5 leakage tests).
 
@@ -206,7 +206,7 @@ async def health(request: Request):
     return JSONResponse({"ok": True, "ts": time.time()})
 
 
-# Accept both /v1/* and /* path variants (LiteLLM may or may not add the prefix).
+# Accept both /v1/* and /* path variants (the proxy may or may not add the prefix).
 routes = [
     Route("/health", health, methods=["GET"]),
     Route("/chat/completions", chat_completions, methods=["POST"]),
