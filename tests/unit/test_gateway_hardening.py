@@ -43,7 +43,7 @@ def _runtime() -> GatewayRuntime:
 def app_and_calls(monkeypatch):
     calls: list[dict] = []
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         calls.append({"url": url, "headers": dict(headers), "body": body})
         return Response(b"data: {}\n\n", media_type="text/event-stream")
 
@@ -205,7 +205,7 @@ async def test_oversized_field_fails_closed(monkeypatch) -> None:
 
     calls: list[dict] = []
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         calls.append({"url": url})
         return Response(b"", media_type="text/event-stream")
 
@@ -242,7 +242,7 @@ async def test_readiness_ok_with_engine(app_and_calls) -> None:
 
 @pytest.mark.asyncio
 async def test_readiness_fails_without_engine(monkeypatch) -> None:
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         raise AssertionError("must not forward")
 
     monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)

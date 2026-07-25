@@ -9,7 +9,7 @@ restores aliases; non-streaming responses are buffered for dict restoration.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
 import httpx
@@ -41,8 +41,14 @@ async def forward_streaming(
     headers: Mapping[str, str],
     body: bytes,
     processor: StreamProcessor | None = None,
+    on_complete: Callable[[StreamProcessor], Awaitable[None]] | None = None,
 ) -> StreamingResponse:
-    """Forward and stream the response back, optionally restored via ``processor``."""
+    """Forward and stream the response back, optionally restored via ``processor``.
+
+    ``on_complete`` runs once the upstream stream ends, giving the caller an async
+    point to persist what the processor observed (e.g. binding the response id to
+    this session, doc/06 P1-1) — the processor itself is sync and cannot await.
+    """
     client = httpx.AsyncClient(timeout=_TIMEOUT)
     upstream = await client.send(
         client.build_request(method, url, headers=_fwd_req_headers(headers), content=body),
@@ -57,6 +63,8 @@ async def forward_streaming(
                 tail = processor.flush()
                 if tail:
                     yield tail
+                if on_complete is not None:
+                    await on_complete(processor)
         finally:
             await upstream.aclose()
             await client.aclose()

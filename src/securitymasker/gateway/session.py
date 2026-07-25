@@ -37,6 +37,9 @@ LOCAL_TENANT = "local"
 class ResolvedSession:
     session_id: str
     stable: bool  # False => ephemeral (no durable identifier was available)
+    # Present when the request referenced a prior response; the caller resolves it
+    # against the store's response bindings to continue that session (P1-1).
+    previous_response_id: str | None = None
 
 
 def resolve_session(
@@ -56,9 +59,13 @@ def resolve_session(
     if body is not None:
         prev = body.get("previous_response_id")
         if isinstance(prev, str) and prev:
-            # Weakly stable: it changes per turn, so continuity across >2 turns
-            # needs an explicit session id. Good enough to bind a single follow-up.
-            return ResolvedSession(f"prev:{prev}", stable=True)
+            # NOT stable on its own: the id changes every turn, so using it as the
+            # session key would fork the alias table each turn. It is only a lookup
+            # handle — the caller resolves it against the store's response bindings
+            # and, on a hit, continues the ORIGINAL session (doc/06 P1-1).
+            return ResolvedSession(
+                f"eph:{uuid.uuid4()}", stable=False, previous_response_id=prev
+            )
 
     return ResolvedSession(f"eph:{uuid.uuid4()}", stable=False)
 

@@ -46,7 +46,7 @@ def _runtime(mode: str = "local") -> GatewayRuntime:
 def app_and_calls(monkeypatch):
     calls: list[dict] = []
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         calls.append({"url": url, "headers": dict(headers), "body": body})
         return Response(b"", media_type="text/event-stream")
 

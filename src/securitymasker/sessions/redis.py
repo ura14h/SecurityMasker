@@ -225,6 +225,19 @@ class RedisSessionStore:
             out.append(text.rsplit(":", 1)[-1])
         return out
 
+    async def bind_response(self, response_id: str, session_key: str) -> None:
+        """Bind a response id to the session that produced it (doc/06 P1-1)."""
+        await self._redis.set(
+            f"{self._ns}:resp:{response_id}", session_key.encode(),
+            ex=int(self._idle_ttl.total_seconds()),
+        )
+
+    async def resolve_response(self, response_id: str) -> str | None:
+        value = await self._redis.get(f"{self._ns}:resp:{response_id}")
+        if value is None:
+            return None
+        return value.decode() if isinstance(value, bytes) else str(value)
+
     @asynccontextmanager
     async def lock(
         self, session_id: str, tenant_id: str | None = None

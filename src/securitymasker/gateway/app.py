@@ -184,14 +184,25 @@ async def _handle(
         return _error(403, "tenant_required", "A trusted tenant identity is required.")
 
     resolved = resolve_session(request.headers, data)
-    if not resolved.stable and _payload_has_alias_shape(data):
+    store_key = namespaced_key(tenant, resolved.session_id)
+    stable = resolved.stable
+    if not stable and resolved.previous_response_id:
+        # previous_response_id changes every turn, so it is a lookup handle only:
+        # continue the session that actually produced that response (doc/06 P1-1).
+        # The stored value is already a full, tenant-namespaced store key.
+        bound = await rt.store.resolve_response(
+            namespaced_key(tenant, resolved.previous_response_id)
+        )
+        if bound is not None:
+            store_key, stable = bound, True
+
+    if not stable and _payload_has_alias_shape(data):
         # Prior-turn aliases but no stable session to restore them: block instead
         # of silently starting a fresh session and corrupting the turn (P1-1).
         _log.warning("sm_block_unresolved_session", path=path)
         return _error(409, "session_unresolved",
                       "Request references prior aliases but no stable session id was provided.")
 
-    store_key = namespaced_key(tenant, resolved.session_id)
     try:
         # Lock first so get/create/mask/save share one exclusion window — two
         # workers can't fork the same session's alias table (doc/06 P1-9).
@@ -222,7 +233,16 @@ async def _handle(
         proc = stream_processor(rt.engine.literal_restorations(session),
                                 rt.engine.make_restorer(session),
                                 rt.engine.tool_trust)
-        return await forward_streaming(request.method, url, headers, masked, proc)
+        # Bind response ids seen in the stream back to THIS session so the next
+        # turn's previous_response_id continues it (doc/06 P1-1).
+        bind_tenant: str = tenant
+
+        async def _bind_stream(p: Any, key: str = store_key, t: str = bind_tenant) -> None:
+            for rid in getattr(p, "response_ids", ()):
+                await rt.store.bind_response(namespaced_key(t, rid), key)
+
+        return await forward_streaming(request.method, url, headers, masked, proc,
+                                       on_complete=_bind_stream)
 
     status, resp_headers, content = await forward_buffered(request.method, url, headers, masked)
     resp = None
@@ -232,6 +252,11 @@ async def _handle(
     except (json.JSONDecodeError, UnicodeDecodeError):
         resp = None
     if resp is not None:
+        # Bind this response id to the session before restoring, so the next turn's
+        # previous_response_id resolves back here (doc/06 P1-1).
+        rid = resp.get("id")
+        if isinstance(rid, str) and rid:
+            await rt.store.bind_response(namespaced_key(tenant, rid), store_key)
         restore_dict(rt.engine, session, resp)
         return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
                         media_type="application/json")

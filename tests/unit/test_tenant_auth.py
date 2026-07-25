@@ -42,7 +42,7 @@ def multitenant(monkeypatch):
         calls.append({"body": body})
         return 200, {"content-type": "application/json"}, b"{}"
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         calls.append({"body": body})
         return Response(b"", media_type="text/event-stream")
 

@@ -36,6 +36,8 @@ class InMemorySessionStore:
         self._sessions: dict[str, MaskingSession] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._guard = asyncio.Lock()
+        # response_id -> (session_key, bound_at) for multi-turn continuity (P1-1).
+        self._response_bindings: dict[str, tuple[str, datetime]] = {}
 
     async def get(self, session_id: str) -> MaskingSession | None:
         session = self._sessions.get(session_id)
@@ -100,6 +102,19 @@ class InMemorySessionStore:
             for sid, s in list(self._sessions.items())
             if not is_expired(s, self._idle_ttl)
         ]
+
+    async def bind_response(self, response_id: str, session_key: str) -> None:
+        self._response_bindings[response_id] = (session_key, _now())
+
+    async def resolve_response(self, response_id: str) -> str | None:
+        entry = self._response_bindings.get(response_id)
+        if entry is None:
+            return None
+        session_key, bound_at = entry
+        if (_now() - bound_at) >= self._idle_ttl:
+            self._response_bindings.pop(response_id, None)
+            return None
+        return session_key
 
     def lock(self, session_id: str) -> AbstractAsyncContextManager[None]:
         lock = self._locks.get(session_id)

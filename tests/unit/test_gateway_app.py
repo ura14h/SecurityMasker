@@ -49,7 +49,7 @@ def app_client(monkeypatch):
                 "content": [{"type": "output_text", "text": text}]}]}
         return 200, {"content-type": "application/json"}, json.dumps(resp).encode()
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         captured["body"] = body
         text = json.loads(body).get("input", "")
         # Echo the masked text as split output_text deltas + a done event.
@@ -104,7 +104,7 @@ async def test_responses_stream_mask_and_restore(app_client) -> None:
 async def test_transparent_when_no_engine(monkeypatch) -> None:
     captured: dict[str, bytes] = {}
 
-    async def fake_streaming(method, url, headers, body, processor=None):
+    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
         captured["body"] = body
         return Response(b"ok")
 

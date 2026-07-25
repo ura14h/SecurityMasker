@@ -67,6 +67,9 @@ class ResponsesStreamProcessor:
         self._arg_sizes: dict[str, int] = {}
         self._arg_overflow: set[str] = set()
         self._item_names: dict[str, str] = {}  # item_id -> tool name (for trust, P0-8)
+        # Response ids seen in the stream; the gateway binds them to this session
+        # so the next turn's previous_response_id continues it (doc/06 P1-1).
+        self.response_ids: set[str] = set()
         self._reasm = ToolArgumentReassembler(restore)
 
     def feed(self, data: bytes) -> bytes:
@@ -121,6 +124,9 @@ class ResponsesStreamProcessor:
                     item["arguments"] = self._safe_args(item["arguments"])
             return [_reserialize(ev, payload)]
         if "response" in payload and isinstance(payload["response"], dict):
+            rid = payload["response"].get("id")
+            if isinstance(rid, str) and rid:
+                self.response_ids.add(rid)
             _restore_response_dict(payload["response"], self._restore)
             return [_reserialize(ev, payload)]
         return [ev]
