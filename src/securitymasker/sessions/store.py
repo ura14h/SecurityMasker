@@ -21,16 +21,25 @@ DEFAULT_ABSOLUTE_TTL = timedelta(hours=24)
 class LockHandle:
     """Handle yielded by ``SessionStore.lock``.
 
-    ``check()`` raises if exclusivity was lost while the critical section was
-    running (a distributed lock can expire or be taken over). Callers must call it
-    before acting on the protected state — in the gateway, before anything is sent
-    upstream — so two workers never mutate one session's alias table (doc/06 P1-9).
+    A distributed lock can expire or be taken over mid-request, so the holder must
+    confirm it still owns the lock before mutating the protected state.
+
+    - ``check()`` is a cheap, non-blocking read of what the watchdog last saw.
+    - ``verify()`` actively re-reads ownership from the store; call it immediately
+      BEFORE writing, so a lost lock aborts the request *before* a non-owner write
+      lands (doc/06 P1-9).
+
+    Residual risk: even ``verify()`` leaves a small window between the ownership
+    read and the write. Closing it fully needs the write itself to be conditional
+    on the token (a fencing token, or a Lua script that checks the lock and writes
+    the session in one round trip); that is recorded in doc/07 as not implemented.
     """
 
-    __slots__ = ("_lost",)
+    __slots__ = ("_lost", "_verifier")
 
-    def __init__(self, lost: Any = None) -> None:
+    def __init__(self, lost: Any = None, verifier: Any = None) -> None:
         self._lost = lost
+        self._verifier = verifier
 
     @property
     def lost(self) -> bool:
@@ -38,12 +47,22 @@ class LockHandle:
 
     def check(self) -> None:
         if self.lost:
-            from securitymasker.errors import SessionError
+            self._raise()
 
-            raise SessionError(
-                "session lock was lost while the request was in flight; "
-                "refusing to continue without exclusivity"
-            )
+    async def verify(self) -> None:
+        """Actively confirm ownership, then raise if it has been lost."""
+        if (self._verifier is not None and not await self._verifier()
+                and self._lost is not None):
+            self._lost.set()
+        self.check()
+
+    def _raise(self) -> None:
+        from securitymasker.errors import SessionError
+
+        raise SessionError(
+            "session lock was lost while the request was in flight; "
+            "refusing to continue without exclusivity"
+        )
 
 
 def _now() -> datetime:

@@ -30,7 +30,22 @@ curl http://127.0.0.1:4000/responses \
 ```
 
 The compose stack routes the gateway to an in-compose mock upstream (no real keys).
-Enable Redis with `docker compose --profile redis up`.
+
+To use the shared Redis session store you must start Redis **and** switch the
+gateway to it — starting the container alone leaves the gateway on its in-process
+store:
+
+```bash
+SECURITYMASKER_STORE=redis docker compose --profile redis up
+```
+
+Compose supplies a demo `SECURITYMASKER_MASTER_KEY` (32 bytes, base64) so the
+stack starts; generate your own for anything real and inject it from a secret
+store — the gateway fails closed if it is missing or not 32 bytes:
+
+```bash
+openssl rand -base64 32
+```
 
 ## Codex / Claude Code
 

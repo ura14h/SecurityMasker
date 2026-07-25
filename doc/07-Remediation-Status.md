@@ -38,9 +38,9 @@
 |---|---|---|
 | P0-7 発行済みaliasのメンバーシップ確認 | done | `detectors/existing_alias.py` |
 | P0-8 tool-argument trust（既定未信頼、allowlistのみliteral復元、stream両対応） | done | `tool_trust.py`, 両adapter, 両stream |
-| P0-9 テナント分離（local/multitenant、namespace鍵、未解決はfail-closed） | done | `gateway/session.py`, `test_session_tenant.py` |
-| P1-1 session選択の安定化＋alias有・stable無でblock | done | 同上 |
-| P1-9 Redis配線＋lock（owner token・bounded wait・atomic release・get/create/save同一排他） | done | `sessions/redis.py`, `test_redis_store.py` |
+| P0-9 テナント分離 | **partial** | tenantはHMAC証明で分離済み。**同一tenant内のuser分離は未実装**（第3回監査 指摘7／下記参照） |
+| P1-1 session選択の安定化＋alias有・stable無でblock | done | `gateway/session.py`, `test_multiturn_session.py` |
+| P1-9 Redis配線＋lock | **partial** | owner token・bounded wait・atomic release・TTL更新・書き込み前の所有権再確認まで実装。**fencing tokenによる完全な原子性は未実装**（下記「残存リスク」） |
 
 ## Milestone D — 検出・構造保持（一部実装、一部deferred）
 

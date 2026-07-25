@@ -163,14 +163,20 @@ class RegexConfig(BaseModel):
 
     @model_validator(mode="after")
     def _compiles(self) -> RegexConfig:
+        # Never echo the PATTERN: a user regex routinely contains the literal
+        # secret it is meant to match, and this message reaches startup logs and
+        # tracebacks (§25). The rule id is enough to locate it.
         try:
             compiled = re.compile(self.pattern)
         except re.error as exc:
-            raise ValueError(f"invalid regex {self.pattern!r}: {exc}") from exc
+            raise ValueError(
+                f"pattern {self.id!r} is not a valid regular expression "
+                f"({type(exc).__name__})"
+            ) from None
         if self.group < 0 or self.group > compiled.groups:
             raise ValueError(
-                f"capture group {self.group} out of range for {self.pattern!r} "
-                f"(has {compiled.groups} group(s))"
+                f"pattern {self.id!r}: capture group {self.group} is out of range "
+                f"(the expression has {compiled.groups} group(s))"
             )
         return self
 
@@ -256,24 +262,33 @@ def _safe_validation_message(exc: ValidationError) -> str:
     """Render a ValidationError WITHOUT the offending input (§25, doc/06 P0-4).
 
     Pydantic's default rendering embeds the rejected value, and in this config the
-    rejected value is often a registered secret. We keep only the field location
-    and the error type/message, which are enough to fix the config and safe to put
-    in a startup log, a CLI message, or a traceback. ``from exc`` is deliberately
-    NOT used at the call site so the original — which still holds the input — does
-    not ride along in the chained traceback.
+    rejected value is often a registered secret. We emit only the field LOCATION
+    and the stable error CODE (``type``) — never ``input``, and never ``msg``,
+    because a message can quote the input (a custom validator, a future Pydantic
+    version, or a nested exception's text). Location + code is enough to fix the
+    config and is safe in a startup log, a CLI message, or a traceback.
+
+    ``from exc`` is deliberately NOT used at the call site: the chained traceback
+    would carry the original exception, which still holds the input values.
     """
     parts = []
     for err in exc.errors():
         loc = ".".join(str(x) for x in err.get("loc", ())) or "<root>"
-        # `msg` for the built-in validators is value-free ("Field required",
-        # "Input should be a valid integer"); our own validators are written to be
-        # value-free too. `input` is dropped entirely.
-        parts.append(f"{loc}: {err.get('msg', 'invalid')}")
+        parts.append(f"{loc}: {err.get('type', 'invalid')}")
     return "; ".join(parts) or "invalid configuration"
 
 
 def load_config(path: str | Path) -> SecurityMaskerConfig:
-    raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    try:
+        raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        # PyYAML's error text quotes the offending LINE, which in this file is a
+        # dictionary entry — i.e. a registered secret. Report the position only.
+        mark = getattr(exc, "problem_mark", None)
+        where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        raise ConfigError(
+            f"{Path(path).name} is not valid YAML{where}"
+        ) from None
     if not isinstance(raw, dict):
         raise ConfigError(f"config root must be a mapping, got {type(raw).__name__}")
     try:

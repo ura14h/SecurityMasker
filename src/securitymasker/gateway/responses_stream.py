@@ -130,14 +130,16 @@ class ResponsesStreamProcessor:
                 if isinstance(item.get("id"), str) and isinstance(item.get("name"), str):
                     self._item_names[item["id"]] = item["name"]
                 _restore_content_parts(item.get("content"), self._restore)
-                if isinstance(item.get("arguments"), str) and self._trust.restores_arguments(
-                    item.get("name")
-                ):
-                    restored_args = self._safe_args(item["arguments"])
+                # Validate for every tool; restore only for a trusted one (P0-8).
+                if isinstance(item.get("arguments"), str) and item["arguments"]:
+                    restored_args = self._safe_args(
+                        item["arguments"],
+                        restore=self._trust.restores_arguments(item.get("name")),
+                    )
                     if restored_args is None:
                         return [_error_event(
-                            "securitymasker: tool arguments were not valid JSON and "
-                            "could not be restored; the item was not forwarded.")]
+                            "securitymasker: tool arguments were not valid JSON; "
+                            "the item was not forwarded to the client.")]
                     item["arguments"] = restored_args
             return [_reserialize(ev, payload)]
         if "response" in payload and isinstance(payload["response"], dict):
@@ -197,26 +199,30 @@ class ResponsesStreamProcessor:
             return [_error_event("securitymasker: tool arguments exceeded the "
                                  f"{_MAX_ARG_BUFFER_BYTES}-byte buffer limit; the call "
                                  "was not forwarded to the client.")]
-        # Restore to real values only for a trusted local tool (doc/06 P0-8).
-        restored = raw
-        if self._trust.restores_arguments(self._item_names.get(item_id)):
-            attempt = self._safe_args(raw)
-            if attempt is None:
-                # Arguments that will not parse cannot be restored, and re-emitting
-                # the malformed JSON would hand the client an unexecutable — or
-                # worse, half-restored — tool call. Fail closed like overflow does.
-                return [_error_event(
-                    "securitymasker: tool arguments were not valid JSON and could "
-                    "not be restored; the call was not forwarded to the client.")]
-            restored = attempt
+        # JSON validity is checked for EVERY tool call: trust decides whether to
+        # restore real values, not whether the payload has to be well-formed. A
+        # malformed tool call must never reach the client, trusted or not (P1-10).
+        trusted = self._trust.restores_arguments(self._item_names.get(item_id))
+        restored = self._safe_args(raw, restore=trusted)
+        if restored is None:
+            return [_error_event(
+                "securitymasker: tool arguments were not valid JSON; the call was "
+                "not forwarded to the client.")]
         payload["arguments"] = restored
         emit_delta = _args_delta_event(payload, restored)
         return [emit_delta, _reserialize(ev, payload)]
 
-    def _safe_args(self, raw: str) -> str | None:
-        """Restored arguments, or ``None`` when they cannot be restored safely."""
+    def _safe_args(self, raw: str, *, restore: bool) -> str | None:
+        """Validated tool arguments, or ``None`` if they are not valid JSON.
+
+        ``restore=True`` (trusted local tool) substitutes real values;
+        ``restore=False`` re-serializes the parsed JSON with its aliases intact.
+        Either way the payload is parsed, so a malformed call is caught (P1-10).
+        """
         try:
-            return self._reasm.restore_arguments(raw)
+            if restore:
+                return self._reasm.restore_arguments(raw)
+            return json.dumps(json.loads(raw), ensure_ascii=False)
         except Exception:  # noqa: BLE001 - never approximate a restore (§24)
             return None
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import json
 
+import pytest
+
 from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
 from securitymasker.tool_trust import ToolTrustPolicy
 
@@ -130,8 +132,11 @@ def test_unknown_event_passthrough() -> None:
     assert events == [{"type": "ping"}]
 
 
-def test_invalid_tool_json_left_unrestored_not_crash() -> None:
-    # Missing closing brace: fail-closed means leave aliases in place, never crash.
+@pytest.mark.parametrize("trusted", [(), ("d",)])
+def test_invalid_tool_json_fails_closed_for_trusted_and_untrusted(trusted) -> None:
+    # Missing closing brace. JSON validity is independent of tool trust: a
+    # malformed tool call must never be re-sent to the client, restored or not
+    # (audit round-3 finding 5 / doc/06 P1-10).
     bad = '{"host": "SM_PERSON_2B891C"'
     sse = (
         'event: content_block_start\n'
@@ -141,10 +146,11 @@ def test_invalid_tool_json_left_unrestored_not_crash() -> None:
         'event: content_block_stop\n'
         f'data: {json.dumps({"type": "content_block_stop", "index": 0})}\n\n'
     )
-    events = _run(sse)
+    events = _run(sse, trusted_tools=trusted)
     json_deltas = [
         e for e in events
         if e.get("type") == "content_block_delta" and e["delta"].get("type") == "input_json_delta"
     ]
-    assert len(json_deltas) == 1
-    assert json_deltas[0]["delta"]["partial_json"] == bad  # unchanged, no crash
+    assert json_deltas == []                      # malformed call not forwarded
+    errors = [e for e in events if e.get("type") == "error"]
+    assert len(errors) == 1 and "not valid JSON" in errors[0]["error"]["message"]

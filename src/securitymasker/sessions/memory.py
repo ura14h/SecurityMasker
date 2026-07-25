@@ -37,6 +37,7 @@ class InMemorySessionStore:
         self._absolute_ttl = absolute_ttl
         self._sessions: dict[str, MaskingSession] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._lock_refs: dict[str, int] = {}
         self._guard = asyncio.Lock()
         # response_id -> (session_key, bound_at) for multi-turn continuity (P1-1).
         self._response_bindings: dict[str, tuple[str, datetime]] = {}
@@ -126,12 +127,29 @@ class InMemorySessionStore:
         if lock is None:
             lock = asyncio.Lock()
             self._locks[session_id] = lock
+        # Reference-count holders AND waiters so the entry can be reclaimed safely:
+        # dropping it while anyone still references it would let a newcomer build a
+        # second lock for the same id and enter concurrently, while never dropping
+        # it leaks one lock per session id forever — a memory DoS for ephemeral or
+        # client-chosen ids (doc/06 P1-9, P1-5).
+        self._lock_refs[session_id] = self._lock_refs.get(session_id, 0) + 1
 
         @asynccontextmanager
         async def _held() -> AsyncIterator[LockHandle]:
-            async with lock:
-                # In-process asyncio locks cannot be lost or expire, so the handle
-                # never reports loss — unlike the Redis one (doc/06 P1-9).
-                yield LockHandle()
+            try:
+                async with lock:
+                    # In-process asyncio locks cannot expire or be taken over, so
+                    # the handle never reports loss — unlike the Redis one.
+                    yield LockHandle()
+            finally:
+                remaining = self._lock_refs.get(session_id, 1) - 1
+                if remaining <= 0:
+                    self._lock_refs.pop(session_id, None)
+                    # Only reclaim when nobody holds/awaits it and the session is
+                    # gone; a live session keeps its lock for the next request.
+                    if session_id not in self._sessions:
+                        self._locks.pop(session_id, None)
+                else:
+                    self._lock_refs[session_id] = remaining
 
         return _held()

@@ -48,7 +48,7 @@ services:
       SECURITYMASKER_REDIS_URL: "${SECURITYMASKER_REDIS_URL:-redis://redis:6379/0}"
       # Seals sessions at rest in Redis. Demo-only value — generate a real one
       # (`openssl rand -base64 32`) and inject it from a secret store.
-      SECURITYMASKER_MASTER_KEY: "${SECURITYMASKER_MASTER_KEY:-ZGVtby1vbmx5LTMyLWJ5dGUta2V5LWZvci1jb21wb3Nl}"
+      SECURITYMASKER_MASTER_KEY: "${SECURITYMASKER_MASTER_KEY:-c2VjdXJpdHltYXNrZXItZGVtby1rZXktMzJieXRlcyE=}"
     ports:
       - "127.0.0.1:4000:4000"   # keep the admin/proxy surface on localhost (§33)
     read_only: true

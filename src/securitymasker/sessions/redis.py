@@ -297,9 +297,18 @@ class RedisSessionStore:
                     lost.set()
                     return
 
+        async def _still_mine() -> bool:
+            """Re-read ownership so the holder can check right before writing."""
+            try:
+                current = await self._redis.get(lock_key)
+            except Exception:  # noqa: BLE001 - Redis unreachable: assume lost
+                return False
+            value = current.decode() if isinstance(current, bytes) else current
+            return value == token
+
         watchdog = asyncio.create_task(_renew())
         try:
-            yield LockHandle(lost)
+            yield LockHandle(lost, _still_mine)
         finally:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError):

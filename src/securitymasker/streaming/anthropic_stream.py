@@ -162,11 +162,11 @@ class AnthropicStreamProcessor:
                     f"{_MAX_JSON_BUFFER_BYTES}-byte buffer limit; the call was not "
                     "forwarded to the client."))
             elif raw:
-                # Restore real values only for a trusted local tool (doc/06 P0-8);
-                # otherwise re-emit the buffered aliased JSON unchanged.
-                partial: str | None = raw
-                if self._trust.restores_arguments(name):
-                    partial = self._safe_restore_json(raw)
+                # Validity is checked for EVERY tool block; trust only decides
+                # whether real values are substituted (doc/06 P0-8, P1-10).
+                partial = self._safe_restore_json(
+                    raw, restore=self._trust.restores_arguments(name)
+                )
                 if partial is None:
                     # Unparseable input cannot be restored; emitting it would hand
                     # the client an unexecutable tool call (doc/06 P1-10).
@@ -177,10 +177,17 @@ class AnthropicStreamProcessor:
                     extra.append(_json_delta_event(idx, partial))
         return [*extra, ev]
 
-    def _safe_restore_json(self, raw: str) -> str | None:
-        """Restored tool input, or ``None`` when it cannot be restored safely."""
+    def _safe_restore_json(self, raw: str, *, restore: bool) -> str | None:
+        """Validated tool input, or ``None`` if it is not valid JSON.
+
+        ``restore=True`` substitutes real values for a trusted local tool;
+        ``restore=False`` re-serializes the parsed JSON with aliases intact. Both
+        paths parse, so a malformed tool call never reaches the client (P1-10).
+        """
         try:
-            return self._reasm.restore_arguments(raw)
+            if restore:
+                return self._reasm.restore_arguments(raw)
+            return json.dumps(json.loads(raw), ensure_ascii=False)
         except Exception:  # noqa: BLE001 - never approximate a restore (§24)
             return None
 
