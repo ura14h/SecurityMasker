@@ -229,9 +229,31 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
     return detectors
 
 
+def build_leak_scanners(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
+    """High-precision, deterministic detectors for the final-payload block guard.
+
+    Kept to low-false-positive detectors only (registered secrets, secret patterns,
+    My Number's checksum): they scan structural/unknown fields too, so a fuzzy
+    detector here would over-block legitimate config values (doc/06 P0-4).
+    """
+    scanners: list[SensitiveDataDetector] = []
+    if config.enable_secret_detector:
+        scanners.append(build_secret_detector())
+    if config.japanese_pii.enabled:
+        scanners.append(
+            JapaneseMyNumberDetector(restore_policy=config.japanese_pii.my_number_restore_policy)
+        )
+    return scanners
+
+
 def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
+    registered_literals = tuple(
+        value for entity in config.entities for value in entity.resolved_values()
+    )
     return MaskingEngine(
         build_detectors(config),
         normalization=config.defaults.normalization,
         merge_surface_forms=config.defaults.merge_surface_forms,
+        registered_literals=registered_literals,
+        leak_scanners=build_leak_scanners(config),
     )

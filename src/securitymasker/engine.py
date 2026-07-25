@@ -12,18 +12,37 @@ than letting original data through (§26).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
 from securitymasker.errors import LeakageError, MaskingError
 from securitymasker.models import DetectionResult, MaskingSession, RestorePolicy
-from securitymasker.normalization import NormForm, normalize
+from securitymasker.normalization import NormForm, normalize, normalize_value
 from securitymasker.sessions.crypto import decrypt
 
 REDACTION_MARK = "[REDACTED]"
+
+
+def _iter_strings(node: Any) -> Iterator[str]:
+    """Yield every string leaf in a parsed JSON structure — dict keys included.
+
+    Keys are yielded because a registered secret can be smuggled into a schema
+    property name or other structural key, not only into a value (doc/06 P0-4).
+    """
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(key, str):
+                yield key
+            yield from _iter_strings(value)
+    elif isinstance(node, list | tuple):
+        for item in node:
+            yield from _iter_strings(item)
 
 
 @dataclass
@@ -55,10 +74,18 @@ class MaskingEngine:
         *,
         normalization: NormForm = "nfkc",
         merge_surface_forms: bool = False,
+        registered_literals: tuple[str, ...] = (),
+        leak_scanners: list[SensitiveDataDetector] | None = None,
     ) -> None:
         self._detectors = detectors
         self._normalization = normalization
         self._merge_surface_forms = merge_surface_forms
+        # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
+        # literals (pre-normalized) and high-precision, deterministic detectors.
+        self._registered_literals = tuple(
+            lit for lit in (normalize_value(v, normalization) for v in registered_literals) if lit
+        )
+        self._leak_scanners = leak_scanners or []
 
     async def detect(self, text: str, *, context_kind: str = "prose") -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
@@ -124,6 +151,34 @@ class MaskingEngine:
         for original, entity_type in seen.items():
             if original in masked:
                 raise LeakageError(entity_type=entity_type, request_id=request_id)
+
+    async def assert_no_leak_in_payload(
+        self, data: Any, *, request_id: str | None = None
+    ) -> None:
+        """Final block-only leakage guard over the WHOLE masked payload (doc/06 P0-4).
+
+        The per-text ``_verify_no_leak`` only covers strings the protocol adapter
+        routed through masking; it cannot see a registered secret smuggled into an
+        unknown field, a structural field (``model``/``type``/``id``), image
+        metadata, or a schema property name. This walks every string leaf and key
+        of the parsed structure and BLOCKS (never mutates a structural field) if a
+        registered literal or a high-precision secret survives. Scanning the parsed
+        values — not the serialized bytes — means JSON escaping (``\\n``, ``\\"``,
+        ``\\\\``) is already undone, so an escaped secret is caught the same way.
+        """
+        if not self._registered_literals and not self._leak_scanners:
+            return
+        for text in _iter_strings(data):
+            norm = normalize(text, self._normalization)
+            hay = norm.normalized
+            for literal in self._registered_literals:
+                if literal in hay:
+                    raise LeakageError(entity_type="registered", request_id=request_id)
+            if self._leak_scanners:
+                ctx = DetectionContext(norm=norm, request_id=request_id)
+                for scanner in self._leak_scanners:
+                    if await scanner.detect(ctx):
+                        raise LeakageError(entity_type="secret", request_id=request_id)
 
     def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
         """Alias→original map for THIS session's ``literal`` aliases only (§19).

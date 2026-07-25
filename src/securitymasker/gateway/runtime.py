@@ -12,6 +12,7 @@ import os
 
 from securitymasker.config import build_engine, load_config
 from securitymasker.engine import MaskingEngine
+from securitymasker.errors import ConfigError
 from securitymasker.sessions.memory import InMemorySessionStore
 from securitymasker.sessions.store import SessionStore
 
@@ -36,8 +37,20 @@ class GatewayRuntime:
 
     @classmethod
     def from_env(cls) -> GatewayRuntime:
+        # Fail-closed startup (§26, doc/06 P0-1): a masking config is REQUIRED. The
+        # engine-less transparent mode exists only as an explicit, dev-only opt-in.
         config_path = os.environ.get("SECURITYMASKER_CONFIG")
-        engine = build_engine(load_config(config_path)) if config_path else None
+        dev_transparent = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
+        if not config_path:
+            if not dev_transparent:
+                raise ConfigError(
+                    "SECURITYMASKER_CONFIG is required (a masking dictionary YAML). "
+                    "Set SECURITYMASKER_DEV_TRANSPARENT=1 to run without masking "
+                    "(development only; do not point at real providers)."
+                )
+            engine = None
+        else:
+            engine = build_engine(load_config(config_path))
         return cls(
             engine,
             InMemorySessionStore(),

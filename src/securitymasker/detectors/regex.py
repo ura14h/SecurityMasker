@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from securitymasker.detectors.base import DetectionContext
+from securitymasker.errors import DetectionError
 from securitymasker.models import DetectionResult
 
 # Bound the scan to avoid pathological regex cost on huge inputs (§32, §33).
@@ -37,7 +38,13 @@ class RegexDetector:
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         text = context.norm.normalized
         if len(text) > _MAX_SCAN_CHARS:
-            text = text[:_MAX_SCAN_CHARS]
+            # Fail-closed (doc/06 P0-5): refuse rather than silently truncate — a
+            # secret past the cutoff would otherwise pass unscanned. The gateway
+            # caps whole-body size up front; this guards a single oversized field.
+            raise DetectionError(
+                f"input field exceeds the {_MAX_SCAN_CHARS}-char scan limit; "
+                "refusing to forward under-scanned input"
+            )
         results: list[DetectionResult] = []
         for rx, entry in self._compiled:
             for m in rx.finditer(text):

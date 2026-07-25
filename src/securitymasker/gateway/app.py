@@ -1,14 +1,23 @@
-"""SecurityMasker proxy ASGI app (ADR-0006).
+"""SecurityMasker proxy ASGI app (ADR-0006; hardened per doc/06-Issue.md P0).
 
 Routes Codex (OpenAI Responses) and Claude Code (Anthropic Messages) through the
-masking core, forwarding everything else transparently. One handler invocation
-resolves the session, masks the request, forwards it (client auth passed through,
-never logged, §25), and restores the response — owning both directions.
+masking core. Security gates (external-send is only allowed after masking):
+
+- explicit route allowlist — unknown routes are refused locally, never forwarded;
+- request validation — non-JSON-object, malformed, oversized, or unsupported
+  Content-Encoding bodies are refused locally before anything leaves;
+- header hygiene — internal `X-SecurityMasker-*` headers are stripped; client auth
+  is passed through to the correct upstream, never logged (§25);
+- readiness (`/ready`) is distinct from liveness (`/health`).
+
+One handler invocation resolves the session, masks the request, forwards it, and
+restores the response — owning both directions.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from starlette.applications import Starlette
@@ -16,126 +25,168 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from securitymasker.engine import MaskingEngine
 from securitymasker.errors import SecurityMaskerError
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
 from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
 from securitymasker.gateway.runtime import GatewayRuntime
 from securitymasker.gateway.session import resolve_session_id
 from securitymasker.logging import get_logger
+from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
 from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
 
 _log = get_logger(component="securitymasker.gateway")
 
+# Max request body accepted before masking (doc/06 P0-5). Module-level so it can be
+# tuned/overridden; a hard cap protects the detectors and the event loop (§32).
+MAX_BODY_BYTES = 10 * 1024 * 1024
+_INTERNAL_HEADER_PREFIX = "x-securitymasker-"
 
-def _load_body(raw: bytes) -> dict[str, Any] | None:
+
+def _error(status: int, code: str, message: str) -> JSONResponse:
+    # Never echo the request body/values in an error (§25).
+    return JSONResponse({"error": {"message": message, "type": code, "code": str(status)}},
+                        status_code=status)
+
+
+def _client_headers(request: Request) -> dict[str, str]:
+    """Headers forwarded upstream: drop internal SecurityMasker headers."""
+    return {k: v for k, v in request.headers.items()
+            if not k.lower().startswith(_INTERNAL_HEADER_PREFIX)}
+
+
+async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    """Validate + parse the request body to a JSON object, or return a local error.
+
+    Refuses (no forward) on unsupported Content-Encoding/Type, oversized bodies,
+    malformed JSON, or non-object JSON (doc/06 P0-2/P0-5).
+    """
+    encoding = request.headers.get("content-encoding", "").strip().lower()
+    if encoding and encoding != "identity":
+        return None, _error(415, "unsupported_content_encoding",
+                            f"Content-Encoding {encoding!r} is not supported.")
+    ctype = request.headers.get("content-type", "")
+    if ctype and "json" not in ctype.lower():
+        return None, _error(415, "unsupported_media_type",
+                            "Only application/json request bodies are supported.")
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return None, _error(413, "payload_too_large",
+                            f"Request body exceeds the {MAX_BODY_BYTES}-byte limit.")
     try:
         data = json.loads(raw) if raw else {}
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def _blocked_response(exc: SecurityMaskerError) -> JSONResponse:
-    # Fail-closed: never forward, never leak the original value (§25, §26).
-    return JSONResponse(
-        {"error": {"message": str(exc), "type": "securitymasker_blocked", "code": "400"}},
-        status_code=400,
-    )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, _error(400, "invalid_json", "Request body is not valid JSON.")
+    if not isinstance(data, dict):
+        return None, _error(400, "invalid_body", "Request body must be a JSON object.")
+    return data, None
 
 
 async def health(request: Request) -> JSONResponse:
+    """Liveness: the process is up."""
     return JSONResponse({"ok": True})
+
+
+async def ready(request: Request) -> JSONResponse:
+    """Readiness: the masking engine and store are available (doc/06 P0-1)."""
+    rt: GatewayRuntime = request.app.state.runtime
+    if rt.engine is None:
+        return JSONResponse({"ready": False, "reason": "masking engine not configured"},
+                            status_code=503)
+    return JSONResponse({"ready": True})
+
+
+async def _handle(
+    request: Request,
+    *,
+    upstream: str,
+    path: str,
+    mask: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], Awaitable[None]],
+    restore_dict: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], None],
+    stream_processor: Callable[..., Any],
+) -> Response:
+    rt: GatewayRuntime = request.app.state.runtime
+    url = f"{upstream}{path}"
+    headers = _client_headers(request)
+
+    if rt.engine is None:
+        # Dev-only transparent mode (config-required by default; see runtime).
+        return await forward_streaming(request.method, url, headers, await request.body())
+
+    data, err = await _read_json_object(request)
+    if err is not None or data is None:
+        return err or _error(400, "invalid_body", "Request body must be a JSON object.")
+
+    session_id = resolve_session_id(request.headers, data)
+    session = await rt.store.get_or_create(session_id)
+    try:
+        async with rt.store.lock(session_id):
+            await mask(rt.engine, session, data)
+            await rt.store.save(session)
+        # Final block-only guard over the whole masked payload (doc/06 P0-4): a
+        # registered secret in an unknown/structural field must never be forwarded.
+        await rt.engine.assert_no_leak_in_payload(data, request_id=session_id)
+    except SecurityMaskerError as exc:
+        _log.warning("sm_block", path=path)
+        return _error(400, "securitymasker_blocked", str(exc))
+
+    masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    if data.get("stream"):
+        proc = stream_processor(rt.engine.literal_restorations(session),
+                                rt.engine.make_restorer(session))
+        return await forward_streaming(request.method, url, headers, masked, proc)
+
+    status, resp_headers, content = await forward_buffered(request.method, url, headers, masked)
+    resp = None
+    try:
+        parsed = json.loads(content) if content else None
+        resp = parsed if isinstance(parsed, dict) else None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        resp = None
+    if resp is not None:
+        restore_dict(rt.engine, session, resp)
+        return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
+                        media_type="application/json")
+    return Response(content, status_code=status, media_type=resp_headers.get("content-type"))
 
 
 async def handle_responses(request: Request) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
-    raw = await request.body()
-    data = _load_body(raw)
-    url = f"{rt.openai_upstream}/responses"
-
-    if rt.engine is None or data is None:
-        return await forward_streaming(request.method, url, request.headers, raw)
-
-    session_id = resolve_session_id(request.headers, data)
-    session = await rt.store.get_or_create(session_id)
-    try:
-        async with rt.store.lock(session_id):
-            await openai_responses.mask_request(rt.engine, session, data)
-            await rt.store.save(session)
-    except SecurityMaskerError as exc:
-        _log.warning("sm_block", stage="responses_mask")
-        return _blocked_response(exc)
-
-    masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    if data.get("stream"):
-        proc = ResponsesStreamProcessor(
-            rt.engine.literal_restorations(session), rt.engine.make_restorer(session)
-        )
-        return await forward_streaming(request.method, url, request.headers, masked, proc)
-
-    status, headers, content = await forward_buffered(request.method, url, request.headers, masked)
-    resp = _load_body(content)
-    if resp is not None:
-        openai_responses.restore_response(rt.engine, session, resp)
-        return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
-                        media_type="application/json")
-    return Response(content, status_code=status, media_type=headers.get("content-type"))
+    return await _handle(request, upstream=rt.openai_upstream, path="/responses",
+                         mask=openai_responses.mask_request,
+                         restore_dict=openai_responses.restore_response,
+                         stream_processor=ResponsesStreamProcessor)
 
 
 async def handle_messages(request: Request) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
-    raw = await request.body()
-    data = _load_body(raw)
-    url = f"{rt.anthropic_upstream}/v1/messages"
-
-    if rt.engine is None or data is None:
-        return await forward_streaming(request.method, url, request.headers, raw)
-
-    session_id = resolve_session_id(request.headers, data)
-    session = await rt.store.get_or_create(session_id)
-    try:
-        async with rt.store.lock(session_id):
-            await anthropic_messages.mask_request(rt.engine, session, data)
-            await rt.store.save(session)
-    except SecurityMaskerError as exc:
-        _log.warning("sm_block", stage="messages_mask")
-        return _blocked_response(exc)
-
-    masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    if data.get("stream"):
-        proc = AnthropicStreamProcessor(
-            rt.engine.literal_restorations(session), rt.engine.make_restorer(session)
-        )
-        return await forward_streaming(request.method, url, request.headers, masked, proc)
-
-    status, headers, content = await forward_buffered(request.method, url, request.headers, masked)
-    resp = _load_body(content)
-    if resp is not None:
-        anthropic_messages.restore_response(rt.engine, session, resp)
-        return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
-                        media_type="application/json")
-    return Response(content, status_code=status, media_type=headers.get("content-type"))
+    return await _handle(request, upstream=rt.anthropic_upstream, path="/v1/messages",
+                         mask=anthropic_messages.mask_request,
+                         restore_dict=anthropic_messages.restore_response,
+                         stream_processor=AnthropicStreamProcessor)
 
 
-async def transparent(request: Request) -> Response:
-    """Pass-through for non-masked endpoints (e.g. /models), no body transform."""
+async def handle_models(request: Request) -> Response:
+    """Transparent, mask-free passthrough for the model list (safe GET, doc/06 P0-3)."""
     rt: GatewayRuntime = request.app.state.runtime
-    raw = await request.body()
-    # Anything under /messages goes to Anthropic; everything else to the OpenAI base.
-    base = rt.anthropic_upstream if "/messages" in request.url.path else rt.openai_upstream
-    url = base + request.url.path
-    return await forward_streaming(request.method, url, request.headers, raw)
+    url = f"{rt.openai_upstream}/models"
+    return await forward_streaming(
+        request.method, url, _client_headers(request), await request.body()
+    )
 
 
 def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
+    # Explicit allowlist only — no catch-all; unknown routes 404 locally (P0-3).
     routes = [
         Route("/health", health, methods=["GET"]),
+        Route("/ready", ready, methods=["GET"]),
         Route("/responses", handle_responses, methods=["POST"]),
         Route("/v1/responses", handle_responses, methods=["POST"]),
         Route("/messages", handle_messages, methods=["POST"]),
         Route("/v1/messages", handle_messages, methods=["POST"]),
-        Route("/{path:path}", transparent, methods=["GET", "POST"]),
+        Route("/models", handle_models, methods=["GET"]),
+        Route("/v1/models", handle_models, methods=["GET"]),
     ]
     app = Starlette(routes=routes)
     app.state.runtime = runtime or GatewayRuntime.from_env()
