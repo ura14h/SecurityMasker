@@ -99,9 +99,14 @@ async def test_codex_settings_produce_a_masked_upstream_payload(gateway_and_upst
     plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-codex", environ={})
     joined = " ".join(plan.argv)
     assert GATEWAY in joined
+    # The override is a TOML inline table, so parse it as TOML (a JSON parse would
+    # have quietly accepted the malformed form this test exists to prevent).
+    import tomllib
+
     header_arg = next(a for a in plan.argv
                       if SESSION_HEADER in a and a.startswith("model_providers"))
-    header_value = json.loads(header_arg.split("=", 1)[1])[SESSION_HEADER]
+    header_value = tomllib.loads(header_arg)[
+        "model_providers"]["securitymasker"]["http_headers"][SESSION_HEADER]
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                  base_url=GATEWAY) as c:
@@ -134,34 +139,62 @@ async def test_session_header_keeps_one_alias_table_across_turns(gateway_and_ups
     assert len(aliases) == 1, f"session header did not hold the alias table: {aliases}"
 
 
-# --- does the REAL CLI accept what we generate? ---------------------------------------
+# --- are the generated overrides well-formed and schema-correct? ----------------------
 
 
-def _codex_binary() -> str | None:
-    import shutil
+def test_generated_overrides_are_valid_toml_assignments() -> None:
+    """Each `-c` value must parse as TOML and land where Codex expects it.
 
-    return shutil.which("codex")
-
-
-@pytest.mark.skipif(_codex_binary() is None,
-                    reason="codex CLI not installed (CI has no real client binary)")
-def test_codex_config_is_accepted_by_the_real_cli(tmp_path) -> None:
-    """Feed the generated `-c` overrides to the installed codex and check it parses.
-
-    The plan tests above prove we build the right STRINGS; only the real binary can
-    prove it accepts them. `--strict-config` makes an unrecognised key an error, so
-    a silently-ignored override cannot pass. A temporary CODEX_HOME keeps the
-    user's own configuration untouched.
+    NOT a claim that the real binary accepted them: see the note below. This
+    checks what can actually be checked without starting a session — that we emit
+    syntactically valid TOML whose keys match the documented custom-provider
+    schema, so a quoting or nesting mistake fails here rather than at a user's
+    first prompt.
     """
-    import os
-    import subprocess
+    import tomllib
 
-    plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-real", environ={})
-    env = {**os.environ, "CODEX_HOME": str(tmp_path)}
-    done = subprocess.run(
-        [_codex_binary(), *plan.argv[1:], "--strict-config", "--version"],
-        capture_output=True, text=True, timeout=60, env=env, cwd=tmp_path)
-    assert done.returncode == 0, (
-        f"codex rejected the generated configuration: {done.stderr[:400]}")
-    # And the user's real config was not touched.
-    assert not (tmp_path / "config.toml").exists() or True
+    plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-toml", environ={})
+    values = [plan.argv[i + 1] for i, a in enumerate(plan.argv) if a == "-c"]
+    assert values, "no -c overrides were generated"
+
+    merged: dict = {}
+    for assignment in values:
+        parsed = tomllib.loads(assignment)          # raises on malformed TOML
+        # Merge the dotted-key documents into one structure.
+        stack = [(merged, parsed)]
+        while stack:
+            into, frm = stack.pop()
+            for key, value in frm.items():
+                if isinstance(value, dict):
+                    stack.append((into.setdefault(key, {}), value))
+                else:
+                    into[key] = value
+
+    provider = merged["model_providers"]["securitymasker"]
+    assert merged["model_provider"] == "securitymasker"
+    assert provider["base_url"] == GATEWAY
+    assert provider["wire_api"] == "responses"
+    assert provider["requires_openai_auth"] is True
+    assert SESSION_HEADER in provider["http_headers"]
+
+
+def test_no_override_targets_the_users_real_config() -> None:
+    """Per-process only: nothing may write to or point at ~/.codex."""
+    plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-x", environ={})
+    assert "CODEX_HOME" not in plan.env
+    assert not any(".codex" in a for a in plan.argv)
+
+
+# NOTE ON END-TO-END CLI VERIFICATION
+# ----------------------------------
+# An earlier test claimed the real `codex` binary had validated this
+# configuration. It had not: it ran `codex --version`, which prints and exits
+# BEFORE the config is built, so an unknown key returned 0 just the same. It also
+# ended in `assert ... or True`, which cannot fail.
+#
+# There is no cheap honest replacement. `--strict-config` is rejected by every
+# subcommand that would build the config (`login`, `mcp`), and `--help`/`--version`
+# short-circuit; the remaining paths start a session and would make a network call,
+# which the test suite must not do. So the claim is withdrawn rather than restated,
+# and the checks above cover what is verifiable offline. Confirming the keys
+# against a running Codex remains a manual step, recorded in doc/07.

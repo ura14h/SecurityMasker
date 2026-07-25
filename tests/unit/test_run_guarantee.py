@@ -221,7 +221,8 @@ def test_cli_never_logs_arguments_or_session_id(monkeypatch, capsys) -> None:
                               ready=True)
     err = capsys.readouterr().err
     assert code == 0 and len(launched) == 1
-    assert secret_arg not in err
+    assert secret_arg not in err, "wrapped command line leaked to stderr"
+    assert "claude" in err       # the executable name is still useful, and safe
     # The concrete session id must not be printed either; only a fingerprint.
     session_id = launched[0] and dict(enumerate(launched[0]))
     assert session_id is not None

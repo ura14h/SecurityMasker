@@ -103,7 +103,10 @@ def _codex_overrides(gateway: str, session_id: str) -> list[str]:
     TOML literals, hence the JSON-quoted strings.
     """
     provider = "securitymasker"
-    header = json.dumps({SESSION_HEADER: session_id})
+    # A TOML inline table: `{ "k" = "v" }`, NOT the JSON `{"k": "v"}`. `-c` values
+    # are layered over config.toml and parsed as TOML, where a colon is a syntax
+    # error — so the JSON form silently produced an unparseable override.
+    header = "{" + f'{json.dumps(SESSION_HEADER)} = {json.dumps(session_id)}' + "}"
     return [
         "-c", f"model_provider={json.dumps(provider)}",
         "-c", f"model_providers.{provider}.name={json.dumps('SecurityMasker')}",
