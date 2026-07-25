@@ -19,7 +19,7 @@ from typing import Any
 
 from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
-from securitymasker.context import is_code_like, segment
+from securitymasker.context import coalesce_for_detection, is_code_like, segment
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
 from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
@@ -155,7 +155,10 @@ class MaskingEngine:
         self, text: str, issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
         found: list[DetectionResult] = []
-        for seg in segment(text):
+        # Coalesce adjacent same-kind spans first: without it a document
+        # alternating prose and inline code runs the detectors (and any
+        # model) once per gap (ADR-0011).
+        for seg in coalesce_for_detection(segment(text)):
             for det in await self._detect_one(seg.text, seg.kind, issued_aliases):
                 # Shift spans back into the ORIGINAL text's coordinates so every
                 # downstream consumer (replacement, leak scan) sees absolute offsets.

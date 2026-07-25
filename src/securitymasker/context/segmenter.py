@@ -1,28 +1,28 @@
-"""Split a message body into typed spans (§17, doc/06 P1-7).
+"""Split a message body into typed spans (§17, doc/06 P1-7, ADR-0011).
 
 A chat message is rarely one kind of text. It is prose *around* a fenced code
-block, a shell transcript, a diff someone pasted, a JSON blob. Treating the whole
-body as ``prose`` makes fuzzy NER fire inside identifiers and code, and treating
-it all as ``source_code`` would silence NER exactly where a name most needs
-masking. Neither is acceptable, so the body is segmented and each span carries its
-own ``ContextKind`` for the detector policy to act on.
+block, a shell transcript, a pasted diff, a JSON blob. Treating the whole body as
+``prose`` makes fuzzy NER fire inside identifiers; treating it all as code would
+silence NER exactly where a name most needs masking. So the body is segmented and
+each span carries its own ``ContextKind``.
 
-Design constraints this module keeps:
+Design constraints:
 
 - **Lossless.** The spans tile the input exactly: concatenating every
-  ``segment.text`` in order reproduces the original byte-for-byte, including
-  fences, blank lines, and trailing whitespace. Detection offsets are absolute
-  positions in the original string, so nothing downstream has to translate twice.
-- **Independent.** It knows nothing about detectors, HTTP, or sessions; it takes
-  a string and returns spans. That keeps it unit-testable and keeps the masking
-  core free of protocol concerns (§ architecture).
-- **Conservative on failure.** Anything it cannot confidently classify stays
-  ``prose``, which is the context with the FEWEST detectors disabled. Ambiguity
-  therefore errs toward more scanning, never toward less (invariant 4).
+  ``segment.text`` reproduces the original byte-for-byte, fences and all.
+  Detection offsets are absolute positions in the original string.
+- **Linear.** Claims are collected, sorted once, and swept — never compared
+  pairwise. The previous all-pairs overlap test was O(n²): 63 KB with 8,000
+  inline-code spans took ~0.77 s and produced 16,001 segments.
+- **Bounded.** A single request cannot be turned into unbounded work. Segment
+  count is capped, and adjacent prose fragments are coalesced so a document
+  alternating prose and code does not become thousands of separate detector
+  invocations (see ``MAX_SEGMENTS``).
+- **Conservative on failure.** Anything unrecognised stays ``prose``, the context
+  with the FEWEST detectors disabled, so ambiguity errs toward more scanning.
 
-It is a segmenter, not a parser: it recognises the shapes that matter for
-detector policy, and deliberately does not try to understand the code inside a
-fence.
+It is a segmenter, not a parser: it recognises the shapes that matter for detector
+policy and does not try to understand the code inside a fence.
 """
 
 from __future__ import annotations
@@ -30,7 +30,20 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from securitymasker.errors import MaskingError
 from securitymasker.models import ContextKind
+
+# Upper bound on spans per body. Beyond this the caller stops segmenting and
+# treats the remainder as one prose span: pathological input must not translate
+# into unbounded detector work (ADR-0011). Generous for real documents.
+MAX_SEGMENTS = 512
+
+# Hard ceiling on structural claims found in one body. Capping alone keeps the work
+# bounded, but an input engineered to produce tens of thousands of claims is not a
+# document anyone wrote — it is an attempt to make us do work. Past this we refuse
+# the request outright rather than silently degrade it, so the original never
+# reaches an upstream on a path we did not fully analyse (invariant 4, ADR-0011).
+MAX_CLAIMS = 4 * MAX_SEGMENTS
 
 # ``` or ~~~ fence, optional info string, to the matching closing fence or EOF.
 _FENCE = re.compile(
@@ -39,22 +52,50 @@ _FENCE = re.compile(
     r"(?:^(?P=indent)(?P=fence)`*[ \t]*$|\Z)",
     re.MULTILINE | re.DOTALL,
 )
-# `code` / ``code`` on a single line.
 _INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)(?P<code>[^\n]+?)(?<!`)\1(?!`)")
 
-# Info strings that identify a fence's language, mapped to a context kind.
 _SHELL_LANGS = frozenset({"sh", "bash", "zsh", "shell", "console", "shell-session",
                           "ps", "powershell", "fish"})
 _DIFF_LANGS = frozenset({"diff", "patch", "udiff"})
 _JSON_LANGS = frozenset({"json", "jsonc", "json5", "geojson"})
 _YAML_LANGS = frozenset({"yaml", "yml"})
 
-# A unified diff is recognisable without a fence: ---/+++ header then a @@ hunk.
+# --- unfenced block shapes -------------------------------------------------------
+# Recognised WITHOUT a fence, because people paste these raw. Each is anchored on a
+# structural marker rather than on content, so ordinary prose cannot match.
+
+# Unified diff: a git header, or ---/+++ followed by a hunk.
 _DIFF_BLOCK = re.compile(
     r"(?:^diff --git .*\n(?:^(?!diff --git ).*\n?)+)"
     r"|(?:^--- .*\n^\+\+\+ .*\n(?:^@@ .*\n(?:^[ +\-\\].*\n?)*)+)",
     re.MULTILINE,
 )
+# OpenAI apply_patch envelope.
+_APPLY_PATCH = re.compile(
+    r"^\*\*\* Begin Patch\s*\n.*?(?:^\*\*\* End Patch\s*$|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+# A shell transcript: consecutive lines that start with a prompt marker.
+_SHELL_BLOCK = re.compile(r"(?:^[ \t]*[$#>][ \t]+\S.*\n?)+", re.MULTILINE)
+# A bare JSON object/array occupying whole lines.
+_JSON_BLOCK = re.compile(r"^[ \t]*[{\[][\s\S]*?^[ \t]*[}\]][ \t]*$", re.MULTILINE)
+# A YAML document or a run of `key: value` lines (2+, so a prose colon is safe).
+_YAML_BLOCK = re.compile(
+    r"(?:^---[ \t]*\n(?:^(?!---).*\n?)+)"
+    r"|(?:^[ \t]*[A-Za-z_][\w.-]*:(?:[ \t].*)?\n){2,}",
+    re.MULTILINE,
+)
+# Source code: a run of lines with language keywords at line start.
+_SOURCE_BLOCK = re.compile(
+    r"(?:^[ \t]*(?:def |class |function |func |import |from \S+ import |"
+    r"public |private |const |let |var |package |#include|SELECT |INSERT |UPDATE )"
+    r".*\n(?:^(?![ \t]*$).*\n?)*)",
+    re.MULTILINE,
+)
+
+
+class SegmentationLimitError(MaskingError):
+    """Input exceeded the structural-span ceiling; the request must fail closed."""
 
 
 @dataclass(frozen=True)
@@ -68,7 +109,6 @@ class Segment:
 
 
 def _fence_kind(info: str) -> str:
-    """Context kind for a fence's info string (its declared language)."""
     lang = info.strip().split()[0].lower() if info.strip() else ""
     lang = lang.lstrip("{.").rstrip("}")
     if lang in _SHELL_LANGS:
@@ -81,54 +121,93 @@ def _fence_kind(info: str) -> str:
         return ContextKind.YAML_SCALAR.value
     if lang:
         return ContextKind.SOURCE_CODE.value
-    # A fence with no language is still code, just unspecified.
     return ContextKind.MARKDOWN_CODE.value
 
 
-def _claim(spans: list[tuple[int, int, str]], start: int, end: int, kind: str) -> None:
-    if end > start:
-        spans.append((start, end, kind))
+# Unfenced patterns in precedence order: the most structurally distinctive first,
+# so a diff inside what also looks like source code is classified as a diff.
+_UNFENCED: tuple[tuple[re.Pattern[str], str], ...] = (
+    (_APPLY_PATCH, ContextKind.PATCH.value),
+    (_DIFF_BLOCK, ContextKind.DIFF.value),
+    (_JSON_BLOCK, ContextKind.JSON_STRING.value),
+    (_YAML_BLOCK, ContextKind.YAML_SCALAR.value),
+    (_SHELL_BLOCK, ContextKind.SHELL.value),
+    (_SOURCE_BLOCK, ContextKind.SOURCE_CODE.value),
+)
 
 
-def segment(text: str, *, default_kind: str = ContextKind.PROSE.value) -> list[Segment]:
+def _resolve_claims(claims: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Keep non-overlapping claims by a single sorted sweep (linear, not all-pairs).
+
+    Claims are added in precedence order, so a stable sort on (start, index) lets
+    the earlier-added claim win any overlap.
+    """
+    ordered = sorted(range(len(claims)), key=lambda i: (claims[i][0], i))
+    kept: list[tuple[int, int, str]] = []
+    highest_end = -1
+    for index in ordered:
+        start, end, kind = claims[index]
+        if start >= highest_end:          # disjoint from everything kept so far
+            kept.append((start, end, kind))
+            highest_end = end
+    return kept
+
+
+def segment(
+    text: str,
+    *,
+    default_kind: str = ContextKind.PROSE.value,
+    max_segments: int = MAX_SEGMENTS,
+) -> list[Segment]:
     """Split ``text`` into non-overlapping, gap-free typed segments.
 
-    ``default_kind`` is what unclaimed text becomes — ``prose`` for a chat body,
-    but a caller that already knows it holds e.g. a tool result passes that, so
-    the surrounding context is not silently downgraded.
+    Adjacent prose runs are emitted as ONE segment, and the total is capped at
+    ``max_segments``; past the cap the remaining text becomes a single trailing
+    prose segment. Both exist so one request cannot fan out into unbounded
+    detector invocations (ADR-0011).
     """
     if not text:
         return []
 
-    claimed: list[tuple[int, int, str]] = []
+    claims: list[tuple[int, int, str]] = []
+    for match in _FENCE.finditer(text):
+        claims.append((match.start(), match.end(), _fence_kind(match.group("info"))))
+    fenced = _resolve_claims(list(claims))
 
-    # Fenced blocks first: they win over everything inside them, including a diff
-    # or inline backticks that happen to appear in the fenced body.
-    for m in _FENCE.finditer(text):
-        _claim(claimed, m.start(), m.end(), _fence_kind(m.group("info")))
+    def _outside_fence(start: int, end: int) -> bool:
+        # Fenced regions win over everything inside them. Linear scan of a small,
+        # sorted list rather than a pairwise test against every claim.
+        for f_start, f_end, _ in fenced:
+            if f_start >= end:
+                return True
+            if start < f_end:
+                return False
+        return True
 
-    def _is_free(start: int, end: int) -> bool:
-        return not any(s < end and start < e for s, e, _ in claimed)
+    for pattern, kind in _UNFENCED:
+        for match in pattern.finditer(text):
+            if match.end() > match.start() and _outside_fence(match.start(), match.end()):
+                claims.append((match.start(), match.end(), kind))
+    for match in _INLINE_CODE.finditer(text):
+        if _outside_fence(match.start(), match.end()):
+            claims.append((match.start(), match.end(),
+                           ContextKind.MARKDOWN_INLINE_CODE.value))
 
-    # Bare (unfenced) diffs pasted straight into a message.
-    for m in _DIFF_BLOCK.finditer(text):
-        if _is_free(m.start(), m.end()):
-            _claim(claimed, m.start(), m.end(), ContextKind.DIFF.value)
+    if len(claims) > MAX_CLAIMS:
+        raise SegmentationLimitError(
+            f"input produced {len(claims)} structural spans, over the {MAX_CLAIMS} "
+            "limit; refusing to process it rather than analysing it partially"
+        )
 
-    # Inline code outside fences and diffs.
-    for m in _INLINE_CODE.finditer(text):
-        if _is_free(m.start(), m.end()):
-            _claim(claimed, m.start(), m.end(), ContextKind.MARKDOWN_INLINE_CODE.value)
+    kept = _resolve_claims(claims)
 
-    claimed.sort()
-
-    # Tile the whole input: every gap between claims is the default kind, so the
-    # segments concatenate back to the original exactly.
     out: list[Segment] = []
     cursor = 0
-    for start, end, kind in claimed:
-        if start < cursor:      # defensive: overlapping claims never escape here
-            continue
+    for start, end, kind in kept:
+        # Each iteration can emit up to TWO segments (a preceding prose gap and the
+        # claim itself), so reserve room for both plus the trailing prose span.
+        if len(out) + 2 > max_segments - 1:
+            break
         if start > cursor:
             out.append(Segment(cursor, start, default_kind, text[cursor:start]))
         out.append(Segment(start, end, kind, text[start:end]))
@@ -136,6 +215,27 @@ def segment(text: str, *, default_kind: str = ContextKind.PROSE.value) -> list[S
     if cursor < len(text):
         out.append(Segment(cursor, len(text), default_kind, text[cursor:]))
     return out
+
+
+def coalesce_for_detection(segments: list[Segment]) -> list[Segment]:
+    """Merge consecutive same-kind segments so detectors run once per RUN.
+
+    A document alternating prose and inline code produces one prose fragment per
+    gap; scanning each separately multiplies detector calls (and model inferences)
+    by the number of code spans. Merging adjacent same-kind spans keeps the count
+    proportional to the number of context CHANGES, not to the number of spans.
+    Merging is only valid for contiguous spans, so offsets are preserved exactly.
+    """
+    if not segments:
+        return []
+    merged: list[Segment] = [segments[0]]
+    for seg in segments[1:]:
+        last = merged[-1]
+        if seg.kind == last.kind and seg.start == last.end:
+            merged[-1] = Segment(last.start, seg.end, last.kind, last.text + seg.text)
+        else:
+            merged.append(seg)
+    return merged
 
 
 def is_code_like(kind: str) -> bool:

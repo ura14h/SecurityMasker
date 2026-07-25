@@ -24,7 +24,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from securitymasker.context import is_code_like, segment
+from securitymasker.context import (
+    MAX_SEGMENTS,
+    coalesce_for_detection,
+    is_code_like,
+    segment,
+)
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
 from securitymasker.detectors.secret_patterns import build_secret_detector
@@ -331,3 +336,116 @@ async def test_masking_is_stable_across_fence_boundary_positions(split) -> None:
     masked = await _mask(text, _dictionary())
     assert PERSON not in masked
     assert masked.count("```") == 2
+
+
+# --- unfenced block classification (ADR-0011) -------------------------------------
+# People paste these raw, without a Markdown fence. Before, all of them were prose,
+# so fuzzy NER ran over identifiers, commands and patch bodies.
+
+
+def test_bare_shell_transcript_is_shell() -> None:
+    text = "run this:\n$ kubectl get pods -n prod\n$ echo done\nthen check."
+    assert ContextKind.SHELL.value in _kinds(text)
+
+
+def test_bare_json_block_is_json() -> None:
+    text = 'config:\n{\n  "service": "api",\n  "port": 8080\n}\nend'
+    assert ContextKind.JSON_STRING.value in _kinds(text)
+
+
+def test_bare_yaml_block_is_yaml() -> None:
+    text = "see:\nservice: gateway\nreplicas: 2\nimage: x\ndone"
+    assert ContextKind.YAML_SCALAR.value in _kinds(text)
+
+
+def test_bare_source_code_is_source() -> None:
+    text = "look:\ndef handler(request):\n    return None\nthanks"
+    assert ContextKind.SOURCE_CODE.value in _kinds(text)
+
+
+def test_apply_patch_envelope_is_patch() -> None:
+    text = ("*** Begin Patch\n*** Update File: a.py\n@@\n-old\n+new\n*** End Patch\n")
+    assert ContextKind.PATCH.value in _kinds(text)
+
+
+def test_patch_kind_is_actually_produced_somewhere() -> None:
+    # The enum member must correspond to something the segmenter emits; an enum
+    # value nothing can produce is a documentation claim with no implementation.
+    text = "*** Begin Patch\n*** Update File: x\n@@\n-a\n+b\n*** End Patch"
+    assert ContextKind.PATCH.value in _kinds(text)
+
+
+def test_prose_with_a_colon_is_not_mistaken_for_yaml() -> None:
+    # One `key: value`-ish line is ordinary prose; YAML needs a run of them.
+    assert _kinds("Note: this is a sentence.") == [ContextKind.PROSE.value]
+
+
+def test_prose_sentence_is_not_mistaken_for_shell() -> None:
+    assert _kinds("The cost is $5 per unit.") == [ContextKind.PROSE.value]
+
+
+@pytest.mark.parametrize("text", [
+    "run this:\n$ ls -la\n",
+    'cfg:\n{\n  "a": 1\n}\n',
+    "a: 1\nb: 2\n",
+    "def f():\n    pass\n",
+    "*** Begin Patch\n@@\n-a\n+b\n*** End Patch\n",
+])
+def test_unfenced_classification_stays_lossless(text) -> None:
+    assert "".join(s.text for s in segment(text)) == text
+
+
+# --- DoS bounds (ADR-0011) ----------------------------------------------------------
+
+
+def test_segment_count_is_capped() -> None:
+    text = "prose `code` " * 400
+    assert len(segment(text)) <= MAX_SEGMENTS
+
+
+def test_detector_invocations_do_not_scale_with_code_span_count() -> None:
+    """The regression the audit measured: 8,000 inline spans -> 8,001 NER calls.
+
+    Asserts on the invocation COUNT rather than wall-clock, so it fails on a
+    complexity regression regardless of how fast the machine is.
+    """
+    small = len(coalesce_for_detection(segment("prose `c` " * 50)))
+    large = len(coalesce_for_detection(segment("prose `c` " * 400)))
+    # 8x the input must not produce 8x the detector work: the cap holds it down,
+    # so growth is strictly sublinear and bounded by MAX_SEGMENTS.
+    assert large < 8 * small
+    assert large <= MAX_SEGMENTS
+
+
+def test_pathological_input_fails_closed() -> None:
+    from securitymasker.context import SegmentationLimitError
+
+    with pytest.raises(SegmentationLimitError):
+        segment("prose `c` " * 8000)
+
+
+@pytest.mark.asyncio
+async def test_detector_call_count_is_bounded_end_to_end() -> None:
+    """One request must not fan out into thousands of model inferences."""
+    calls = {"n": 0}
+
+    class _Counting:
+        name = "presidio"
+        skip_code_contexts = True
+
+        async def detect(self, context):
+            calls["n"] += 1
+            return []
+
+    await MaskingEngine([_Counting()]).detect("prose `c` " * 400)
+    assert calls["n"] <= 512, f"detector invoked {calls['n']} times for one request"
+
+
+def test_coalescing_preserves_offsets_and_text() -> None:
+    from securitymasker.context import coalesce_for_detection
+
+    text = "aaa\n```py\nx=1\n```\nbbb\nccc"
+    merged = coalesce_for_detection(segment(text))
+    assert "".join(s.text for s in merged) == text
+    for s in merged:
+        assert text[s.start:s.end] == s.text
