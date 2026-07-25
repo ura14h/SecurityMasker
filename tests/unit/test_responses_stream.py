@@ -106,3 +106,60 @@ def test_function_call_arguments_not_restored_for_untrusted_tool() -> None:
 def test_unknown_event_passthrough() -> None:
     events = _run(_ev({"type": "response.in_progress", "sequence_number": 1}))
     assert events == [{"type": "response.in_progress", "sequence_number": 1}]
+
+
+# --- malformed tool arguments are refused, never passed through --------------------
+#
+# Restoring aliases inside function-call arguments means editing a JSON string. If
+# what arrives is not valid JSON we cannot edit it safely, and forwarding it raw
+# would hand the client a broken tool call built from model-controlled text. Both
+# trust levels fail closed on validity; they differ only in whether a VALID payload
+# gets its aliases restored (trusted) or kept as aliases (untrusted).
+
+
+def _tool_stream(name: str, arguments: str) -> str:
+    added = ("data: " + json.dumps({
+        "type": "response.output_item.added", "output_index": 0,
+        "item": {"id": "fc_1", "type": "function_call", "name": name}}) + "\n\n")
+    done = ("data: " + json.dumps({
+        "type": "response.function_call_arguments.done",
+        "item_id": "fc_1", "arguments": arguments}) + "\n\n")
+    return added + done
+
+
+def _events(out: str) -> list[dict]:
+    return [json.loads(line[6:]) for line in out.splitlines() if line.startswith("data: ")]
+
+
+def test_invalid_tool_json_becomes_an_error_event() -> None:
+    proc = ResponsesStreamProcessor({"SM_X": "real"}, lambda t: t,
+                                    ToolTrustPolicy(frozenset({"tool_a"})))
+    broken = '{"host": "SM_X", '  # truncated => not valid JSON
+    out = (proc.feed(_tool_stream("tool_a", broken).encode()) + proc.flush()).decode()
+
+    events = _events(out)
+    assert not [e for e in events if e.get("type") == "response.function_call_arguments.done"]
+    errors = [e for e in events if e.get("type") == "error"]
+    assert len(errors) == 1 and "not valid JSON" in errors[0]["error"]["message"]
+    assert broken not in out  # the malformed JSON is not re-sent
+
+
+def test_untrusted_tool_invalid_json_is_not_resent() -> None:
+    # No trusted tools at all: validity must still be enforced.
+    proc = ResponsesStreamProcessor({}, lambda t: t, ToolTrustPolicy(frozenset()))
+    broken = '{"host": "SM_X", '
+    out = (proc.feed(_tool_stream("untrusted_tool", broken).encode()) + proc.flush()).decode()
+
+    assert broken not in out, "malformed JSON was re-sent for an untrusted tool"
+    errors = [e for e in _events(out) if e.get("type") == "error"]
+    assert len(errors) == 1 and "not valid JSON" in errors[0]["error"]["message"]
+
+
+def test_untrusted_tool_valid_json_keeps_aliases() -> None:
+    proc = ResponsesStreamProcessor({"SM_X": "real-value"},
+                                    lambda t: t.replace("SM_X", "real-value"),
+                                    ToolTrustPolicy(frozenset()))
+    out = (proc.feed(_tool_stream("untrusted_tool", '{"host": "SM_X"}').encode())
+           + proc.flush()).decode()
+    assert "SM_X" in out                 # alias preserved for the untrusted tool
+    assert "real-value" not in out       # real value never handed over

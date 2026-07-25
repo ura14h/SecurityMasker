@@ -99,3 +99,20 @@ async def test_build_engine_from_config_masks(tmp_path: Path) -> None:
     result = await engine.mask_text(session, "極秘技研の件 INC-123456")
     assert "極秘技研" not in result.masked_text
     assert "INC-123456" not in result.masked_text
+
+
+def test_detectors_are_built_once() -> None:
+    """Building an engine must not build the detector pipeline twice.
+
+    Detector construction loads models, so a duplicate build is not merely slow —
+    it doubles resident memory for every process that constructs an engine.
+    """
+    from unittest.mock import patch
+
+    from securitymasker import config as cfgmod
+    from securitymasker.config import SecurityMaskerConfig
+
+    with patch.object(cfgmod, "build_detectors",
+                      wraps=cfgmod.build_detectors) as counting:
+        cfgmod.build_engine(SecurityMaskerConfig.model_validate({"version": 1}))
+    assert counting.call_count == 1, "detector pipeline (and its models) built twice"

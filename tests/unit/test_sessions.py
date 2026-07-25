@@ -59,3 +59,91 @@ async def test_sessions_do_not_share_keys() -> None:
     b = await store.get_or_create("b")
     assert a.session_index_key != b.session_index_key
     assert a.aead_key != b.aead_key
+
+
+# --- lock lifetime -----------------------------------------------------------------
+#
+# The per-session lock is what keeps two concurrent turns off the same alias table.
+# It has to outlive the session RECORD (which a TTL sweep can remove at any moment)
+# while still being reclaimed, or a long-lived gateway accumulates one lock object
+# per session it has ever seen.
+
+
+@pytest.mark.asyncio
+async def test_delete_does_not_drop_a_held_lock() -> None:
+    store = InMemorySessionStore()
+    entered = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def holder() -> None:
+        async with store.lock("s1"):
+            entered.set()
+            await store.delete("s1")          # session expires/reaped while held
+            await asyncio.sleep(0.05)
+
+    async def contender() -> None:
+        await entered.wait()
+        async with store.lock("s1"):
+            second_entered.set()
+
+    task = asyncio.gather(holder(), contender())
+    await asyncio.sleep(0.02)
+    # The contender must still be waiting: the lock outlives the session record.
+    assert not second_entered.is_set(), "two holders entered the same session lock"
+    await task
+
+
+@pytest.mark.asyncio
+async def test_locks_are_reclaimed_for_dead_sessions() -> None:
+    store = InMemorySessionStore()
+    for i in range(200):
+        key = f"eph-{i}"
+        async with store.lock(key):
+            await store.get_or_create(key)
+        await store.delete(key)
+        async with store.lock(key):   # a later touch must not leak an entry
+            pass
+    assert len(store._locks) == 0, f"{len(store._locks)} locks leaked"
+
+
+@pytest.mark.asyncio
+async def test_live_session_keeps_its_lock() -> None:
+    store = InMemorySessionStore()
+    async with store.lock("live"):
+        await store.get_or_create("live")
+    # Session still alive -> its lock is retained for the next request.
+    assert "live" in store._locks
+
+
+@pytest.mark.asyncio
+async def test_waiters_keep_the_lock_entry_alive() -> None:
+    store = InMemorySessionStore()
+    entered = asyncio.Event()
+    second = asyncio.Event()
+
+    async def holder() -> None:
+        async with store.lock("k"):
+            entered.set()
+            await asyncio.sleep(0.05)
+
+    async def waiter() -> None:
+        await entered.wait()
+        async with store.lock("k"):
+            second.set()
+
+    await asyncio.gather(holder(), waiter())
+    assert second.is_set()   # the waiter used the SAME lock, no double entry
+
+
+@pytest.mark.asyncio
+async def test_lock_handle_raises_when_lost() -> None:
+    """A lock lost mid-turn (Redis expiry, failover) must abort, not continue."""
+    from securitymasker.errors import SessionError
+    from securitymasker.sessions.store import LockHandle
+
+    lost = asyncio.Event()
+    handle = LockHandle(lost)
+    handle.check()          # still owned: no raise
+    lost.set()
+    with pytest.raises(SessionError):
+        handle.check()

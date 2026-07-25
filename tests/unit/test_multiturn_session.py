@@ -92,3 +92,58 @@ async def test_unknown_previous_response_id_is_not_stable(chain) -> None:
         r = await client.post("/responses", json={
             "input": "reuse SM_PERSON_ABCDEF", "previous_response_id": "resp_unknown"})
     assert r.status_code == 409
+
+
+# --- an unusable binding must fail closed, never start a fresh table ---------------
+#
+# The failure mode both of these guard is the same: continuing a conversation on a
+# NEW alias table. The model would then be sent aliases this session cannot restore,
+# and the user would silently get alias tokens back instead of their own data. 409
+# tells the client to start a new conversation, which is the recoverable outcome.
+
+
+@pytest.fixture
+def bindings(monkeypatch):
+    """Upstream that records forwards and returns a fixed id, plus its store."""
+    calls: list[bytes] = []
+
+    async def fake_buffered(method, url, headers, body):
+        calls.append(body)
+        return 200, {"content-type": "application/json"}, b'{"id": "resp_1"}'
+
+    monkeypatch.setattr(gwapp, "forward_buffered", fake_buffered)
+    store = InMemorySessionStore()
+    rt = GatewayRuntime(build_engine(SecurityMaskerConfig.model_validate({"version": 1})),
+                        store, openai_upstream="http://oai.test",
+                        anthropic_upstream="http://an.test")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(rt)),
+                               base_url="http://gw")
+    return client, calls, store
+
+
+@pytest.mark.asyncio
+async def test_unknown_previous_response_id_blocks_even_without_alias_shape(bindings) -> None:
+    client, calls, _ = bindings
+    # A numeric alias is indistinguishable from ordinary data, so a "does the body
+    # look like it contains aliases?" heuristic cannot save us: the unknown binding
+    # on its own has to be enough to refuse.
+    async with client:
+        r = await client.post("/responses", json={"input": "code 6412112870",
+                                                  "previous_response_id": "resp_never_seen"})
+    assert r.status_code == 409 and calls == []
+
+
+@pytest.mark.asyncio
+async def test_stale_binding_does_not_create_a_new_session(bindings) -> None:
+    client, calls, store = bindings
+    async with client:
+        r1 = await client.post("/responses", json={"input": "code 6412112870"})
+        assert r1.status_code == 200
+        rid = r1.json()["id"]
+        # The session expires/is purged while the binding record survives.
+        for key in list(store._sessions):
+            await store.delete(key)
+        r2 = await client.post("/responses", json={"input": "code 6412112870",
+                                                   "previous_response_id": rid})
+    assert r2.status_code == 409, "a stale binding silently started a new session"
+    assert len(calls) == 1  # only the first turn was forwarded
