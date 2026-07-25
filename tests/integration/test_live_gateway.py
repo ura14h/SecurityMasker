@@ -51,7 +51,7 @@ def gateway(tmp_path_factory: pytest.TempPathFactory):
     record = tmp / "record.jsonl"
     env = {**os.environ, "SM_MOCK_RECORD": str(record)}
     mock = subprocess.Popen(  # noqa: S603
-        [sys.executable, "-m", "uvicorn", "tests.integration.mock_upstream:app",
+        [sys.executable, "-m", "uvicorn", "devtools.mock_upstream:app",
          "--host", "127.0.0.1", "--port", str(MOCK_PORT), "--log-level", "warning"],
         cwd=str(REPO), env=env,
     )

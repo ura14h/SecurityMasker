@@ -11,9 +11,7 @@ services:
     build:
       context: .
       target: demo
-    command: python -m uvicorn tests.integration.mock_upstream:app --host 0.0.0.0 --port 8081
-    environment:
-      SM_MOCK_RECORD: /tmp/mock_record.jsonl
+    command: python -m uvicorn devtools.mock_upstream:app --host 0.0.0.0 --port 8081
     read_only: true
     tmpfs:
       - /tmp
@@ -28,12 +26,10 @@ services:
     depends_on:
       - mock-upstream
     environment:
-      SECURITYMASKER_CONFIG: config/securitymasker.example.yaml
-      # The example config declares these via `value_from_env`, and a missing
-      # env var now fails startup (doc/06 P0-6). Synthetic demo values only —
-      # replace with real ones (from a secret store) outside the demo.
-      PROD_DB_HOST: demo-db01.internal.invalid
-      INTERNAL_API_KEY: sk-demo-0000000000000000000000000
+      # A demo-specific dictionary with no env-backed entries, so this file needs
+      # no secret-shaped variables at all (the production template is
+      # config/securitymasker.example.yaml).
+      SECURITYMASKER_CONFIG: config/securitymasker.demo.yaml
       # Point the upstreams at the in-compose mock (swap for real providers /
       # https://chatgpt.com/backend-api/codex / https://api.anthropic.com).
       SECURITYMASKER_OPENAI_UPSTREAM: http://mock-upstream:8081
@@ -42,13 +38,10 @@ services:
       # keeps it on loopback. Acknowledged HERE (not baked into the image) so a
       # bare `docker run -p 4000:4000` still hits the guard (doc/06 P0-9).
       SECURITYMASKER_ALLOW_PUBLIC_BIND: "1"
-      # Shared session store. Only takes effect with `--profile redis`; without it
-      # the gateway would fail closed at startup, so both are set together below.
-      SECURITYMASKER_STORE: "${SECURITYMASKER_STORE:-memory}"
-      SECURITYMASKER_REDIS_URL: "${SECURITYMASKER_REDIS_URL:-redis://redis:6379/0}"
-      # Seals sessions at rest in Redis. Demo-only value — generate a real one
-      # (`openssl rand -base64 32`) and inject it from a secret store.
-      SECURITYMASKER_MASTER_KEY: "${SECURITYMASKER_MASTER_KEY:-c2VjdXJpdHltYXNrZXItZGVtby1rZXktMzJieXRlcyE=}"
+      # NOTE: no store configuration here. This file runs the default in-memory
+      # store, so a Redis URL and a master key would be values it never reads —
+      # and a base file carrying key material invites someone to treat the demo
+      # key as configuration. Redis lives in docker-compose.redis.yml.
     ports:
       - "127.0.0.1:4000:4000"   # keep the admin/proxy surface on localhost (§33)
     read_only: true
@@ -57,10 +50,11 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Optional shared session store for multi-worker deployments (§8). Enable with:
-  #   SECURITYMASKER_STORE=redis docker compose --profile redis up
-  # (the gateway needs SECURITYMASKER_STORE set too — starting Redis alone does
-  # not switch the store, and a half-configured store fails closed.)
+  # Optional shared session store for multi-worker deployments (§8). Redis needs
+  # a URL and a master key on the GATEWAY too, so that configuration lives in
+  # docker-compose.redis.yml rather than here — the default memory setup should
+  # not carry secret-shaped variables it never reads. Enable with:
+  #   docker compose -f docker-compose.yml -f docker-compose.redis.yml --profile redis up
   redis:
     # Pinned by digest (multi-arch index) — see docs/operations.md.
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99

@@ -75,8 +75,6 @@ ENV HF_HOME=/app/.cache/huggingface
 # (doc/06 P2-3). Build the demo explicitly with `--target demo`.
 FROM runtime AS demo
 USER root
-COPY tests/integration/mock_upstream.py ./tests/integration/mock_upstream.py
-COPY tests/integration/__init__.py ./tests/integration/__init__.py
-COPY tests/__init__.py ./tests/__init__.py
+COPY devtools ./devtools
 RUN chown -R securitymasker /app/tests
 USER securitymasker

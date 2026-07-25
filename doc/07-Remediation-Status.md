@@ -202,3 +202,26 @@ mypy src
 pytest tests/unit tests/evaluation -q
 SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可時のみ
 ```
+
+
+## 第4回監査の是正（`R1..R9`）
+
+前節で `done` としていた4項目は、**実装はあっても配線・検証が伴っていなかった**。監査の指摘どおり
+`partial` へ戻したうえで是正し、下表の状態に更新した。
+
+| 項目 | 第3次の表記 | 実際 | 現在 |
+|---|---|---|---|
+| NER供給網・製品配線 | done | lockなし・Docker不在・safetensors非強制・digest検査が欠落ファイルを見逃す | **done**（`requirements-ner.lock`、`--target ner` stage、manifest完全検査、`use_safetensors=True`強制、未知モデル既定拒否、runtime再検証） |
+| 文脈分類 | done | fenced/inline/bare-diff のみ。裸のshell/JSON/YAML/source/apply_patchはprose。`PATCH`未生成。O(n²) | **done**（6形状を追加、`PATCH`生成、線形化、上限＋fail-closed） |
+| doctor完全配線 | done | Gateway不通でも exit 0、config欠落でtraceback、detector 3重構築 | **done**（`--require-ready`、安全なFAIL、1回構築） |
+| user assertionのreplay対策 | done | timestamp任意で無期限再利用可、`nan`が時刻窓を通過 | **done**（timestamp必須、整数epoch限定、NaN/Inf/小数/前後窓を拒否） |
+| NER timeout | done | `wait_for`は待機を終えるだけでworkerは継続 | **done**（固定プール＋在庫上限＋過負荷拒否。「timeoutが推論を止める」記述は訂正） |
+
+### なお `partial` / 未実装のまま
+
+- **`securitymasker run` の保証範囲** — 生成した設定を**実Codex CLIがparseすることは検証済み**
+  （`--strict-config` 付きで実バイナリに投入）。ただし実CLIプロセスを起動して
+  実際にproxy経由の通信が行われるところまでの自動テストは、CIに実バイナリが無いため**未実施**。
+- **供給網**: package hash検証・image署名/provenance・SBOM・CI脆弱性scan は引き続き**未実装**。
+- **日本固有識別子**: 公開チェックディジットが無いものは形式＋文脈語のみ。
+- **NER評価**: 合成コーパス上の値であり、実運用性能ではない。

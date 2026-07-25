@@ -201,9 +201,14 @@ def describe_manual_setup(gateway: str) -> str:
 
     return (
         "SecurityMasker did not start the tool. To route it manually:\n\n"
-        f"  Claude Code:\n    {claude_code_shell_snippet(gateway)}\n\n"
-        "  Codex — add to ~/.codex/config.toml:\n"
+        # A concrete session id first: the snippets reference
+        # SECURITYMASKER_SESSION_ID, and an unset one yields an EMPTY session
+        # header, which the gateway treats as no session at all.
+        f"  1. export {SESSION_ENV}=$(python -c "
+        "'import secrets;print(secrets.token_urlsafe(24))')\n\n"
+        f"  2. Claude Code:\n    {claude_code_shell_snippet(gateway)}\n\n"
+        "  2. Codex — add to ~/.codex/config.toml:\n"
         + "\n".join(f"    {line}" for line in codex_config_toml(gateway).splitlines())
-        + "\n\n  Start the gateway first:\n"
+        + "\n\n  3. Start the gateway first:\n"
         "    securitymasker gateway --config <dictionary.yaml>"
     )

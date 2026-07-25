@@ -140,7 +140,7 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
 実 Codex CLI 0.145.0 → Gateway → 本物の ChatGPT バックエンド（`litellm chatgpt/` プロバイダ、
 OAuth 再利用・API キー不要）を送信内容タップ付きで検証。ハーネス: `scripts/codex_e2e_setup.py`
 （隔離 `CODEX_HOME`/`CHATGPT_TOKEN_DIR`・`~/.codex` 無変更）/ `config/litellm.codex-e2e.yaml` /
-`tests/integration/chatgpt_tap.py`（透過フォワーダで送信ボディ記録、`Authorization` は記録せず）。
+（この検証に使った使い捨ての透過フォワーダ spike は、production path と混ざらないよう削除済み。再検証が必要なら `devtools/` に置くこと。）
 
 11. **マスクは実環境で機能（§38-1 を実バックエンドで実証）**: chatgpt.com へ実送信されたボディに
     登録機密が **0 件**、alias のみ。最重要要件を本物の外部 LLM への実呼び出しで達成。

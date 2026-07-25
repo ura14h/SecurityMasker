@@ -70,9 +70,9 @@ def test_production_stage_contains_no_test_code() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
     runtime_stage, _, demo_stage = text.partition("FROM runtime AS demo")
     assert "tests/" not in runtime_stage, "production stage copies test code"
-    assert "mock_upstream" not in runtime_stage
-    # The demo stage is where the mock is allowed to appear.
-    assert "mock_upstream" in demo_stage
+    assert "devtools" not in runtime_stage, "production stage copies dev tooling"
+    # The demo stage is where the mock upstream is allowed to appear.
+    assert "devtools" in demo_stage
 
 
 def test_production_stage_runs_as_non_root() -> None:
@@ -141,3 +141,100 @@ def test_ci_installs_from_the_lock(workflow) -> None:
         pytest.skip(f"{workflow} not present")
     text = path.read_text(encoding="utf-8")
     assert "requirements-dev.lock" in text, "CI does not install from the lock"
+
+
+# --- compose environment hygiene ------------------------------------------------------
+
+
+def _compose_env(*files: str, profile: str | None = None) -> dict:
+    """Expand a Compose configuration and return each service's environment.
+
+    Asserts on the EXPANDED result rather than the file text: variable
+    interpolation and overlay merging are exactly where a stray secret-shaped
+    value would appear.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("docker") is None:
+        pytest.skip("docker not available")
+    cmd = ["docker", "compose"]
+    for name in files:
+        cmd += ["-f", name]
+    if profile:
+        cmd += ["--profile", profile]
+    cmd.append("config")
+    done = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if done.returncode != 0:
+        pytest.fail(f"compose config failed: {done.stderr[:300]}")
+    parsed = yaml.safe_load(done.stdout)
+    return {name: (svc.get("environment") or {})
+            for name, svc in parsed.get("services", {}).items()}
+
+
+def test_memory_compose_carries_no_redis_or_key_material() -> None:
+    """The default setup must not hold values it never reads.
+
+    A base file carrying a Redis URL and a master key invites someone to treat
+    the demo key as configuration — and makes it impossible to tell, from the
+    file, whether the store is actually shared.
+    """
+    env = _compose_env("docker-compose.yml")
+    gateway = env.get("gateway", {})
+    for name in ("SECURITYMASKER_REDIS_URL", "SECURITYMASKER_MASTER_KEY",
+                 "SECURITYMASKER_STORE"):
+        assert name not in gateway, f"{name} present in the memory-only compose file"
+
+
+def test_memory_compose_uses_the_demo_dictionary_not_the_production_template() -> None:
+    env = _compose_env("docker-compose.yml")
+    config = env["gateway"]["SECURITYMASKER_CONFIG"]
+    assert config.endswith("securitymasker.demo.yaml")
+
+
+def test_memory_compose_has_no_env_backed_secret_placeholders() -> None:
+    # The production template declares PROD_DB_HOST / INTERNAL_API_KEY via
+    # value_from_env; the demo must not need to invent values for them.
+    gateway = _compose_env("docker-compose.yml")["gateway"]
+    assert "PROD_DB_HOST" not in gateway and "INTERNAL_API_KEY" not in gateway
+
+
+def test_redis_overlay_supplies_the_store_configuration() -> None:
+    env = _compose_env("docker-compose.yml", "docker-compose.redis.yml", profile="redis")
+    gateway = env["gateway"]
+    assert gateway["SECURITYMASKER_STORE"] == "redis"
+    assert gateway["SECURITYMASKER_REDIS_URL"]
+    assert gateway["SECURITYMASKER_MASTER_KEY"]
+
+
+def test_redis_overlay_demo_key_is_a_valid_32_byte_key() -> None:
+    """A malformed demo key makes the documented command fail closed at startup —
+    which is exactly what happened before (it decoded to 33 bytes)."""
+    import base64
+
+    env = _compose_env("docker-compose.yml", "docker-compose.redis.yml", profile="redis")
+    key = env["gateway"]["SECURITYMASKER_MASTER_KEY"]
+    assert len(base64.b64decode(key, validate=True)) == 32
+
+
+def test_demo_config_needs_no_environment_secrets() -> None:
+    import yaml as _yaml
+
+    config = _yaml.safe_load((ROOT / "config" / "securitymasker.demo.yaml").read_text(
+        encoding="utf-8"))
+    for entity in config.get("entities", []):
+        assert "value_from_env" not in entity, entity["id"]
+
+
+def test_compose_publishes_the_gateway_on_loopback_only() -> None:
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    for port in compose["services"]["gateway"].get("ports", []):
+        assert str(port).startswith("127.0.0.1:"), f"non-loopback publish: {port}"
+
+
+def test_container_bind_acknowledgement_is_set_in_compose_not_the_image() -> None:
+    # A container must bind 0.0.0.0 to be reachable, so the acknowledgement is
+    # required — but it belongs next to the loopback publish, not in the image.
+    env = _compose_env("docker-compose.yml")
+    assert env["gateway"].get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
+    assert "SECURITYMASKER_ALLOW_PUBLIC_BIND=1" not in DOCKERFILE.read_text(encoding="utf-8")

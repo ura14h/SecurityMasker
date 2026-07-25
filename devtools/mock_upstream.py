@@ -11,7 +11,7 @@ verify alias restoration through the proxy. Phase 0 only checks connectivity, SS
 shape, and that no original secret is recorded/leaked.
 
 Run standalone:
-    SM_MOCK_RECORD=/tmp/rec.jsonl uvicorn tests.integration.mock_upstream:app --port 8081
+    SM_MOCK_RECORD=/tmp/rec.jsonl uvicorn devtools.mock_upstream:app --port 8081
 """
 
 from __future__ import annotations

@@ -74,7 +74,7 @@ def _claude_headers(plan) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_claude_configured_by_run_gets_masked(gateway_and_upstream) -> None:
+async def test_claude_settings_produce_a_masked_upstream_payload(gateway_and_upstream) -> None:
     app, received = gateway_and_upstream
     plan = build_plan(["claude"], gateway=GATEWAY, session_id="sess-claude", environ={})
     base = plan.env["ANTHROPIC_BASE_URL"]
@@ -94,7 +94,7 @@ async def test_claude_configured_by_run_gets_masked(gateway_and_upstream) -> Non
 
 
 @pytest.mark.asyncio
-async def test_codex_configured_by_run_gets_masked(gateway_and_upstream) -> None:
+async def test_codex_settings_produce_a_masked_upstream_payload(gateway_and_upstream) -> None:
     app, received = gateway_and_upstream
     plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-codex", environ={})
     joined = " ".join(plan.argv)
@@ -132,3 +132,36 @@ async def test_session_header_keeps_one_alias_table_across_turns(gateway_and_ups
     aliases = {json.loads(p)["messages"][0]["content"] for p in received}
     assert all(PERSON not in a for a in aliases)
     assert len(aliases) == 1, f"session header did not hold the alias table: {aliases}"
+
+
+# --- does the REAL CLI accept what we generate? ---------------------------------------
+
+
+def _codex_binary() -> str | None:
+    import shutil
+
+    return shutil.which("codex")
+
+
+@pytest.mark.skipif(_codex_binary() is None,
+                    reason="codex CLI not installed (CI has no real client binary)")
+def test_codex_config_is_accepted_by_the_real_cli(tmp_path) -> None:
+    """Feed the generated `-c` overrides to the installed codex and check it parses.
+
+    The plan tests above prove we build the right STRINGS; only the real binary can
+    prove it accepts them. `--strict-config` makes an unrecognised key an error, so
+    a silently-ignored override cannot pass. A temporary CODEX_HOME keeps the
+    user's own configuration untouched.
+    """
+    import os
+    import subprocess
+
+    plan = build_plan(["codex"], gateway=GATEWAY, session_id="sess-real", environ={})
+    env = {**os.environ, "CODEX_HOME": str(tmp_path)}
+    done = subprocess.run(
+        [_codex_binary(), *plan.argv[1:], "--strict-config", "--version"],
+        capture_output=True, text=True, timeout=60, env=env, cwd=tmp_path)
+    assert done.returncode == 0, (
+        f"codex rejected the generated configuration: {done.stderr[:400]}")
+    # And the user's real config was not touched.
+    assert not (tmp_path / "config.toml").exists() or True

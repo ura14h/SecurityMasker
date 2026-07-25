@@ -1,0 +1,34 @@
+# Demo dictionary for `docker compose up`. SYNTHETIC VALUES ONLY.
+#
+# Separate from securitymasker.example.yaml on purpose: the example is a
+# production TEMPLATE and declares its secrets via `value_from_env`, which the
+# demo could only satisfy by inventing environment values — making the Compose
+# file look as though it holds real secrets. This file has no env-backed entries,
+# so the demo needs no secret-shaped variables at all.
+version: 1
+
+defaults:
+  fail_mode: closed
+  normalization: nfkc
+
+entities:
+  - id: demo_person
+    type: PERSON
+    values: ["山田太郎", "山田 太郎", "Taro Yamada"]
+    replacement_profile: prose_identifier
+    restore_policy: literal
+
+  - id: demo_org
+    type: ORGANIZATION
+    values: ["株式会社極秘技研", "極秘技研"]
+    replacement_profile: prose_identifier
+    restore_policy: literal
+
+patterns:
+  - id: demo_internal_host
+    pattern: 'demo-db01\.internal\.invalid'
+    type: HOSTNAME
+    replacement_profile: hostname
+    restore_policy: literal
+
+enable_secret_detector: true
