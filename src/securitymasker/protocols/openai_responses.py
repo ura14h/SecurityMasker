@@ -124,25 +124,30 @@ async def _mask_arguments(raw: str, mask: MaskTransform) -> str:
 
 
 def restore_response(engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]) -> None:
-    """Restore a non-streaming Responses/Chat response in place (§19)."""
+    """Restore a non-streaming Responses/Chat response in place (§19).
+
+    Response text is restored for display; tool-call ``arguments`` are restored to
+    real values only for allowlisted trusted-local tools (doc/06 P0-8).
+    """
     restore = engine.make_restorer(session)
     reasm = ToolArgumentReassembler(restore)
+    trust = engine.tool_trust
 
     # Responses API: output[].content[].text  and function_call arguments.
     if isinstance(data.get("output"), list):
         for item in data["output"]:
-            _restore_output_item(item, restore, reasm)
+            _restore_output_item(item, restore, reasm, trust)
 
     # Chat Completions: choices[].message.{content, tool_calls[].function.arguments}
     if isinstance(data.get("choices"), list):
         for choice in data["choices"]:
             msg = choice.get("message") if isinstance(choice, dict) else None
             if isinstance(msg, dict):
-                _restore_message(msg, restore, reasm)
+                _restore_message(msg, restore, reasm, trust)
 
 
 def _restore_output_item(
-    item: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler
+    item: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler, trust: Any
 ) -> None:
     if not isinstance(item, dict):
         return
@@ -153,12 +158,14 @@ def _restore_output_item(
                 for key in TEXT_KEYS:
                     if isinstance(part.get(key), str):
                         part[key] = restore(part[key])
-    if isinstance(item.get("arguments"), str):
+    # Tool arguments are execution-bound: restore only for a trusted local tool,
+    # otherwise leave the aliases in place (doc/06 P0-8).
+    if isinstance(item.get("arguments"), str) and trust.restores_arguments(item.get("name")):
         item["arguments"] = reasm.restore_arguments(item["arguments"])
 
 
 def _restore_message(
-    msg: dict[str, Any], restore: RestoreTransform, reasm: ToolArgumentReassembler
+    msg: dict[str, Any], restore: RestoreTransform, reasm: ToolArgumentReassembler, trust: Any
 ) -> None:
     if isinstance(msg.get("content"), str):
         msg["content"] = restore(msg["content"])
@@ -170,5 +177,6 @@ def _restore_message(
     if isinstance(tool_calls, list):
         for call in tool_calls:
             fn = call.get("function") if isinstance(call, dict) else None
-            if isinstance(fn, dict) and isinstance(fn.get("arguments"), str):
+            if (isinstance(fn, dict) and isinstance(fn.get("arguments"), str)
+                    and trust.restores_arguments(fn.get("name"))):
                 fn["arguments"] = reasm.restore_arguments(fn["arguments"])

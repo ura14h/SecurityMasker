@@ -6,6 +6,7 @@ import contextlib
 import json
 
 from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
+from securitymasker.tool_trust import ToolTrustPolicy
 
 REPL = {"SM_PERSON_2B891C": "山田太郎", "sm-host-7f3a91.example.invalid": "prod-db01.internal.example"}
 
@@ -16,8 +17,9 @@ def restore(text: str) -> str:
     return text
 
 
-def _run(events_sse: str, chunk_size: int | None = None) -> list[dict]:
-    proc = AnthropicStreamProcessor(REPL, restore)
+def _run(events_sse: str, chunk_size: int | None = None,
+         trusted_tools: tuple[str, ...] = ()) -> list[dict]:
+    proc = AnthropicStreamProcessor(REPL, restore, ToolTrustPolicy(frozenset(trusted_tools)))
     raw = events_sse.encode("utf-8")
     out = bytearray()
     if chunk_size is None:
@@ -70,29 +72,44 @@ def test_text_delta_restored_with_tiny_byte_chunks() -> None:
     assert _assemble_text(events) == "x 山田太郎 y"
 
 
-def test_input_json_delta_buffered_and_restored() -> None:
-    full = '{"host": "sm-host-7f3a91.example.invalid", "user": "SM_PERSON_2B891C"}'
+def _tool_use_stream(full: str, name: str) -> str:
     deltas = "".join(
         "event: content_block_delta\n"
         + f"data: {json.dumps({'type': 'content_block_delta', 'index': 1, 'delta': {'type': 'input_json_delta', 'partial_json': full[i:i + 5]}})}\n\n"
         for i in range(0, len(full), 5)
     )
-    sse = (
+    return (
         'event: content_block_start\n'
-        f'data: {json.dumps({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "t1", "name": "db", "input": {}}})}\n\n'
+        f'data: {json.dumps({"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "t1", "name": name, "input": {}}})}\n\n'
         + deltas
         + 'event: content_block_stop\n'
         f'data: {json.dumps({"type": "content_block_stop", "index": 1})}\n\n'
     )
-    events = _run(sse)
-    # Exactly one input_json_delta is emitted (buffered), and it is valid restored JSON.
-    json_deltas = [
-        e for e in events
-        if e.get("type") == "content_block_delta" and e["delta"].get("type") == "input_json_delta"
-    ]
-    assert len(json_deltas) == 1
-    obj = json.loads(json_deltas[0]["delta"]["partial_json"])
+
+
+def _json_deltas(events: list[dict]) -> list[dict]:
+    return [e for e in events
+            if e.get("type") == "content_block_delta"
+            and e["delta"].get("type") == "input_json_delta"]
+
+
+def test_input_json_delta_restored_for_trusted_tool() -> None:
+    full = '{"host": "sm-host-7f3a91.example.invalid", "user": "SM_PERSON_2B891C"}'
+    events = _run(_tool_use_stream(full, "db"), trusted_tools=("db",))
+    deltas = _json_deltas(events)
+    assert len(deltas) == 1
+    obj = json.loads(deltas[0]["delta"]["partial_json"])
     assert obj == {"host": "prod-db01.internal.example", "user": "山田太郎"}
+
+
+def test_input_json_delta_not_restored_for_untrusted_tool() -> None:
+    full = '{"host": "sm-host-7f3a91.example.invalid"}'
+    events = _run(_tool_use_stream(full, "external_mcp"))  # not trusted
+    deltas = _json_deltas(events)
+    assert len(deltas) == 1
+    # Aliases preserved; real host never reaches the (untrusted) tool.
+    assert "sm-host-7f3a91.example.invalid" in deltas[0]["delta"]["partial_json"]
+    assert "prod-db01.internal.example" not in deltas[0]["delta"]["partial_json"]
 
 
 def test_message_events_pass_through_in_order() -> None:

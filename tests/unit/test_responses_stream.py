@@ -6,6 +6,7 @@ import contextlib
 import json
 
 from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
+from securitymasker.tool_trust import ToolTrustPolicy
 
 REPL = {"SM_ORG_7F3A91": "株式会社極秘技研", "SM_HOST": "prod-db01.internal.example"}
 
@@ -16,8 +17,8 @@ def restore(text: str) -> str:
     return text
 
 
-def _run(sse: str, chunk: int | None = None) -> list[dict]:
-    proc = ResponsesStreamProcessor(REPL, restore)
+def _run(sse: str, chunk: int | None = None, trusted_tools: tuple[str, ...] = ()) -> list[dict]:
+    proc = ResponsesStreamProcessor(REPL, restore, ToolTrustPolicy(frozenset(trusted_tools)))
     raw = sse.encode("utf-8")
     out = bytearray()
     if chunk is None:
@@ -70,22 +71,36 @@ def test_completed_event_response_restored() -> None:
     assert completed["response"]["output"][0]["content"][0]["text"] == "会社 株式会社極秘技研"
 
 
-def test_function_call_arguments_buffered_and_restored() -> None:
-    full = '{"host": "SM_HOST"}'
+def _fc_stream(full: str) -> str:
+    # output_item.added registers the tool name for fc_1, then buffered arg deltas.
+    added = _ev({"type": "response.output_item.added", "output_index": 0,
+                 "item": {"id": "fc_1", "type": "function_call", "name": "connect_db",
+                          "arguments": ""}})
     deltas = "".join(
         _ev({"type": "response.function_call_arguments.delta", "item_id": "fc_1",
              "output_index": 0, "delta": full[i : i + 4]})
         for i in range(0, len(full), 4)
     )
-    sse = deltas + _ev({"type": "response.function_call_arguments.done", "item_id": "fc_1",
-                        "output_index": 0, "arguments": full})
-    events = _run(sse)
+    done = _ev({"type": "response.function_call_arguments.done", "item_id": "fc_1",
+                "output_index": 0, "arguments": full})
+    return added + deltas + done
+
+
+def test_function_call_arguments_restored_for_trusted_tool() -> None:
+    events = _run(_fc_stream('{"host": "SM_HOST"}'), trusted_tools=("connect_db",))
     # Deltas are suppressed; exactly one restored delta is re-emitted, plus done.
     arg_deltas = [e for e in events if e.get("type") == "response.function_call_arguments.delta"]
     assert len(arg_deltas) == 1
     assert json.loads(arg_deltas[0]["delta"]) == {"host": "prod-db01.internal.example"}
     done = [e for e in events if e.get("type") == "response.function_call_arguments.done"][0]
     assert json.loads(done["arguments"]) == {"host": "prod-db01.internal.example"}
+
+
+def test_function_call_arguments_not_restored_for_untrusted_tool() -> None:
+    # Default: connect_db is not on the trusted allowlist -> args keep aliases.
+    events = _run(_fc_stream('{"host": "SM_HOST"}'))
+    done = [e for e in events if e.get("type") == "response.function_call_arguments.done"][0]
+    assert json.loads(done["arguments"]) == {"host": "SM_HOST"}  # not restored
 
 
 def test_unknown_event_passthrough() -> None:

@@ -71,7 +71,19 @@ async def test_basic_auth_url_masks_only_credentials() -> None:
 @pytest.mark.asyncio
 async def test_existing_alias_detector_recognizes_all_forms() -> None:
     det = ExistingAliasDetector()
-    text = "SM_ORG_7F3A91 sm-host-9c885f.example.invalid sm-user-2b891c@example.invalid ${SECURITYMASKER_SECRET_30A958}"
-    res = await det.detect(ctx(text))
+    aliases = ("SM_ORG_7F3A91", "sm-host-9c885f.example.invalid",
+               "sm-user-2b891c@example.invalid", "${SECURITYMASKER_SECRET_30A958}")
+    text = " ".join(aliases)
+    # Only protect aliases actually issued in this session (doc/06 P0-7).
+    issued = DetectionContext(norm=normalize(text, "nfkc"), issued_aliases=frozenset(aliases))
+    res = await det.detect(issued)
     assert len(res) == 4
     assert all(r.entity_type == EntityType.EXISTING_ALIAS.value for r in res)
+
+
+@pytest.mark.asyncio
+async def test_existing_alias_detector_ignores_unissued_alias_shapes() -> None:
+    det = ExistingAliasDetector()
+    text = "SM_ORG_7F3A91 sm-host-9c885f.example.invalid"
+    # No aliases issued in this session -> nothing is auto-protected (P0-7).
+    assert await det.detect(ctx(text)) == []

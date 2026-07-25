@@ -32,6 +32,7 @@ from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError
 from securitymasker.models import ReplacementProfile, RestorePolicy
 from securitymasker.normalization import NormForm
+from securitymasker.tool_trust import ToolTrustPolicy
 
 _VALID_PROFILES = {p.value for p in ReplacementProfile}
 _VALID_POLICIES = {p.value for p in RestorePolicy}
@@ -188,6 +189,13 @@ class NerConfig(BaseModel):
     min_score: float = 0.85
 
 
+class ToolTrustConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Default empty => no tool's arguments are restored to real values (P0-8).
+    trusted_local_tools: list[str] = Field(default_factory=list)
+
+
 class SecurityMaskerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -200,6 +208,7 @@ class SecurityMaskerConfig(BaseModel):
     japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
     presidio: PresidioConfig = Field(default_factory=PresidioConfig)
     ner: NerConfig = Field(default_factory=NerConfig)
+    tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
 
     @field_validator("version")
     @classmethod
@@ -347,4 +356,5 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         registered_literals=registered_literals,
         leak_scanners=build_leak_scanners(config),
         fail_mode=config.defaults.fail_mode,
+        tool_trust=ToolTrustPolicy(frozenset(config.tool_trust.trusted_local_tools)),
     )

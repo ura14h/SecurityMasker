@@ -26,16 +26,24 @@ from typing import Any
 from securitymasker.protocols.sse import SSEEvent, SSEParser, serialize_event
 from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
+from securitymasker.tool_trust import ToolTrustPolicy
 
 
 class AnthropicStreamProcessor:
-    def __init__(self, replacements: Mapping[str, str], restore: Callable[[str], str]) -> None:
+    def __init__(
+        self,
+        replacements: Mapping[str, str],
+        restore: Callable[[str], str],
+        tool_trust: ToolTrustPolicy | None = None,
+    ) -> None:
         self._replacements = dict(replacements)
+        self._trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
         self._decoder = codecs.getincrementaldecoder("utf-8")()
         self._parser = SSEParser()
         self._text_restorers: dict[int, StreamingRestorer] = {}
         self._json_blocks: set[int] = set()
         self._json_buffers: dict[int, list[str]] = {}
+        self._block_names: dict[int, str] = {}  # block index -> tool name (P0-8)
         self._reasm = ToolArgumentReassembler(restore)
 
     def feed(self, data: bytes) -> bytes:
@@ -86,6 +94,8 @@ class AnthropicStreamProcessor:
         elif block.get("type") == "tool_use":
             self._json_blocks.add(idx)
             self._json_buffers[idx] = []
+            if isinstance(block.get("name"), str):
+                self._block_names[idx] = block["name"]
 
     def _on_block_delta(self, ev: SSEEvent, payload: dict[str, Any]) -> list[SSEEvent]:
         idx = payload.get("index")
@@ -110,7 +120,13 @@ class AnthropicStreamProcessor:
             self._json_blocks.discard(idx)
             raw = "".join(self._json_buffers.pop(idx, []))
             if raw:
-                extra.append(_json_delta_event(idx, self._safe_restore_json(raw)))
+                # Restore real values only for a trusted local tool (doc/06 P0-8);
+                # otherwise re-emit the buffered aliased JSON unchanged.
+                if self._trust.restores_arguments(self._block_names.pop(idx, None)):
+                    partial = self._safe_restore_json(raw)
+                else:
+                    partial = raw
+                extra.append(_json_delta_event(idx, partial))
         return [*extra, ev]
 
     def _safe_restore_json(self, raw: str) -> str:

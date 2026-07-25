@@ -25,6 +25,7 @@ from securitymasker.protocols.base import TEXT_KEYS
 from securitymasker.protocols.sse import SSEEvent, SSEParser, serialize_event
 from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
+from securitymasker.tool_trust import ToolTrustPolicy
 
 
 def _restore_content_parts(content: Any, restore: Callable[[str], str]) -> None:
@@ -45,13 +46,20 @@ def _restore_response_dict(response: Any, restore: Callable[[str], str]) -> None
 
 
 class ResponsesStreamProcessor:
-    def __init__(self, replacements: Mapping[str, str], restore: Callable[[str], str]) -> None:
+    def __init__(
+        self,
+        replacements: Mapping[str, str],
+        restore: Callable[[str], str],
+        tool_trust: ToolTrustPolicy | None = None,
+    ) -> None:
         self._replacements = dict(replacements)
         self._restore = restore
+        self._trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
         self._decoder = codecs.getincrementaldecoder("utf-8")()
         self._parser = SSEParser()
         self._text_restorers: dict[tuple[int, int], StreamingRestorer] = {}
         self._arg_buffers: dict[str, list[str]] = {}
+        self._item_names: dict[str, str] = {}  # item_id -> tool name (for trust, P0-8)
         self._reasm = ToolArgumentReassembler(restore)
 
     def feed(self, data: bytes) -> bytes:
@@ -96,8 +104,13 @@ class ResponsesStreamProcessor:
         if etype in ("response.output_item.added", "response.output_item.done"):
             item = payload.get("item")
             if isinstance(item, dict):
+                # Remember item_id -> tool name so argument deltas can be trusted.
+                if isinstance(item.get("id"), str) and isinstance(item.get("name"), str):
+                    self._item_names[item["id"]] = item["name"]
                 _restore_content_parts(item.get("content"), self._restore)
-                if isinstance(item.get("arguments"), str):
+                if isinstance(item.get("arguments"), str) and self._trust.restores_arguments(
+                    item.get("name")
+                ):
                     item["arguments"] = self._safe_args(item["arguments"])
             return [_reserialize(ev, payload)]
         if "response" in payload and isinstance(payload["response"], dict):
@@ -131,7 +144,12 @@ class ResponsesStreamProcessor:
     def _on_args_done(self, ev: SSEEvent, payload: dict[str, Any]) -> list[SSEEvent]:
         item_id = str(payload.get("item_id", ""))
         raw = "".join(self._arg_buffers.pop(item_id, [])) or str(payload.get("arguments", ""))
-        restored = self._safe_args(raw)
+        # Restore to real values only for a trusted local tool (doc/06 P0-8);
+        # otherwise emit the buffered aliased JSON unchanged.
+        if self._trust.restores_arguments(self._item_names.get(item_id)):
+            restored = self._safe_args(raw)
+        else:
+            restored = raw
         payload["arguments"] = restored
         emit_delta = _args_delta_event(payload, restored)
         return [emit_delta, _reserialize(ev, payload)]

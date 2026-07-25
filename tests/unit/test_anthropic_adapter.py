@@ -10,12 +10,13 @@ from securitymasker.engine import MaskingEngine
 from securitymasker.models import EntityType, ReplacementProfile, RestorePolicy
 from securitymasker.protocols import anthropic_messages as adapter
 from securitymasker.sessions.memory import InMemorySessionStore
+from securitymasker.tool_trust import ToolTrustPolicy
 
 PROSE = ReplacementProfile.PROSE_IDENTIFIER.value
 LITERAL = RestorePolicy.LITERAL.value
 
 
-def build_engine() -> MaskingEngine:
+def build_engine(trusted_tools: tuple[str, ...] = ()) -> MaskingEngine:
     return MaskingEngine([
         DictionaryDetector([DictionaryEntry(EntityType.PERSON.value, ("山田太郎",), PROSE, LITERAL)]),
         RegexDetector(
@@ -23,7 +24,7 @@ def build_engine() -> MaskingEngine:
                         ReplacementProfile.HOSTNAME.value, LITERAL, 150)],
             name="host",
         ),
-    ])
+    ], tool_trust=ToolTrustPolicy(frozenset(trusted_tools)))
 
 
 async def _session():
@@ -123,8 +124,8 @@ async def test_mask_then_restore_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
-async def test_restore_tool_use_input_values() -> None:
-    eng, s = build_engine(), await _session()
+async def test_restore_tool_use_input_values_trusted() -> None:
+    eng, s = build_engine(trusted_tools=("db",)), await _session()
     await adapter.mask_request(eng, s, {"max_tokens": 10, "messages": [
         {"role": "user", "content": "山田太郎 prod-db01.internal.example"}]})
     host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
@@ -133,3 +134,17 @@ async def test_restore_tool_use_input_values() -> None:
     adapter.restore_response(eng, s, resp)
     assert resp["content"][0]["input"]["host"] == "prod-db01.internal.example"
     assert resp["content"][0]["input"]["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_tool_use_input_untrusted_keeps_aliases() -> None:
+    # Default: the tool is not trusted -> input keeps its aliases (doc/06 P0-8).
+    eng, s = build_engine(), await _session()
+    await adapter.mask_request(eng, s, {"max_tokens": 10, "messages": [
+        {"role": "user", "content": "prod-db01.internal.example"}]})
+    host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
+    resp = {"content": [{"type": "tool_use", "id": "t1", "name": "external",
+                         "input": {"host": host_alias}}]}
+    adapter.restore_response(eng, s, resp)
+    assert resp["content"][0]["input"]["host"] == host_alias           # not restored
+    assert resp["content"][0]["input"]["host"] != "prod-db01.internal.example"

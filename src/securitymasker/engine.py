@@ -23,6 +23,7 @@ from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
 from securitymasker.sessions.crypto import decrypt
+from securitymasker.tool_trust import ToolTrustPolicy
 
 REDACTION_MARK = "[REDACTED]"
 
@@ -33,7 +34,7 @@ REDACTION_MARK = "[REDACTED]"
 _FAIL_OPEN_ELIGIBLE = frozenset({"presidio", "jp_ner"})
 
 
-def _iter_strings(node: Any) -> Iterator[str]:
+def iter_strings(node: Any) -> Iterator[str]:
     """Yield every string leaf in a parsed JSON structure — dict keys included.
 
     Keys are yielded because a registered secret can be smuggled into a schema
@@ -45,10 +46,10 @@ def _iter_strings(node: Any) -> Iterator[str]:
         for key, value in node.items():
             if isinstance(key, str):
                 yield key
-            yield from _iter_strings(value)
+            yield from iter_strings(value)
     elif isinstance(node, list | tuple):
         for item in node:
-            yield from _iter_strings(item)
+            yield from iter_strings(item)
 
 
 @dataclass
@@ -83,11 +84,13 @@ class MaskingEngine:
         registered_literals: tuple[str, ...] = (),
         leak_scanners: list[SensitiveDataDetector] | None = None,
         fail_mode: str = "closed",
+        tool_trust: ToolTrustPolicy | None = None,
     ) -> None:
         self._detectors = detectors
         self._normalization = normalization
         self._merge_surface_forms = merge_surface_forms
         self._fail_mode = fail_mode
+        self.tool_trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
         # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
         # literals (pre-normalized) and high-precision, deterministic detectors.
         self._registered_literals = tuple(
@@ -95,9 +98,15 @@ class MaskingEngine:
         )
         self._leak_scanners = leak_scanners or []
 
-    async def detect(self, text: str, *, context_kind: str = "prose") -> list[DetectionResult]:
+    async def detect(
+        self,
+        text: str,
+        *,
+        context_kind: str = "prose",
+        issued_aliases: frozenset[str] = frozenset(),
+    ) -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
-        ctx = DetectionContext(norm=norm, context_kind=context_kind)
+        ctx = DetectionContext(norm=norm, context_kind=context_kind, issued_aliases=issued_aliases)
         found: list[DetectionResult] = []
         for detector in self._detectors:
             try:
@@ -117,7 +126,11 @@ class MaskingEngine:
         context_kind: str = "prose",
         request_id: str | None = None,
     ) -> MaskResult:
-        resolved = await self.detect(text, context_kind=context_kind)
+        resolved = await self.detect(
+            text,
+            context_kind=context_kind,
+            issued_aliases=frozenset(session.mappings_by_alias),
+        )
 
         blocking = policy.blocking_entities(resolved)
         if blocking:
@@ -182,7 +195,7 @@ class MaskingEngine:
         """
         if not self._registered_literals and not self._leak_scanners:
             return
-        for text in _iter_strings(data):
+        for text in iter_strings(data):
             norm = normalize(text, self._normalization)
             hay = norm.normalized
             for literal in self._registered_literals:

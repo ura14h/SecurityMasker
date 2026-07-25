@@ -94,28 +94,36 @@ async def _mask_block(block: dict[str, Any], mask: MaskTransform) -> None:
 def restore_response(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> None:
-    """Restore a non-streaming Anthropic response in place (§19)."""
+    """Restore a non-streaming Anthropic response in place (§19).
+
+    ``text`` blocks are restored for display; ``tool_use.input`` is restored only
+    for allowlisted trusted-local tools, else left aliased (doc/06 P0-8).
+    """
     restore = engine.make_restorer(session)
+    trust = engine.tool_trust
     if isinstance(data.get("content"), list):
         for block in data["content"]:
-            _restore_block(block, restore)
+            _restore_block(block, restore, trust)
 
 
-def _restore_block(block: Any, restore: Any) -> None:
+def _restore_block(block: Any, restore: Any, trust: Any) -> None:
     if not isinstance(block, dict):
         return
     if block.get("type") == "text" and isinstance(block.get("text"), str):
         block["text"] = restore(block["text"])
-    elif block.get("type") == "tool_use" and isinstance(block.get("input"), dict | list):
+    elif (block.get("type") == "tool_use" and isinstance(block.get("input"), dict | list)
+          and trust.restores_arguments(block.get("name"))):
         block["input"] = transform_all_string_values_sync(block["input"], restore)
 
 
 def restore_response_object(engine: MaskingEngine, session: MaskingSession, response: Any) -> None:
     """Restore a live Anthropic response object (attribute access, §19)."""
     restore = engine.make_restorer(session)
+    trust = engine.tool_trust
     for block in getattr(response, "content", None) or []:
         btype = getattr(block, "type", None)
         if btype == "text" and isinstance(getattr(block, "text", None), str):
             block.text = restore(block.text)
-        elif btype == "tool_use" and isinstance(getattr(block, "input", None), dict | list):
+        elif (btype == "tool_use" and isinstance(getattr(block, "input", None), dict | list)
+              and trust.restores_arguments(getattr(block, "name", None))):
             block.input = transform_all_string_values_sync(block.input, restore)

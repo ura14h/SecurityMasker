@@ -20,6 +20,11 @@ class DetectionContext:
     norm: NormalizedText
     context_kind: str = ContextKind.PROSE.value
     request_id: str | None = None
+    # Aliases actually issued in the CURRENT session. The existing-alias detector
+    # only protects a token if it is in this set, so an alias-shaped string that
+    # was never issued here (another session's, an expired one, or a secret that
+    # merely looks like an alias) is not auto-protected (doc/06 P0-7).
+    issued_aliases: frozenset[str] = frozenset()
 
 
 @runtime_checkable

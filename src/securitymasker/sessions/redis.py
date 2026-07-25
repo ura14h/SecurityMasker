@@ -16,9 +16,13 @@ serialization/crypto logic is testable without a running Redis.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import json
 import os
+import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -35,6 +39,15 @@ from securitymasker.sessions.store import (
 )
 
 MASTER_KEY_ENV = "SECURITYMASKER_MASTER_KEY"
+
+# Atomic compare-and-delete so a worker only releases a lock it still owns (P1-9).
+_UNLOCK_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+    "return redis.call('del', KEYS[1]) else return 0 end"
+)
+_LOCK_TTL_SECONDS = 30
+_LOCK_WAIT_SECONDS = 10.0
+_LOCK_POLL_SECONDS = 0.05
 
 
 def load_master_key() -> bytes:
@@ -216,11 +229,31 @@ class RedisSessionStore:
     async def lock(
         self, session_id: str, tenant_id: str | None = None
     ) -> AsyncIterator[None]:
-        """Best-effort cross-worker lock via SET NX (§8, §30.4)."""
+        """Cross-worker lock via SET NX with a unique owner token (§8, P1-9).
+
+        Waits (bounded) for the lock and fails closed if it cannot be acquired, so
+        the caller never runs the critical section unlocked; releases atomically so
+        it can only delete a lock it still owns (never another owner's after TTL).
+        """
         lock_key = f"{self._ns}:{tenant_id or '_'}:lock:{session_id}"
-        acquired = await self._redis.set(lock_key, b"1", nx=True, ex=30)
+        token = secrets.token_hex(16)
+        deadline = time.monotonic() + _LOCK_WAIT_SECONDS
+        acquired = False
+        while True:
+            acquired = bool(
+                await self._redis.set(lock_key, token, nx=True, ex=_LOCK_TTL_SECONDS)
+            )
+            if acquired or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(_LOCK_POLL_SECONDS)
+        if not acquired:
+            raise SessionError(
+                f"could not acquire session lock within {_LOCK_WAIT_SECONDS}s; "
+                "refusing to proceed unlocked"
+            )
         try:
             yield
         finally:
-            if acquired:
-                await self._redis.delete(lock_key)
+            # Best-effort atomic release; if it fails, the TTL reclaims the lock.
+            with contextlib.suppress(Exception):
+                await self._redis.eval(_UNLOCK_LUA, 1, lock_key, token)

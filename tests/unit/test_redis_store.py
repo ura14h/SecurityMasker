@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import secrets
+from typing import Any
 
 import pytest
 
@@ -41,6 +42,16 @@ class FakeRedis:
         import fnmatch
 
         return [k for k in self.store if fnmatch.fnmatch(k, pattern)]
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> int:
+        # Only the compare-and-delete script is used: del iff value == token.
+        key, token = args[0], args[1]
+        cur = self.store.get(key)
+        stored = cur.decode() if isinstance(cur, bytes) else cur
+        if stored == token:
+            self.store.pop(key, None)
+            return 1
+        return 0
 
 
 def _store() -> RedisSessionStore:
@@ -107,6 +118,41 @@ async def test_wrong_master_key_fails_closed() -> None:
     other = RedisSessionStore(fake, master_key=secrets.token_bytes(32))
     with pytest.raises(SessionError):
         await other.get("s1", tenant_id="t1")
+
+
+@pytest.mark.asyncio
+async def test_lock_fails_closed_when_already_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    from securitymasker.sessions import redis as redismod
+
+    monkeypatch.setattr(redismod, "_LOCK_WAIT_SECONDS", 0.15)
+    store = _store()
+    async with store.lock("s1", tenant_id="t1"):
+        # A second acquisition of the same lock must fail closed, not proceed.
+        with pytest.raises(SessionError):
+            async with store.lock("s1", tenant_id="t1"):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_lock_release_only_deletes_own_token() -> None:
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    lock_key = "sm:t1:lock:s1"
+    async with store.lock("s1", tenant_id="t1"):
+        # Simulate the lock expiring and another owner taking it over.
+        fake.store[lock_key] = b"other-owner-token"
+    # Our release must NOT have deleted the other owner's lock.
+    assert fake.store.get(lock_key) == b"other-owner-token"
+
+
+@pytest.mark.asyncio
+async def test_lock_acquire_and_release_roundtrip() -> None:
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    lock_key = "sm:_:lock:s2"
+    async with store.lock("s2"):
+        assert lock_key in fake.store          # held during the critical section
+    assert lock_key not in fake.store          # released afterwards
 
 
 def test_load_master_key_validates(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -25,12 +25,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from securitymasker.engine import MaskingEngine
+from securitymasker.detectors.existing_alias import contains_alias_shape
+from securitymasker.engine import MaskingEngine, iter_strings
 from securitymasker.errors import SecurityMaskerError
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
 from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
 from securitymasker.gateway.runtime import GatewayRuntime
-from securitymasker.gateway.session import resolve_session_id
+from securitymasker.gateway.session import namespaced_key, resolve_session, resolve_tenant
 from securitymasker.logging import get_logger
 from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
@@ -48,6 +49,10 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     # Never echo the request body/values in an error (§25).
     return JSONResponse({"error": {"message": message, "type": code, "code": str(status)}},
                         status_code=status)
+
+
+def _payload_has_alias_shape(data: dict[str, Any]) -> bool:
+    return any(contains_alias_shape(s) for s in iter_strings(data))
 
 
 def _client_headers(request: Request) -> dict[str, str]:
@@ -118,15 +123,32 @@ async def _handle(
     if err is not None or data is None:
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
-    session_id = resolve_session_id(request.headers, data)
-    session = await rt.store.get_or_create(session_id)
+    tenant = resolve_tenant(rt.mode, rt.tenant_header, request.headers)
+    if tenant is None:
+        # Multitenant mode with no trusted tenant: fail closed rather than risk
+        # sharing one tenant's alias table with another (doc/06 P0-9).
+        _log.warning("sm_block_no_tenant", path=path)
+        return _error(403, "tenant_required", "A trusted tenant identity is required.")
+
+    resolved = resolve_session(request.headers, data)
+    if not resolved.stable and _payload_has_alias_shape(data):
+        # Prior-turn aliases but no stable session to restore them: block instead
+        # of silently starting a fresh session and corrupting the turn (P1-1).
+        _log.warning("sm_block_unresolved_session", path=path)
+        return _error(409, "session_unresolved",
+                      "Request references prior aliases but no stable session id was provided.")
+
+    store_key = namespaced_key(tenant, resolved.session_id)
     try:
-        async with rt.store.lock(session_id):
+        # Lock first so get/create/mask/save share one exclusion window — two
+        # workers can't fork the same session's alias table (doc/06 P1-9).
+        async with rt.store.lock(store_key):
+            session = await rt.store.get_or_create(store_key, tenant_id=tenant)
             await mask(rt.engine, session, data)
             await rt.store.save(session)
         # Final block-only guard over the whole masked payload (doc/06 P0-4): a
         # registered secret in an unknown/structural field must never be forwarded.
-        await rt.engine.assert_no_leak_in_payload(data, request_id=session_id)
+        await rt.engine.assert_no_leak_in_payload(data, request_id=store_key)
     except SecurityMaskerError as exc:
         _log.warning("sm_block", path=path)
         return _error(400, "securitymasker_blocked", str(exc))
@@ -134,7 +156,8 @@ async def _handle(
     masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
     if data.get("stream"):
         proc = stream_processor(rt.engine.literal_restorations(session),
-                                rt.engine.make_restorer(session))
+                                rt.engine.make_restorer(session),
+                                rt.engine.tool_trust)
         return await forward_streaming(request.method, url, headers, masked, proc)
 
     status, resp_headers, content = await forward_buffered(request.method, url, headers, masked)

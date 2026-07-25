@@ -10,12 +10,13 @@ from securitymasker.engine import MaskingEngine
 from securitymasker.models import EntityType, ReplacementProfile, RestorePolicy
 from securitymasker.protocols import openai_responses as adapter
 from securitymasker.sessions.memory import InMemorySessionStore
+from securitymasker.tool_trust import ToolTrustPolicy
 
 PROSE = ReplacementProfile.PROSE_IDENTIFIER.value
 LITERAL = RestorePolicy.LITERAL.value
 
 
-def build_engine() -> MaskingEngine:
+def build_engine(trusted_tools: tuple[str, ...] = ()) -> MaskingEngine:
     detectors = [
         DictionaryDetector([DictionaryEntry(EntityType.PERSON.value, ("山田太郎",), PROSE, LITERAL)]),
         RegexDetector(
@@ -24,7 +25,7 @@ def build_engine() -> MaskingEngine:
             name="host",
         ),
     ]
-    return MaskingEngine(detectors)
+    return MaskingEngine(detectors, tool_trust=ToolTrustPolicy(frozenset(trusted_tools)))
 
 
 async def _session():
@@ -97,12 +98,10 @@ async def test_mask_then_restore_response_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
-async def test_restore_chat_tool_call_arguments() -> None:
-    eng, s = build_engine(), await _session()
-    # Prime the session mapping by masking the values first.
+async def test_restore_chat_tool_call_arguments_trusted() -> None:
+    # connect_db is an allowlisted trusted-local tool: its arguments are restored.
+    eng, s = build_engine(trusted_tools=("connect_db",)), await _session()
     await adapter.mask_request(eng, s, {"input": "山田太郎 prod-db01.internal.example"})
-    restore = eng.make_restorer(s)
-    # Find the aliases the engine assigned.
     person_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "山田太郎")
     host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
     resp = {
@@ -116,4 +115,21 @@ async def test_restore_chat_tool_call_arguments() -> None:
     args = json.loads(resp["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
     assert args == {"host": "prod-db01.internal.example", "user": "山田太郎"}
     assert resp["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "connect_db"
-    assert restore  # restorer usable
+
+
+@pytest.mark.asyncio
+async def test_untrusted_tool_call_arguments_not_restored() -> None:
+    # Default: no tool is trusted -> arguments keep their aliases (doc/06 P0-8).
+    eng, s = build_engine(), await _session()
+    await adapter.mask_request(eng, s, {"input": "山田太郎 prod-db01.internal.example"})
+    host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
+    resp = {
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {
+                "name": "external_mcp_tool",
+                "arguments": f'{{"host": "{host_alias}"}}'}}]}}],
+    }
+    adapter.restore_response(eng, s, resp)
+    args = resp["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    assert host_alias in args                          # alias preserved
+    assert "prod-db01.internal.example" not in args    # real value NOT leaked
