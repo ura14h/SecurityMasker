@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import hashlib
 
+from securitymasker.aliases.structure import file_path_alias, url_alias
 from securitymasker.models import EntityType, ReplacementProfile
 
 ALIAS_PREFIX = "SM_"
 INVALID_DOMAIN = "example.invalid"
-_DOC_IPV4_NET = "198.51.100"  # RFC 5737 documentation range
+# All three RFC 5737 documentation ranges: 3 x 254 aliases instead of 254 (ADR-0007).
+_DOC_IPV4_NETS = ("192.0.2", "198.51.100", "203.0.113")
+_DOC_IPV4_NET = _DOC_IPV4_NETS[1]  # kept for existing references/tests
 _DOC_IPV6_PREFIX = "2001:db8"  # RFC 3849 documentation range
 ENV_SECRET_PREFIX = "SECURITYMASKER_SECRET_"
 
@@ -69,8 +72,15 @@ def alias_for(
         return f"sm-user-{hexlow}@{INVALID_DOMAIN}"
 
     if p is ReplacementProfile.IPV4:
-        octet = (int(token, 16) % 254) + 1  # 1..254
-        return f"{_DOC_IPV4_NET}.{octet}"
+        # Shape preservation caps the space: a valid IPv4 alias must stay inside
+        # the documentation ranges, so there are 3 x 254 = 762 of them per session.
+        # That is a deliberate trade-off (ADR-0007). Exhausting it is NOT silently
+        # tolerated: the factory keeps lengthening the token, finds every candidate
+        # taken, and raises AliasCollisionError -> the request fails closed.
+        n = int(token, 16)
+        net = _DOC_IPV4_NETS[n % len(_DOC_IPV4_NETS)]
+        octet = (n // len(_DOC_IPV4_NETS)) % 254 + 1  # 1..254
+        return f"{net}.{octet}"
 
     if p is ReplacementProfile.IPV6:
         return f"{_DOC_IPV6_PREFIX}::{hexlow[:16] or '1'}"
@@ -86,6 +96,13 @@ def alias_for(
     if p is ReplacementProfile.ENVIRONMENT_REFERENCE:
         return f"${{{ENV_SECRET_PREFIX}{hexup}}}"
 
-    # FILE_PATH / URL matched values are components; format as an identifier token.
-    # Structural path/URL splitting is handled by the engine (Phase 2).
+    # URL / FILE_PATH are rebuilt component-by-component so the alias stays a
+    # parseable URL or a resolvable-looking path (invariant 3, doc/06 P1-6).
+    # A value that cannot be rebuilt safely raises MaskingError -> request blocked.
+    if p is ReplacementProfile.URL:
+        return url_alias(token, original)
+
+    if p is ReplacementProfile.FILE_PATH:
+        return file_path_alias(token, original)
+
     return f"{ALIAS_PREFIX}{_tag(entity_type)}_{hexup}"

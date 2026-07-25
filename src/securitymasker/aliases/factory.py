@@ -15,7 +15,12 @@ from securitymasker.errors import AliasCollisionError, MaskingError
 from securitymasker.models import AliasMapping, MaskingSession
 from securitymasker.sessions.crypto import encrypt, fingerprint
 
-_MIN_TOKEN_HEX = 6
+# Alias token length in hex chars. 12 hex = 48 bits: with 10k mappings per session
+# the birthday collision probability is ~1.8e-10, and guessing a specific alias is
+# infeasible. The old 6-hex (24-bit) default collided at ~1-in-3000 for a 1k-entry
+# session and was cheap to enumerate — see docs/adr/0007-alias-token-length.md.
+# Collisions still lengthen the token, so this is the FLOOR, not a cap.
+_MIN_TOKEN_HEX = 12
 _MAX_TOKEN_HEX = 32
 _TOKEN_STEP = 2
 

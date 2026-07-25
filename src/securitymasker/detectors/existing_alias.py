@@ -24,7 +24,7 @@ _ALIAS_RX = re.compile(
     | sm-host-[0-9a-f]{6,}\.example\.invalid                  # hostname
     | sm-user-[0-9a-f]{6,}@example\.invalid                   # email
     | \$\{SECURITYMASKER_SECRET_[0-9A-F]{6,}\}                # env reference
-    | 198\.51\.100\.\d{1,3}                                   # ipv4 (doc range)
+    | (?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}         # ipv4 (RFC 5737)
     | 2001:db8::[0-9a-f]{1,16}                                # ipv6 (doc range)
     """
 )

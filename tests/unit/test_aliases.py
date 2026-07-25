@@ -75,8 +75,18 @@ def test_profile_email_is_syntactically_valid() -> None:
 
 
 def test_profile_ipv4_is_documentation_range() -> None:
-    alias = alias_for(ReplacementProfile.IPV4.value, "IP_ADDRESS", "abcdef", "1.2.3.4")
-    assert ipaddress.ip_address(alias) in ipaddress.ip_network("198.51.100.0/24")
+    # All three RFC 5737 ranges are used, tripling the alias space (ADR-0007).
+    nets = [ipaddress.ip_network(n) for n in
+            ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
+    for token in ("abcdef", "123456", "ffffff", "0f0f0f"):
+        alias = alias_for(ReplacementProfile.IPV4.value, "IP_ADDRESS", token, "1.2.3.4")
+        assert any(ipaddress.ip_address(alias) in net for net in nets), alias
+
+
+def test_ipv4_alias_space_uses_all_three_ranges() -> None:
+    seen = {alias_for(ReplacementProfile.IPV4.value, "IP_ADDRESS", f"{i:06x}", "1.2.3.4")
+            .rsplit(".", 1)[0] for i in range(60)}
+    assert seen == {"192.0.2", "198.51.100", "203.0.113"}
 
 
 def test_profile_ipv6_is_documentation_range() -> None:
@@ -124,3 +134,24 @@ def test_collision_exhaustion_raises() -> None:
         s.mappings_by_alias[alias] = _foreign(alias)
     with pytest.raises(AliasCollisionError):
         _alloc(s, "x", fp="x", entity_type="PERSON")
+
+
+@pytest.mark.asyncio
+async def test_ipv4_alias_space_exhaustion_fails_closed() -> None:
+    """Shape preservation caps IPv4 aliases at 3x254; exhaustion must BLOCK, never
+    reuse an alias for a second secret (ADR-0007, doc/06 P1-8)."""
+    from securitymasker.sessions.memory import InMemorySessionStore
+
+    session = await InMemorySessionStore().get_or_create("exhaust")
+    allocated = 0
+    with pytest.raises(AliasCollisionError):
+        for i in range(1200):          # more distinct IPs than the space allows
+            get_or_create_alias(
+                session, original_value=f"10.{i // 256}.{i % 256}.1",
+                fingerprint_value=f"10.{i // 256}.{i % 256}.1",
+                entity_type="IP_ADDRESS",
+                replacement_profile=ReplacementProfile.IPV4.value,
+                restore_policy=RestorePolicy.LITERAL.value)
+            allocated += 1
+    # Every alias handed out before the block was unique (no silent reuse).
+    assert len(session.mappings_by_alias) == allocated
