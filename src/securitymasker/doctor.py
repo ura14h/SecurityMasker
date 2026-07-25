@@ -91,25 +91,37 @@ def check_runtime_dependencies() -> CheckResult:
 # --- configuration ------------------------------------------------------------------
 
 
-def check_config(path: str | None) -> tuple[CheckResult, Any]:
-    """Load AND build, so the same validation the gateway performs runs here."""
+def check_config(path: str | None) -> tuple[CheckResult, Any, Any]:
+    """Load AND build, so the same validation the gateway performs runs here.
+
+    Returns the built engine as well, so later checks can inspect the pipeline
+    rather than constructing a second one — with NER enabled that would load the
+    model twice for one diagnosis.
+    """
     if not path:
-        return _fail("config", "no masking config given (--config or "
-                               "SECURITYMASKER_CONFIG); the gateway requires one"), None
+        return (_fail("config", "no masking config given (--config or "
+                                "SECURITYMASKER_CONFIG); the gateway requires one"),
+                None, None)
     from securitymasker.config import build_engine, load_config
     from securitymasker.errors import SecurityMaskerError
 
     try:
         config = load_config(path)
     except SecurityMaskerError as exc:
-        return _fail("config", f"invalid: {exc}"), None
+        return _fail("config", f"invalid: {exc}"), None, None
+    except OSError as exc:
+        # An unreadable path is an ordinary operator mistake and must produce a
+        # diagnostic, not a traceback. errno text names the path only.
+        return _fail("config", f"cannot read {path!r}: {exc.strerror}"), None, None
     try:
         # Env references, detector models, regex safety — the startup checks.
-        build_engine(config)
+        engine = build_engine(config)
     except SecurityMaskerError as exc:
-        return _fail("config.build", f"detectors could not be built: {exc}"), config
-    return _ok("config", f"{len(config.entities)} entities, {len(config.patterns)} "
-                         f"patterns, fail_mode={config.defaults.fail_mode}"), config
+        return (_fail("config.build", f"detectors could not be built: {exc}"),
+                config, None)
+    return (_ok("config", f"{len(config.entities)} entities, {len(config.patterns)} "
+                          f"patterns, fail_mode={config.defaults.fail_mode}"),
+            config, engine)
 
 
 def check_env_references(config: Any) -> CheckResult:
@@ -129,46 +141,50 @@ def check_env_references(config: Any) -> CheckResult:
     return _ok("config.env", f"{declared} env-backed {noun} resolved")
 
 
-def check_detectors(config: Any) -> CheckResult:
+def check_detectors(config: Any, detectors: Any = None) -> CheckResult:
+    """Report the active pipeline. ``detectors`` is the ALREADY-built list when the
+    caller has one: rebuilding here would load the NER model a second time."""
     if config is None:
         return _skip("detectors", "no config loaded")
-    from securitymasker.config import build_detectors
+    if detectors is None:
+        from securitymasker.config import build_detectors
 
-    try:
-        detectors = build_detectors(config)
-    except Exception as exc:  # noqa: BLE001
-        return _fail("detectors", f"could not be built: {type(exc).__name__}")
+        try:
+            detectors = build_detectors(config)
+        except Exception as exc:  # noqa: BLE001
+            return _fail("detectors", f"could not be built: {type(exc).__name__}")
     names = [getattr(d, "name", "?") for d in detectors]
     return _ok("detectors", f"{len(names)} active: {', '.join(names)}")
 
 
-def check_ner_models(config: Any) -> CheckResult:
-    """Presidio/HF availability, matching what the config actually asks for."""
+def check_ner_models(config: Any, detectors: Any = None) -> CheckResult:
+    """Report NER availability from the ALREADY-built pipeline.
+
+    Constructing fresh detectors here would load spaCy/HF a second (and, with the
+    engine, a third) time — minutes of startup and a duplicated ~800MB for a
+    diagnostic. So we inspect what was built rather than building again.
+    """
     if config is None:
         return _skip("detectors.ner", "no config loaded")
+    if not config.presidio.enabled and not config.ner.model:
+        return _ok("detectors.ner", "no NER configured (dictionary + deterministic only)")
+
+    built = {getattr(d, "name", ""): d for d in (detectors or [])}
     notes = []
     if config.presidio.enabled:
-        from securitymasker.detectors.presidio import PresidioDetector
-
-        presidio: Any = PresidioDetector(language=config.presidio.language,
-                                         model_name=config.presidio.model_name)
-        if not presidio.available:
+        detector = built.get("presidio")
+        if detector is None or not getattr(detector, "available", False):
             return _fail("detectors.ner",
                          f"presidio enabled but model {config.presidio.model_name!r} "
                          "is unavailable")
         notes.append(f"presidio:{config.presidio.model_name}")
     if config.ner.model:
-        from securitymasker.detectors.japanese_ner import JapaneseNerDetector
-
-        hf: Any = JapaneseNerDetector(model=config.ner.model, revision=config.ner.revision,
-                                      local_files_only=config.ner.local_files_only)
-        if not hf.available:
+        detector = built.get("jp_ner")
+        if detector is None or not getattr(detector, "available", False):
             return _fail("detectors.ner",
                          f"ner.model {config.ner.model!r}@{config.ner.revision} is not "
                          "available locally — run 'securitymasker models fetch'")
         notes.append(f"hf:{config.ner.model}@{(config.ner.revision or '')[:8]}")
-    if not notes:
-        return _ok("detectors.ner", "no NER configured (dictionary + deterministic only)")
     return _ok("detectors.ner", ", ".join(notes))
 
 
@@ -275,17 +291,24 @@ async def check_store_probe(store: Any) -> CheckResult:
 
 
 def check_identity_mode(environ: dict[str, str]) -> CheckResult:
-    from securitymasker.gateway.identity import MODE_LOCAL, MODE_TENANT, VALID_MODES
+    from securitymasker.gateway.identity import (
+        MODE_LOCAL,
+        MODE_TENANT,
+        VALID_MODES,
+        normalize_mode,
+    )
 
-    mode = environ.get("SECURITYMASKER_MODE", MODE_LOCAL)
-    if mode == "multitenant":
-        mode = MODE_TENANT
+    mode = normalize_mode(environ.get("SECURITYMASKER_MODE", MODE_LOCAL))
     if mode not in VALID_MODES:
         return _fail("identity", f"unknown SECURITYMASKER_MODE {mode!r}")
     if mode == MODE_LOCAL:
         return _ok("identity", "local (single caller; no tenant/user isolation)")
     if not environ.get("SECURITYMASKER_TENANT_AUTH_SECRET"):
         return _fail("identity", f"{mode} requires SECURITYMASKER_TENANT_AUTH_SECRET")
+    untimed = environ.get("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS") == "1"
+    if untimed:
+        return _warn("identity", f"{mode} with UNTIMED assertions allowed — a captured "
+                                 "proof is replayable for the life of the secret")
     if mode == MODE_TENANT:
         return _warn("identity", "tenant — users WITHIN a tenant share an alias table; "
                                  "use tenant_user for mutually distrusting users")
@@ -328,22 +351,29 @@ def check_dev_transparent(environ: dict[str, str]) -> CheckResult:
 
 
 def check_public_bind(environ: dict[str, str]) -> CheckResult:
-    from securitymasker.gateway.identity import MODE_LOCAL
+    from securitymasker.gateway.identity import isolates_callers
 
     if environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") != "1":
         return _ok("bind", "loopback only")
-    mode = environ.get("SECURITYMASKER_MODE", MODE_LOCAL)
-    if mode == MODE_LOCAL:
+    if not isolates_callers(environ.get("SECURITYMASKER_MODE", "local")):
         return _fail("bind", "public bind acknowledged while in local mode — every "
                              "caller would share one alias table")
     return _warn("bind", "public bind acknowledged; an authenticator must front the proxy")
 
 
-def check_gateway_ready(gateway: str) -> CheckResult:
+def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:
+    """Probe the gateway. ``required`` turns unreachable into a FAIL.
+
+    Default WARN, because doctor is commonly run BEFORE the gateway starts —
+    a static pre-flight check. Monitoring wants the opposite, so `--require-ready`
+    (and an explicit `--gateway`) make it fatal.
+    """
     from securitymasker.integrations.readiness import check_readiness
 
     status = check_readiness(gateway)
-    return _ok("gateway", status.detail) if status.ok else _warn("gateway", status.detail)
+    if status.ok:
+        return _ok("gateway", status.detail)
+    return _fail("gateway", status.detail) if required else _warn("gateway", status.detail)
 
 
 def check_client_proxy_config(environ: dict[str, str]) -> CheckResult:
@@ -365,16 +395,22 @@ def check_client_proxy_config(environ: dict[str, str]) -> CheckResult:
 
 def run_checks(
     *, config_path: str | None, environ: dict[str, str], gateway: str,
+    require_ready: bool = False,
 ) -> Iterator[CheckResult]:
     """Yield every check in a stable order. Pure except for the store probe."""
     yield check_python()
     yield check_runtime_dependencies()
 
-    config_result, config = check_config(config_path)
+    config_result, config, engine = check_config(config_path)
     yield config_result
+
+    # Reuse the pipeline check_config already built. Building another would load
+    # spaCy/HF a second time for a single diagnosis.
+    detectors = engine.detectors if engine is not None else None
+
     yield check_env_references(config)
-    yield check_detectors(config)
-    yield check_ner_models(config)
+    yield check_detectors(config, detectors)
+    yield check_ner_models(config, detectors)
     yield check_fail_mode(config)
     yield check_session_ttls(config)
 
@@ -386,7 +422,7 @@ def run_checks(
     yield check_upstreams(environ)
     yield check_dev_transparent(environ)
     yield check_public_bind(environ)
-    yield check_gateway_ready(gateway)
+    yield check_gateway_ready(gateway, required=require_ready)
     yield check_client_proxy_config(environ)
 
 

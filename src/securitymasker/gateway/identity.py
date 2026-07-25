@@ -114,6 +114,7 @@ def resolve_identity(
     max_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
     now: float | None = None,
     require_timestamp: bool = True,
+    tenant_header: str = TENANT_HEADER,
 ) -> Identity:
     """Verify the caller's identity, or raise ``IdentityError``.
 
@@ -129,7 +130,7 @@ def resolve_identity(
         raise IdentityError("identity mode requires a configured authentication secret")
 
     lower = {k.lower(): v for k, v in headers.items()}
-    tenant = _require(lower, TENANT_HEADER)
+    tenant = _require(lower, tenant_header.lower())
     user = _require(lower, USER_HEADER) if mode == MODE_TENANT_USER else LOCAL_USER
     timestamp = lower.get(TIMESTAMP_HEADER, "").strip()
     if not timestamp:
@@ -180,6 +181,17 @@ def _check_freshness(timestamp: str, max_skew_seconds: int, now: float | None) -
         raise IdentityError("authentication proof has expired")
     if -delta > max_skew_seconds:
         raise IdentityError("authentication proof is dated in the future")
+
+
+def normalize_mode(mode: str) -> str:
+    """Canonical mode name. Single definition, so the gateway, the CLI's public-bind
+    check and doctor can never disagree about what mode is in force."""
+    return MODE_TENANT if mode == "multitenant" else mode
+
+
+def isolates_callers(mode: str) -> bool:
+    """True when the mode distinguishes callers at all (i.e. is not ``local``)."""
+    return normalize_mode(mode) != MODE_LOCAL
 
 
 def fingerprint(identity: Identity) -> str:

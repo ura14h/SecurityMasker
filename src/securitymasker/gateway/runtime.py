@@ -18,8 +18,8 @@ from securitymasker.errors import ConfigError
 from securitymasker.gateway.identity import (
     DEFAULT_MAX_SKEW_SECONDS,
     MODE_LOCAL,
-    MODE_TENANT,
     VALID_MODES,
+    normalize_mode,
 )
 from securitymasker.sessions.memory import InMemorySessionStore
 from securitymasker.sessions.store import SessionStore
@@ -117,11 +117,9 @@ class GatewayRuntime:
                 idle_ttl=parse_duration(config.defaults.session_idle_ttl),
                 absolute_ttl=parse_duration(config.defaults.session_absolute_ttl),
             )
-        mode = os.environ.get("SECURITYMASKER_MODE", MODE_LOCAL)
-        # `multitenant` was the old name for tenant-only isolation; keep it working
-        # but map it onto the explicit name so the mode never over-promises.
-        if mode == "multitenant":
-            mode = MODE_TENANT
+        # `multitenant` was the old name for tenant-only isolation; normalize_mode
+        # keeps it working while giving every consumer one definition to read.
+        mode = normalize_mode(os.environ.get("SECURITYMASKER_MODE", MODE_LOCAL))
         if mode not in VALID_MODES:
             raise ConfigError(
                 "SECURITYMASKER_MODE must be 'local', 'tenant' or 'tenant_user' "

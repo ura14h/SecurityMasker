@@ -39,19 +39,19 @@ def test_runtime_dependencies_are_present() -> None:
 
 
 def test_missing_config_fails() -> None:
-    result, config = doctor.check_config(None)
+    result, config, _ = doctor.check_config(None)
     assert result.status is Status.FAIL and config is None
 
 
 def test_valid_config_passes_and_returns_it() -> None:
-    result, config = doctor.check_config(CONFIG)
+    result, config, _ = doctor.check_config(CONFIG)
     assert result.status is Status.OK and config is not None
 
 
 def test_invalid_config_fails(tmp_path) -> None:
     bad = tmp_path / "c.yaml"
     bad.write_text("version: 999\n", encoding="utf-8")
-    result, _ = doctor.check_config(str(bad))
+    result, _, _ = doctor.check_config(str(bad))
     assert result.status is Status.FAIL
 
 
@@ -66,7 +66,7 @@ def test_missing_env_reference_fails_and_names_only_the_variable(tmp_path, monke
         "    replacement_profile: environment_reference\n"
         "    restore_policy: env_reference\n",
         encoding="utf-8")
-    _, config = doctor.check_config(str(path))
+    _, config, _ = doctor.check_config(str(path))
     result = doctor.check_env_references(config)
     assert result.status is Status.FAIL
     assert "DOCTOR_TEST_SECRET" in result.detail      # the NAME is useful
@@ -74,13 +74,13 @@ def test_missing_env_reference_fails_and_names_only_the_variable(tmp_path, monke
 
 
 def test_detectors_check_lists_active_detectors() -> None:
-    _, config = doctor.check_config(CONFIG)
+    _, config, _ = doctor.check_config(CONFIG)
     result = doctor.check_detectors(config)
     assert result.status is Status.OK and "dictionary" in result.detail
 
 
 def test_no_ner_configured_is_ok_not_a_failure() -> None:
-    _, config = doctor.check_config(CONFIG)
+    _, config, _ = doctor.check_config(CONFIG)
     assert doctor.check_ner_models(config).status is Status.OK
 
 
@@ -88,7 +88,7 @@ def test_session_ttl_inversion_fails(tmp_path) -> None:
     path = tmp_path / "c.yaml"
     path.write_text("version: 1\ndefaults:\n  session_idle_ttl: 48h\n"
                     "  session_absolute_ttl: 1h\n", encoding="utf-8")
-    _, config = doctor.check_config(str(path))
+    _, config, _ = doctor.check_config(str(path))
     assert doctor.check_session_ttls(config).status is Status.FAIL
 
 
@@ -279,3 +279,83 @@ def test_cli_doctor_exits_non_zero_when_a_check_fails(monkeypatch, capsys) -> No
     args = cli.build_parser().parse_args(["doctor", "--gateway", "http://127.0.0.1:1"])
     assert cli.cmd_doctor(args) == 1          # no config -> FAIL -> non-zero
     assert "FAIL" in capsys.readouterr().out
+
+
+# --- R5/R6 regressions --------------------------------------------------------------
+
+
+def test_unreadable_config_is_a_check_result_not_a_traceback(tmp_path) -> None:
+    result, config, _ = doctor.check_config(str(tmp_path / "does-not-exist.yaml"))
+    assert result.status is Status.FAIL and config is None
+    assert "cannot read" in result.detail
+
+
+def test_cli_doctor_does_not_traceback_on_a_missing_config(monkeypatch, capsys) -> None:
+    from securitymasker import cli
+
+    monkeypatch.delenv("SECURITYMASKER_CONFIG", raising=False)
+    args = cli.build_parser().parse_args(
+        ["doctor", "--config", "/nonexistent/securitymasker.yaml"])
+    assert cli.cmd_doctor(args) == 1
+    out = capsys.readouterr().out
+    assert "Traceback" not in out and "FAIL" in out
+
+
+def test_gateway_unreachable_is_fatal_when_required() -> None:
+    assert doctor.check_gateway_ready("http://127.0.0.1:1", required=True).status is Status.FAIL
+
+
+def test_gateway_unreachable_is_a_warning_by_default() -> None:
+    # doctor doubles as a pre-flight check, so an absent gateway is not fatal
+    # unless the caller says it should be.
+    assert doctor.check_gateway_ready("http://127.0.0.1:1").status is Status.WARN
+
+
+def test_require_ready_propagates_through_run_checks() -> None:
+    results = list(doctor.run_checks(config_path=CONFIG, environ=_env(),
+                                     gateway="http://127.0.0.1:1", require_ready=True))
+    gateway = next(r for r in results if r.name == "gateway")
+    assert gateway.status is Status.FAIL
+
+
+def test_explicit_gateway_flag_makes_unreachable_fatal(monkeypatch) -> None:
+    from securitymasker import cli
+
+    args = cli.build_parser().parse_args(
+        ["doctor", "--config", CONFIG, "--gateway", "http://127.0.0.1:1"])
+    assert cli.cmd_doctor(args) == 1
+
+
+def test_detectors_are_built_once_for_the_whole_run(monkeypatch) -> None:
+    """Rebuilding per check would load spaCy/HF two or three times per diagnosis."""
+    from securitymasker import config as cfgmod
+
+    calls = {"n": 0}
+    original = cfgmod.build_detectors
+
+    def counting(cfg):
+        calls["n"] += 1
+        return original(cfg)
+
+    monkeypatch.setattr(cfgmod, "build_detectors", counting)
+    list(doctor.run_checks(config_path=CONFIG, environ=_env(),
+                           gateway="http://127.0.0.1:1"))
+    assert calls["n"] == 1, f"detector pipeline built {calls['n']} times"
+
+
+def test_untimed_assertions_are_flagged() -> None:
+    result = doctor.check_identity_mode(
+        _env(SECURITYMASKER_MODE="tenant_user", SECURITYMASKER_TENANT_AUTH_SECRET="s",
+             SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS="1"))
+    assert result.status is Status.WARN and "replayable" in result.detail
+
+
+def test_public_bind_check_recognises_the_new_mode_names() -> None:
+    # The old check only knew "multitenant", so tenant/tenant_user deployments got
+    # the single-tenant failure by mistake.
+    for mode in ("tenant", "tenant_user", "multitenant"):
+        result = doctor.check_public_bind(
+            _env(SECURITYMASKER_ALLOW_PUBLIC_BIND="1", SECURITYMASKER_MODE=mode))
+        assert result.status is Status.WARN, mode
+    assert doctor.check_public_bind(
+        _env(SECURITYMASKER_ALLOW_PUBLIC_BIND="1")).status is Status.FAIL

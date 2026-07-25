@@ -370,3 +370,42 @@ def test_untimed_assertions_are_opt_in_at_startup(monkeypatch) -> None:
     assert GatewayRuntime.from_env().require_assertion_timestamp is True
     monkeypatch.setenv("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS", "1")
     assert GatewayRuntime.from_env().require_assertion_timestamp is False
+
+
+def test_custom_tenant_header_is_honoured_end_to_end(monkeypatch) -> None:
+    """SECURITYMASKER_TENANT_HEADER was stored on the runtime but never passed to
+    verification, so configuring it silently did nothing."""
+    import asyncio
+
+    calls: list[dict] = []
+
+    async def fake_buffered(method, url, headers, body):
+        calls.append({"body": body})
+        return 200, {"content-type": "application/json"}, b'{"id":"r"}'
+
+    monkeypatch.setattr(gwapp, "forward_buffered", fake_buffered)
+    custom = "x-corp-tenant"
+    rt = GatewayRuntime(build_engine(SecurityMaskerConfig.model_validate({"version": 1})),
+                        InMemorySessionStore(),
+                        openai_upstream="http://oai.test", anthropic_upstream="http://an.test",
+                        mode=MODE_TENANT, tenant_auth_secret=SECRET,
+                        tenant_header=custom)
+    app = gwapp.create_app(rt)
+    ts = str(int(time.time()))
+
+    async def _run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://gw") as c:
+            # The tenant arrives under the CONFIGURED name, not the default one.
+            good = await c.post("/responses", json={"input": "hi"}, headers={
+                custom: "acme", TIMESTAMP_HEADER: ts,
+                AUTH_HEADER: sign(SECRET, "acme", LOCAL_USER, ts)})
+            # The default header must no longer be accepted once one is configured.
+            bad = await c.post("/responses", json={"input": "hi"}, headers={
+                TENANT_HEADER: "acme", TIMESTAMP_HEADER: ts,
+                AUTH_HEADER: sign(SECRET, "acme", LOCAL_USER, ts)})
+            return good.status_code, bad.status_code
+
+    good_status, bad_status = asyncio.run(_run())
+    assert good_status == 200, "configured tenant header was ignored"
+    assert bad_status == 403, "default header still accepted despite the override"

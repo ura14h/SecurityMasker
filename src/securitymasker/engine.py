@@ -119,6 +119,12 @@ class MaskingEngine:
         ]
         self._segment_contexts = segment_contexts
 
+    @property
+    def detectors(self) -> list[SensitiveDataDetector]:
+        """The active pipeline. Exposed so diagnostics can inspect what was built
+        instead of building a second copy (and loading the models twice)."""
+        return list(self._detectors)
+
     @staticmethod
     def _skips_context(detector: SensitiveDataDetector, context_kind: str) -> bool:
         """Whether ``detector`` opts out of this context (§17, doc/06 P1-7).

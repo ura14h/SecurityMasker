@@ -89,8 +89,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
     config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
+    # An explicitly requested gateway means the operator expects one to be there,
+    # so its absence is a failure rather than a pre-flight note.
+    require_ready = args.require_ready or args.gateway is not None
     results = list(checks.run_checks(config_path=config_path,
-                                     environ=dict(os.environ), gateway=gateway))
+                                     environ=dict(os.environ), gateway=gateway,
+                                     require_ready=require_ready))
     # Probing the store needs an event loop and a built runtime, so it runs here
     # rather than inside the pure check sequence.
     if config_path:
@@ -101,9 +105,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             os.environ["SECURITYMASKER_CONFIG"] = config_path
             runtime = GatewayRuntime.from_env()
             results.append(asyncio.run(checks.check_store_probe(runtime.store)))
-        except SecurityMaskerError as exc:
+        except (SecurityMaskerError, OSError) as exc:
+            # Any operator-facing failure (bad config, unreadable path, unreachable
+            # store) must surface as a check result, never a traceback.
+            detail = getattr(exc, "strerror", None) or str(exc)
             results.append(checks.CheckResult(
-                "store.probe", checks.Status.FAIL, f"runtime not constructible: {exc}"))
+                "store.probe", checks.Status.FAIL, f"runtime not constructible: {detail}"))
 
     print(checks.render_json(results) if args.json else checks.render(results))
     return 1 if any(r.failed for r in results) else 0
@@ -198,8 +205,12 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     from securitymasker.gateway.runtime import LOOPBACK_HOSTS
 
     if args.host not in LOOPBACK_HOSTS:
+        from securitymasker.gateway.identity import isolates_callers
+
         acknowledged = os.environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
-        multitenant = os.environ.get("SECURITYMASKER_MODE") == "multitenant"
+        # Any caller-isolating mode counts; checking only the legacy name meant
+        # `tenant`/`tenant_user` deployments got the single-tenant warning.
+        multitenant = isolates_callers(os.environ.get("SECURITYMASKER_MODE", "local"))
         if not acknowledged:
             print(
                 f"error: refusing to bind {args.host} (non-loopback). The proxy has no "
@@ -269,7 +280,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="runtime, config and connectivity checks")
     p_doctor.add_argument("--json", action="store_true",
                           help="machine-readable output (no secrets)")
-    p_doctor.add_argument("--gateway", default=None)
+    p_doctor.add_argument("--gateway", default=None,
+                          help="gateway URL to probe; passing it makes an unreachable "
+                               "gateway a FAILURE rather than a warning")
+    p_doctor.add_argument("--require-ready", action="store_true",
+                          help="treat an unready gateway as a failure (for monitoring)")
     add_config(p_doctor)
     p_doctor.set_defaults(func=cmd_doctor)
 
