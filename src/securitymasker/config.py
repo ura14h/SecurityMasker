@@ -219,10 +219,31 @@ class PresidioConfig(BaseModel):
 
 
 class NerConfig(BaseModel):
+    """Optional HF Japanese NER (ADR-0009). Disabled unless ``model`` is set."""
+
     model_config = ConfigDict(extra="forbid")
 
     model: str | None = None  # HF token-classification model id; None disables (§14.1)
-    min_score: float = Field(default=0.85, ge=0.0, le=1.0)
+    # Commit revision of that model. Required whenever a model is set: an unpinned
+    # id silently follows `main`, so the weights doing the detecting could change
+    # under us between deploys (ADR-0009).
+    revision: str | None = None
+    # 0.7 is the measured optimum for the adopted model on tests/evaluation:
+    # below it prose false positives appear, above it PERSON recall falls off.
+    min_score: float = Field(default=0.7, ge=0.0, le=1.0)
+    # Request-time loading must never reach the network; the model is fetched by
+    # an explicit preparation step or baked into the image.
+    local_files_only: bool = True
+    skip_code_contexts: bool = True
+
+    @model_validator(mode="after")
+    def _pinned(self) -> NerConfig:
+        if self.model and not self.revision:
+            raise ValueError(
+                "ner.revision is required when ner.model is set: pin the model's "
+                "commit revision so the weights cannot change between deploys"
+            )
+        return self
 
 
 class ToolTrustConfig(BaseModel):
@@ -396,7 +417,12 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
 
         detectors.append(
             JapaneseNerDetector(
-                model=config.ner.model, min_score=config.ner.min_score, required=True
+                model=config.ner.model,
+                revision=config.ner.revision,
+                min_score=config.ner.min_score,
+                local_files_only=config.ner.local_files_only,
+                skip_code_contexts=config.ner.skip_code_contexts,
+                required=True,
             )
         )
     return detectors

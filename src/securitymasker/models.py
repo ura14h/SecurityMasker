@@ -79,6 +79,10 @@ class EntityType(str, Enum):
     PASSWORD = "PASSWORD"
     GENERIC_SECRET = "GENERIC_SECRET"
     # Japan-specific (Phase 4 detectors; declared now for policy defaults).
+    # A place name (city, prefecture, station). Deliberately DISTINCT from
+    # JP_ADDRESS: "Yokohama" is not somebody's home address, and conflating them
+    # would let a coarse NER hit inherit an address's sensitivity (ADR-0009).
+    LOCATION = "LOCATION"
     JP_ADDRESS = "JP_ADDRESS"
     JP_POSTAL_CODE = "JP_POSTAL_CODE"
     JP_MY_NUMBER = "JP_MY_NUMBER"

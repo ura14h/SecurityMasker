@@ -29,7 +29,7 @@ from securitymasker.models import (
 # Map Presidio entity labels -> (our EntityType, replacement profile, restore policy).
 _MAP: dict[str, tuple[str, str, str]] = {
     "PERSON": (EntityType.PERSON.value, ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value),
-    "LOCATION": (EntityType.JP_ADDRESS.value, ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value),
+    "LOCATION": (EntityType.LOCATION.value, ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value),
     "ORGANIZATION": (EntityType.ORGANIZATION.value, ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value),
     "NRP": (EntityType.ORGANIZATION.value, ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value),
     "EMAIL_ADDRESS": (EntityType.EMAIL.value, ReplacementProfile.EMAIL.value, RestorePolicy.LITERAL.value),

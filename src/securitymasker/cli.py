@@ -166,6 +166,36 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0  # unreachable
 
 
+def cmd_models_fetch(args: argparse.Namespace) -> int:
+    """Download and digest-verify a pinned NER model (ADR-0009).
+
+    Deliberately a separate step from serving: the runtime loads models offline,
+    so nothing a user types can ever trigger a download.
+    """
+    from securitymasker.models_fetch import fetch
+
+    model, revision = args.model, args.revision
+    if not model or not revision:
+        # Fall back to the configured pin so the operator does not retype it.
+        if not args.config:
+            print("error: give --model/--revision, or --config to use its ner pin",
+                  file=sys.stderr)
+            return 2
+        ner = load_config(args.config).ner
+        model, revision = model or ner.model, revision or ner.revision
+    if not model or not revision:
+        print("error: no NER model/revision configured to fetch", file=sys.stderr)
+        return 2
+
+    result = fetch(model, revision)
+    print(f"fetched {result.model}@{result.revision}")
+    for name in sorted(result.verified):
+        print(f"  verified   {name}")
+    for name in sorted(result.unverified):
+        print(f"  UNVERIFIED {name} (no pinned digest on record)")
+    return 0 if result.ok else 1
+
+
 def cmd_gateway(args: argparse.Namespace) -> int:
     """Launch the SecurityMasker proxy (ADR-0006). Uses SECURITYMASKER_CONFIG."""
     import uvicorn
@@ -258,6 +288,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_gateway.add_argument("--port", type=int, default=4000)
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
+
+    p_models = sub.add_parser("models", help="model preparation (offline runtime)")
+    models_sub = p_models.add_subparsers(dest="subaction", required=True)
+    p_fetch = models_sub.add_parser("fetch", help="download + verify a pinned NER model")
+    p_fetch.add_argument("--model", default=None)
+    p_fetch.add_argument("--revision", default=None)
+    add_config(p_fetch)
+    p_fetch.set_defaults(func=cmd_models_fetch)
 
     p_run = sub.add_parser(
         "run", help="launch codex/claude with traffic guaranteed to go via the proxy")
