@@ -6,8 +6,12 @@ file all leave a plausible-looking directory behind. These tests cover the gap �
 missing artifacts, altered digests, pickle weights, and unknown models must all
 fail closed, at fetch time AND at runtime load.
 
-No model is downloaded here: manifests are checked against synthetic directories,
-so the suite runs anywhere.
+Most tests here check manifests against synthetic directories so the suite runs
+anywhere. That is exactly what let a broken manifest ship: the three JSON entries
+were hashed with their trailing newline stripped, so all three rejected the real
+model, and no synthetic test could see it. The pinned-snapshot test below closes
+that gap by verifying against the actual cached files, skipping (never passing)
+when the model is not present.
 """
 
 from __future__ import annotations
@@ -186,3 +190,65 @@ def test_allow_unverified_model_defaults_to_false() -> None:
 
     config = SecurityMaskerConfig.model_validate({"version": 1})
     assert config.ner.allow_unverified_model is False
+
+
+# --- the pinned manifest must accept the REAL model ---------------------------------
+
+
+def _snapshot() -> "pathlib.Path | None":
+    """The cached directory for the pinned revision, or None if not fetched."""
+    import pathlib
+
+    from securitymasker import models_fetch
+
+    cached = models_fetch.cache_directory(ADOPTED, ADOPTED_REV)
+    if cached is not None:
+        return cached
+    # huggingface_hub may be absent; fall back to the default cache layout.
+    guess = (pathlib.Path.home() / ".cache/huggingface/hub"
+             / f"models--{ADOPTED.replace('/', '--')}" / "snapshots" / ADOPTED_REV)
+    return guess if guess.is_dir() else None
+
+
+def test_pinned_manifest_verifies_the_real_snapshot() -> None:
+    """The manifest must accept the exact bytes of the revision it pins.
+
+    A manifest is only useful if it says yes to the real artifact and no to
+    everything else. Testing only the "no" half with synthetic files let a
+    manifest ship that said no to BOTH — every fetch and every NER-enabled start
+    failed. This asserts the "yes" half against the distributed bytes.
+    """
+    directory = _snapshot()
+    if directory is None:
+        pytest.skip(f"{ADOPTED}@{ADOPTED_REV} not in the local cache "
+                    "(run: securitymasker models fetch)")
+
+    manifest = manifest_for(ADOPTED, ADOPTED_REV)
+    assert manifest is not None
+    result = verify_directory(manifest, directory)
+    assert result.ok, (
+        "the pinned manifest rejects the model it pins: " + result.failure_reason()
+    )
+    assert set(result.verified) == manifest.required_names
+
+
+def test_pinned_manifest_records_whole_file_bytes() -> None:
+    """Sizes must be the file's real length — the newline-stripping bug's signature.
+
+    A digest mismatch alone does not say WHY. An off-by-one size against the real
+    file is the fingerprint of hashing transformed content instead of the file, so
+    it is worth asserting separately and by name.
+    """
+    directory = _snapshot()
+    if directory is None:
+        pytest.skip("pinned model not in the local cache")
+
+    manifest = manifest_for(ADOPTED, ADOPTED_REV)
+    assert manifest is not None
+    for artifact in manifest.artifacts:
+        path = directory / artifact.name
+        assert path.stat().st_size == artifact.size, (
+            f"{artifact.name}: manifest says {artifact.size} bytes, file is "
+            f"{path.stat().st_size} — the manifest was not built from the file itself"
+        )
+        assert file_sha256(path) == artifact.sha256, artifact.name

@@ -84,15 +84,21 @@ MANIFESTS: dict[str, ModelManifest] = {
                 Artifact("tokenizer.json",
                          "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
                          17082660),
+                # Digests are of the file bytes EXACTLY as distributed, trailing
+                # newline included. The first version of these three entries was
+                # hashed after stripping it, so every one of them rejected the real
+                # snapshot — see the pinned-snapshot test in
+                # tests/unit/test_model_supply_chain.py, which is why that test now
+                # checks the actual cached files rather than only synthetic ones.
                 Artifact("config.json",
-                         "ac1e8e80168c16674bfb9f66d5b7684fb4f118010e02667b7e5da3e608712c4c",
-                         1028),
+                         "27f6a6b15fa4f289aebf113e7ff91c492b41df0d177115267e98ac53ae3a5c3d",
+                         1029),
                 Artifact("special_tokens_map.json",
-                         "a09b8a9068400a40034c888de76f7f2f616bc49ff73da42078b46eb0992f6b71",
-                         279),
+                         "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+                         280),
                 Artifact("tokenizer_config.json",
-                         "6ec486a78f25d56b2de7000ddf9efd7d31b6aca4807ebce1edb9da9fa1308e76",
-                         450),
+                         "ae42ec38b1bce8cda1432566534c207e7bf573d4fd0178af8ae31ce8551d097c",
+                         451),
             ),
         ),
 }
