@@ -194,3 +194,79 @@ async def test_corporate_number_invalid_checksum_ignored() -> None:
 
     det = JapaneseCorporateNumberDetector()
     assert await det.detect(ctx("法人番号は1234567890123です")) == []
+
+
+# --- §5.4 EAI / internationalized email -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_eai_email_variants_detected() -> None:
+    from securitymasker.detectors.formats import FormatsDetector
+
+    det = FormatsDetector()
+    for text, expect in [
+        ("連絡先は山田＠example.co.jpです", "山田＠example.co.jp"),
+        ("問い合わせは山田太郎@例え.jpまで", "山田太郎@例え.jp"),
+        ("mail: taro.yamada@example.co.jp", "taro.yamada@example.co.jp"),
+    ]:
+        hits = [h for h in await det.detect(ctx(text)) if h.entity_type == EntityType.EMAIL.value]
+        assert len(hits) == 1, text
+        assert hits[0].original_value == expect
+
+
+@pytest.mark.asyncio
+async def test_prose_without_email_has_no_false_positive() -> None:
+    from securitymasker.detectors.formats import FormatsDetector
+
+    det = FormatsDetector()
+    for text in ["担当は山田太郎です。よろしくお願いします。",
+                 "住所は東京都渋谷区神宮前1丁目2番3号です",
+                 "変数名は email です"]:
+        assert [h for h in await det.detect(ctx(text))
+                if h.entity_type == EntityType.EMAIL.value] == [], text
+
+
+@pytest.mark.asyncio
+async def test_documentation_ip_ranges_are_not_detected() -> None:
+    from securitymasker.detectors.formats import FormatsDetector
+
+    det = FormatsDetector()
+    for doc_ip in ["192.0.2.1", "198.51.100.5", "203.0.113.200"]:
+        assert [h for h in await det.detect(ctx(f"例: {doc_ip} です"))
+                if h.entity_type == EntityType.IP_ADDRESS.value] == [], doc_ip
+    # A real address still is.
+    hits = [h for h in await det.detect(ctx("host 10.20.30.40"))
+            if h.entity_type == EntityType.IP_ADDRESS.value]
+    assert len(hits) == 1
+
+
+# --- §5.3 dictionary spacing tolerance ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_registered_name_matches_spacing_variants() -> None:
+    from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
+    from securitymasker.models import ReplacementProfile, RestorePolicy
+
+    det = DictionaryDetector([DictionaryEntry(
+        EntityType.PERSON.value, ("山田太郎",),
+        ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value)])
+    for text, expect in [
+        ("担当は山田太郎です", "山田太郎"),
+        ("担当は山田 太郎です", "山田 太郎"),
+        ("担当は山田　太郎です", "山田　太郎"),   # ideographic space
+    ]:
+        hits = await det.detect(ctx(text))
+        assert len(hits) == 1, text
+        assert hits[0].original_value == expect
+
+
+@pytest.mark.asyncio
+async def test_spacing_tolerance_does_not_cross_lines() -> None:
+    from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
+    from securitymasker.models import ReplacementProfile, RestorePolicy
+
+    det = DictionaryDetector([DictionaryEntry(
+        EntityType.PERSON.value, ("山田太郎",),
+        ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value)])
+    assert await det.detect(ctx("山田\n太郎")) == []

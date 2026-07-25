@@ -12,7 +12,26 @@ import re
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
-_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# EAI / internationalized addresses (RFC 6531): local part and domain may both be
+# non-ASCII, e.g. 山田＠例え.jp. NFKC upstream folds the full-width ＠ and digits,
+# so only the character classes need to admit non-ASCII letters (doc/06 §5.4).
+#
+# Japanese has no word spaces, so an unbounded local part swallows the preceding
+# prose: 「連絡先は山田＠example.co.jp」 would match from 連. Two patterns solve it
+# without losing recall:
+#   1. STRICT — the local part excludes hiragana, which is what glues Japanese
+#      prose together (は/の/を/が). This finds 山田 inside 連絡先は山田＠… .
+#   2. BOUNDED — hiragana IS allowed, but only when the address starts at a real
+#      delimiter (line start, space, or an opening bracket/colon), so a hiragana
+#      local part like たろう@example.jp is still found when it stands alone.
+# Results from both are merged and de-duplicated by span.
+_PUNCT = r"\s@,;:<>()\[\]\\\"'、。，．！？「」『』（）"
+_HIRAGANA = r"぀-ゟ"
+_DOMAIN = rf"[^{_PUNCT}]+\.(?:[A-Za-z]{{2,}}|[^{_PUNCT}.]{{2,}})"
+_EMAIL_STRICT = re.compile(rf"[^{_PUNCT}{_HIRAGANA}]+@{_DOMAIN}")
+_EMAIL_BOUNDED = re.compile(
+    rf"(?:^|(?<=[\s:：「『（【>=,]))([^{_PUNCT}]+@{_DOMAIN})", re.MULTILINE
+)
 _IPV4 = re.compile(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])")
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 
@@ -32,9 +51,18 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
+# RFC 5737 documentation ranges are reserved for examples and are, by definition,
+# not anyone's real address — and they are exactly what we mint IPv4 aliases from
+# (ADR-0007). Masking them adds no protection while burning alias space, so they
+# are excluded from detection.
+_DOC_IPV4_PREFIXES = ("192.0.2.", "198.51.100.", "203.0.113.")
+
+
 def _valid_ipv4(text: str) -> bool:
     parts = text.split(".")
-    return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
+    if len(parts) != 4 or not all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+        return False
+    return not text.startswith(_DOC_IPV4_PREFIXES)
 
 
 class FormatsDetector:
@@ -47,8 +75,18 @@ class FormatsDetector:
         text = context.norm.normalized
         out: list[DetectionResult] = []
 
-        for m in _EMAIL.finditer(text):
-            out.append(self._result(context, m.start(), m.end(), EntityType.EMAIL.value,
+        # Prefer the STRICT match: it is the tighter, more precise extent. The
+        # bounded pattern only fills in addresses the strict one cannot see at all
+        # (a hiragana-only local part), identified by ending at the same place.
+        spans: list[tuple[int, int]] = [(m.start(), m.end()) for m in _EMAIL_STRICT.finditer(text)]
+        strict_ends = {end for _, end in spans}
+        spans += [
+            (m.start(1), m.end(1))
+            for m in _EMAIL_BOUNDED.finditer(text)
+            if m.end(1) not in strict_ends
+        ]
+        for start, end in sorted(spans):
+            out.append(self._result(context, start, end, EntityType.EMAIL.value,
                                      ReplacementProfile.EMAIL.value, RestorePolicy.LITERAL.value, 0.95, 180))
 
         for m in _IPV4.finditer(text):

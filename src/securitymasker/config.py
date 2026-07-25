@@ -24,6 +24,7 @@ from securitymasker.detectors.existing_alias import ExistingAliasDetector
 from securitymasker.detectors.formats import FormatsDetector
 from securitymasker.detectors.japanese_address import CompositeAddressDetector
 from securitymasker.detectors.japanese_corporate_number import JapaneseCorporateNumberDetector
+from securitymasker.detectors.japanese_identifiers import JapaneseIdentifierDetector
 from securitymasker.detectors.japanese_my_number import JapaneseMyNumberDetector
 from securitymasker.detectors.japanese_phone import JapanesePhoneDetector
 from securitymasker.detectors.japanese_postal_code import JapanesePostalCodeDetector
@@ -373,6 +374,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
             CompositeAddressDetector(),
             DateOfBirthDetector(),
         ])
+        detectors.append(JapaneseIdentifierDetector())
         if config.japanese_pii.corporate_number:
             detectors.append(JapaneseCorporateNumberDetector())
     if config.presidio.enabled:

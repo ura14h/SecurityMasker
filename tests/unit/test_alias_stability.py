@@ -71,7 +71,9 @@ async def test_ipv4_alias_replay_does_not_grow_mappings() -> None:
         FormatsDetector(),
     ])
     session = await _session()
-    text = "host 203.0.113.7 responded"
+    # A real (private) address: RFC 5737 documentation ranges are deliberately not
+    # detected, since they are the ranges aliases are minted from (ADR-0007).
+    text = "host 10.20.30.40 responded"
     seen = []
     for _ in range(3):
         text = (await engine.mask_text(session, text)).masked_text
