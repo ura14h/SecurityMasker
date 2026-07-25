@@ -122,6 +122,46 @@
 - 評価コーパスは依然として小規模（正例8・負例5、氏名/法人は辞書登録済み）。
   **表示される F1=1.00 は日本語PIIの実用性能を意味しない。**
 
+## 第3回監査の是正（`Audit fix 6`）
+
+第2回是正後もなお残っていた10件。すべて再現確認のうえ修正し、`tests/unit/test_audit_round3.py` 等に回帰テストを追加した。
+
+| # | 指摘 | 是正 |
+|---|---|---|
+| 1 [P0] | 設定エラーに辞書の**実値**が露出（重複値のメッセージ＋PydanticのValidationError文字列化） | エラーは**位置（`values[i]`）のみ**を報告。Pydanticエラーは `loc` と `msg` だけを抽出し、`from None` で入力値を含む連鎖トレースも遮断 |
+| 2 [P0] | `securitymasker run` が**全引数と生session ID**をstderrへ出力 | 実行ファイル**名のみ**＋session IDは**SHA-256短縮fingerprint**。引数は件数のみ表示 |
+| 3 [P1] | Redis lockの更新失敗・戻り値0を握り潰し、所有権喪失後も継続 | `LockHandle.check()` を導入。watchdogが喪失を検知すると**送信前に `SessionError` で中断** |
+| 4 [P1] | InMemory storeの`delete`が**保持中のlockごと削除**し二重侵入可能 | lockのライフサイクルをsessionから分離（`delete`はsessionのみ削除） |
+| 5 [P1] | 未知の`previous_response_id`をalias**形状ヒューリスティック**で判定し、numeric/UUID aliasが素通り | binding未解決なら**payload内容に関わらず一律409** |
+| 6 [P1] | Codexの`session-id`/`thread-id`等がallowlistから脱落（綴り違い） | 設計書(doc/05)準拠のヘッダー群＋`x-codex-*`を透過 |
+| 8 [P1] | lockに`redis`欠落、compose profileがGatewayを未設定、公開bind承認をイメージに固定、HEALTHCHECKが`/health` | lockへ`redis`追加、composeで`SECURITYMASKER_STORE`/URL/master keyを設定、**承認をイメージから除去しcompose側で明示**、HEALTHCHECKを`/ready`へ |
+| 9 [P1] | invalid tool JSONをrawで再送 | overflow同様に**provider互換 `error` イベント**でfail-closed（両プロトコル） |
+| 10 [P1] | `build_leak_scanners`と`build_engine`で検出器を二重構築し、spaCy/HFモデルを2回ロード | パイプラインを**1回だけ構築して共有** |
+
+`/ready` のプローブがtenant付きで作成しtenantなしで削除していた不整合も修正した。
+
+### 7 [P1] multi-tenantのuser分離 — **未実装（既知の制限として明記）**
+
+HMACは**tenant IDのみ**の静的proofで、store keyにuser IDが入らない。したがって
+**同一tenant内の利用者間は分離されない**（他利用者のsession IDを指定可能）。
+`namespaced_key()` は user 引数を受け付ける形にしたが、**認証主体がuser IDを表明・署名する仕組みは未実装**。
+
+- **安全な構成**: 単一利用者のローカル運用、または「1テナント＝1顧客」で信頼プロキシがヘッダーを完全管理する構成。
+- **安全でない構成**: 1テナント内に相互不信の複数利用者がいる構成。この用途では**使用しないこと**。
+
+## 第3回監査の未対応理由に対する再評価
+
+監査から「延期理由が不妥当」と判定された項目は、以下のとおり受け入れる。**いずれも未実装であり、
+`done` とは表現しない**:
+
+- **URL/file path構造保持** — 標準ライブラリで実装可能。未実装のまま該当profileを有効にしているのは
+  不変条件3の観点で不適切。→ 次の作業単位で「実装」または「該当profileのblock化」を行う。
+- **alias長（24bit / IPv4 254通り）** — 依存不要。ADR作成とtoken長変更が必要。
+- **日本語評価コーパス（正例8/負例5）** — 合成fixture拡充に依存追加は不要。**現状のF1=1.00は製品判断に使用不可**。
+- **EAIメール・番地なし住所** — 依存承認を理由にできない。決定論的処理で改善可能。
+- **doctor/run自動化・image digest固定** — 依存不要。（`run`の生引数ログのみ本回で即時修正済み。）
+- **Detector timeout/ReDoS** — 10MB上限ではcatastrophic regexを防げないという指摘を受け入れる。
+
 ## 完了検証コマンド
 
 ```bash

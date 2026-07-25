@@ -9,13 +9,12 @@ FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    # A container must bind 0.0.0.0 to be reachable at all; the *publish* mapping
-    # is what limits exposure (compose publishes to 127.0.0.1 only). Acknowledged
-    # here so the CLI's public-bind guard does not block container startup — the
-    # operator is still responsible for not publishing this port to the world
-    # without an authenticator in front (doc/06 P0-9).
-    SECURITYMASKER_ALLOW_PUBLIC_BIND=1
+    PIP_NO_CACHE_DIR=1
+
+# NOTE: SECURITYMASKER_ALLOW_PUBLIC_BIND is deliberately NOT set here. Baking it
+# into the image would let `docker run -p 4000:4000` expose an unauthenticated
+# proxy without anyone acknowledging it. The operator sets it explicitly (compose
+# does, alongside a loopback-only publish) — doc/06 P0-9.
 
 WORKDIR /app
 
@@ -37,8 +36,11 @@ USER securitymasker
 
 EXPOSE 4000
 
+# Use /ready, not /health: readiness also probes the session store, so a broken
+# Redis or master key marks the container unhealthy instead of silently serving
+# requests that will fail (doc/06 P0-1).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/ready')" || exit 1
 
 # SECURITYMASKER_CONFIG selects the dictionary; SECURITYMASKER_OPENAI_UPSTREAM /
 # SECURITYMASKER_ANTHROPIC_UPSTREAM select the upstreams (set in compose).

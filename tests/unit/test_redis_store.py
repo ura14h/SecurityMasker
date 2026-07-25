@@ -167,6 +167,26 @@ async def test_lock_ttl_is_renewed_while_held(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.asyncio
+async def test_lock_loss_is_detected_by_the_holder(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Audit round-3 finding 3: a failed renewal was swallowed, so the holder kept
+    # running (and sending) after another owner had taken the lock.
+    import asyncio
+
+    from securitymasker.sessions import redis as redismod
+
+    monkeypatch.setattr(redismod, "_LOCK_RENEW_SECONDS", 0.02)
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    lock_key = "sm:_:lock:taken"
+    with pytest.raises(SessionError):
+        async with store.lock("taken") as held:
+            # Another owner takes the lock over (ours expired and was re-acquired).
+            fake.store[lock_key] = b"someone-elses-token"
+            await asyncio.sleep(0.08)   # let the watchdog notice
+            held.check()                # must refuse to continue
+
+
+@pytest.mark.asyncio
 async def test_lock_acquire_and_release_roundtrip() -> None:
     fake = FakeRedis()
     store = RedisSessionStore(fake, master_key=MASTER)

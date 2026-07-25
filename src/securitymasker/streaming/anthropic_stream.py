@@ -164,16 +164,25 @@ class AnthropicStreamProcessor:
             elif raw:
                 # Restore real values only for a trusted local tool (doc/06 P0-8);
                 # otherwise re-emit the buffered aliased JSON unchanged.
-                partial = self._safe_restore_json(raw) if self._trust.restores_arguments(
-                    name) else raw
-                extra.append(_json_delta_event(idx, partial))
+                partial: str | None = raw
+                if self._trust.restores_arguments(name):
+                    partial = self._safe_restore_json(raw)
+                if partial is None:
+                    # Unparseable input cannot be restored; emitting it would hand
+                    # the client an unexecutable tool call (doc/06 P1-10).
+                    extra.append(_error_event(
+                        "securitymasker: tool input was not valid JSON and could not "
+                        "be restored; the call was not forwarded to the client."))
+                else:
+                    extra.append(_json_delta_event(idx, partial))
         return [*extra, ev]
 
-    def _safe_restore_json(self, raw: str) -> str:
+    def _safe_restore_json(self, raw: str) -> str | None:
+        """Restored tool input, or ``None`` when it cannot be restored safely."""
         try:
             return self._reasm.restore_arguments(raw)
-        except Exception:  # noqa: BLE001 - leave aliases in place, never approximate (§24)
-            return raw
+        except Exception:  # noqa: BLE001 - never approximate a restore (§24)
+            return None
 
 
 # --------------------------------------------------------------------------- helpers

@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import os
 import sys
 import uuid
 from collections import Counter
+from pathlib import Path
 
 from securitymasker import __version__
 from securitymasker.config import SecurityMaskerConfig, build_engine, load_config
@@ -121,8 +123,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
     session_id = os.environ.get(SESSION_ENV) or str(uuid.uuid4())
     env = {**os.environ, SESSION_ENV: session_id}
+    # Log the executable NAME only and a fingerprint of the session id (§25): the
+    # wrapped command line routinely carries tokens/connection strings as flags,
+    # and the raw session id is a correlatable identifier.
+    digest = hashlib.sha256(session_id.encode()).hexdigest()[:12]
     print(
-        f"[securitymasker] session {session_id} — launching: {' '.join(args.tool)}",
+        f"[securitymasker] session {digest}… — launching: {Path(args.tool[0]).name} "
+        f"({len(args.tool) - 1} arg(s) not shown)",
         file=sys.stderr,
     )
     os.execvpe(args.tool[0], args.tool, env)  # replaces this process

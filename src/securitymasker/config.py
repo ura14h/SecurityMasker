@@ -112,12 +112,19 @@ class EntityConfig(BaseModel):
         # An empty/whitespace value would match everywhere (or nothing) and is
         # always a config mistake; duplicates silently double the work. Both are
         # rejected at load rather than tolerated (doc/06 P1-2).
-        for value in self.values:
+        # Never name the offending VALUE: these are the registered secrets, and a
+        # validation error surfaces in startup logs, the CLI and tracebacks (§25).
+        # Report the position only — enough to fix the config, safe to log.
+        for index, value in enumerate(self.values):
             if not value.strip():
-                raise ValueError(f"entity {self.id!r} has an empty value")
-        duplicates = {v for v in self.values if self.values.count(v) > 1}
-        if duplicates:
-            raise ValueError(f"entity {self.id!r} has duplicate values: {sorted(duplicates)}")
+                raise ValueError(f"entity {self.id!r}: values[{index}] is empty")
+        seen: dict[str, int] = {}
+        for index, value in enumerate(self.values):
+            if value in seen:
+                raise ValueError(
+                    f"entity {self.id!r}: values[{index}] duplicates values[{seen[value]}]"
+                )
+            seen[value] = index
         return self
 
     def resolved_values(self) -> tuple[str, ...]:
@@ -245,6 +252,26 @@ class SecurityMaskerConfig(BaseModel):
         return self
 
 
+def _safe_validation_message(exc: ValidationError) -> str:
+    """Render a ValidationError WITHOUT the offending input (§25, doc/06 P0-4).
+
+    Pydantic's default rendering embeds the rejected value, and in this config the
+    rejected value is often a registered secret. We keep only the field location
+    and the error type/message, which are enough to fix the config and safe to put
+    in a startup log, a CLI message, or a traceback. ``from exc`` is deliberately
+    NOT used at the call site so the original — which still holds the input — does
+    not ride along in the chained traceback.
+    """
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(x) for x in err.get("loc", ())) or "<root>"
+        # `msg` for the built-in validators is value-free ("Field required",
+        # "Input should be a valid integer"); our own validators are written to be
+        # value-free too. `input` is dropped entirely.
+        parts.append(f"{loc}: {err.get('msg', 'invalid')}")
+    return "; ".join(parts) or "invalid configuration"
+
+
 def load_config(path: str | Path) -> SecurityMaskerConfig:
     raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
@@ -252,7 +279,10 @@ def load_config(path: str | Path) -> SecurityMaskerConfig:
     try:
         return SecurityMaskerConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigError(str(exc)) from exc
+        # No `from exc`: the chained traceback would re-expose the input values.
+        raise ConfigError(
+            f"invalid config {Path(path).name}: {_safe_validation_message(exc)}"
+        ) from None
 
 
 def _require_env_values(config: SecurityMaskerConfig) -> None:
@@ -355,7 +385,10 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
 _FUZZY_DETECTOR_NAMES = frozenset({"presidio", "jp_ner", "existing_alias"})
 
 
-def build_leak_scanners(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
+def build_leak_scanners(
+    config: SecurityMaskerConfig,
+    detectors: list[SensitiveDataDetector] | None = None,
+) -> list[SensitiveDataDetector]:
     """Deterministic detectors for the final-payload block-only guard (doc/06 P0-4).
 
     Invariant 1 (never send original secrets) outranks "unknown fields pass
@@ -367,23 +400,29 @@ def build_leak_scanners(config: SecurityMaskerConfig) -> list[SensitiveDataDetec
 
     Aliases this session already issued are skipped by the caller, so our own
     replacements (an email-shaped alias, a doc-range IPv4, ...) never self-trigger.
+
+    Pass ``detectors`` to REUSE an already-built pipeline. Building a second one
+    would load spaCy/HF models a second time, roughly doubling startup time and
+    resident memory; the deterministic detectors here are stateless, so sharing
+    the same instances is safe.
     """
-    return [
-        d for d in build_detectors(config)
-        if getattr(d, "name", "") not in _FUZZY_DETECTOR_NAMES
-    ]
+    pipeline = detectors if detectors is not None else build_detectors(config)
+    return [d for d in pipeline if getattr(d, "name", "") not in _FUZZY_DETECTOR_NAMES]
 
 
 def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
     registered_literals = tuple(
         value for entity in config.entities for value in entity.resolved_values()
     )
+    # Build the pipeline ONCE and share it with the leak scanners: a second
+    # build_detectors() would load the spaCy/HF models again (doc/06 P2 review).
+    detectors = build_detectors(config)
     return MaskingEngine(
-        build_detectors(config),
+        detectors,
         normalization=config.defaults.normalization,
         merge_surface_forms=config.defaults.merge_surface_forms,
         registered_literals=registered_literals,
-        leak_scanners=build_leak_scanners(config),
+        leak_scanners=build_leak_scanners(config, detectors),
         fail_mode=config.defaults.fail_mode,
         tool_trust=ToolTrustPolicy(frozenset(config.tool_trust.trusted_local_tools)),
         inject_alias_instruction=config.defaults.inject_alias_instruction,

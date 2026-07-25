@@ -8,13 +8,15 @@ per-session writes with an ``asyncio.Lock``.
 from __future__ import annotations
 
 import asyncio
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 from securitymasker.models import MaskingSession
 from securitymasker.sessions.store import (
     DEFAULT_ABSOLUTE_TTL,
     DEFAULT_IDLE_TTL,
+    LockHandle,
     is_expired,
     new_session,
 )
@@ -88,8 +90,11 @@ class InMemorySessionStore:
         self._sessions[session.session_id] = session
 
     async def delete(self, session_id: str) -> None:
+        # Delete the SESSION only. The lock has an independent lifetime: dropping
+        # it here (e.g. when an expired session is reaped from inside get()) would
+        # let a concurrent request build a second lock for the same id and enter
+        # the critical section in parallel (doc/06 P1-9).
         self._sessions.pop(session_id, None)
-        self._locks.pop(session_id, None)
 
     async def touch(self, session_id: str) -> None:
         session = self._sessions.get(session_id)
@@ -116,9 +121,17 @@ class InMemorySessionStore:
             return None
         return session_key
 
-    def lock(self, session_id: str) -> AbstractAsyncContextManager[None]:
+    def lock(self, session_id: str) -> AbstractAsyncContextManager[LockHandle]:
         lock = self._locks.get(session_id)
         if lock is None:
             lock = asyncio.Lock()
             self._locks[session_id] = lock
-        return lock
+
+        @asynccontextmanager
+        async def _held() -> AsyncIterator[LockHandle]:
+            async with lock:
+                # In-process asyncio locks cannot be lost or expire, so the handle
+                # never reports loss — unlike the Redis one (doc/06 P1-9).
+                yield LockHandle()
+
+        return _held()

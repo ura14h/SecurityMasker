@@ -34,6 +34,7 @@ from securitymasker.sessions.crypto import decrypt, encrypt
 from securitymasker.sessions.store import (
     DEFAULT_ABSOLUTE_TTL,
     DEFAULT_IDLE_TTL,
+    LockHandle,
     is_expired,
     new_session,
 )
@@ -249,7 +250,7 @@ class RedisSessionStore:
     @asynccontextmanager
     async def lock(
         self, session_id: str, tenant_id: str | None = None
-    ) -> AsyncIterator[None]:
+    ) -> AsyncIterator[LockHandle]:
         """Cross-worker lock via SET NX with a unique owner token (§8, P1-9).
 
         Waits (bounded) for the lock and fails closed if it cannot be acquired, so
@@ -273,21 +274,32 @@ class RedisSessionStore:
                 "refusing to proceed unlocked"
             )
 
+        # Set when the watchdog finds we no longer own the lock. The holder MUST
+        # check this before acting on the protected state (P1-9): a renewal that
+        # returns 0 means another owner has taken over, and continuing would let
+        # two workers mutate the same session.
+        lost = asyncio.Event()
+
         async def _renew() -> None:
             """Extend the TTL while we still hold it, so the lock cannot expire
             mid-request and let another worker fork the same session (P1-9)."""
             while True:
                 await asyncio.sleep(_LOCK_RENEW_SECONDS)
-                # Only extend if we are still the owner; never revive someone
-                # else's lock or one we already lost.
-                with contextlib.suppress(Exception):
-                    await self._redis.eval(
+                try:
+                    ok = await self._redis.eval(
                         _RENEW_LUA, 1, lock_key, token, str(_LOCK_TTL_SECONDS)
                     )
+                except Exception:  # noqa: BLE001 - Redis unreachable: assume lost
+                    lost.set()
+                    return
+                # Lua returns 0 when the key is gone or owned by someone else.
+                if not ok:
+                    lost.set()
+                    return
 
         watchdog = asyncio.create_task(_renew())
         try:
-            yield
+            yield LockHandle(lost)
         finally:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError):

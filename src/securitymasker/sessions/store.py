@@ -9,13 +9,41 @@ from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from securitymasker.models import MaskingSession
 from securitymasker.sessions.crypto import generate_session_keys
 
 DEFAULT_IDLE_TTL = timedelta(hours=4)
 DEFAULT_ABSOLUTE_TTL = timedelta(hours=24)
+
+
+class LockHandle:
+    """Handle yielded by ``SessionStore.lock``.
+
+    ``check()`` raises if exclusivity was lost while the critical section was
+    running (a distributed lock can expire or be taken over). Callers must call it
+    before acting on the protected state — in the gateway, before anything is sent
+    upstream — so two workers never mutate one session's alias table (doc/06 P1-9).
+    """
+
+    __slots__ = ("_lost",)
+
+    def __init__(self, lost: Any = None) -> None:
+        self._lost = lost
+
+    @property
+    def lost(self) -> bool:
+        return bool(self._lost is not None and self._lost.is_set())
+
+    def check(self) -> None:
+        if self.lost:
+            from securitymasker.errors import SessionError
+
+            raise SessionError(
+                "session lock was lost while the request was in flight; "
+                "refusing to continue without exclusivity"
+            )
 
 
 def _now() -> datetime:
@@ -74,7 +102,7 @@ class SessionStore(Protocol):
     async def delete(self, session_id: str) -> None: ...
     async def touch(self, session_id: str) -> None: ...
     async def list_ids(self) -> list[str]: ...
-    def lock(self, session_id: str) -> AbstractAsyncContextManager[None]: ...
+    def lock(self, session_id: str) -> AbstractAsyncContextManager[LockHandle]: ...
 
     # Response-id -> session-key binding (doc/06 P1-1). OpenAI's
     # ``previous_response_id`` changes every turn, so it cannot itself identify a

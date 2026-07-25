@@ -67,10 +67,19 @@ _COMMON_HEADERS = frozenset({
 # `openai-*`/`chatgpt-*` are OpenAI's and must never reach Anthropic (doc/06 P0-3).
 # `authorization` is Bearer for BOTH providers, so it is forwarded only to the
 # upstream the client's own route selected — never copied across providers.
+# Codex's own request headers, per doc/05-Phase6-Design.md (captured from a real
+# Codex session). `session-id`/`thread-id` are the correct spellings — Codex sends
+# them and the session resolver reads them, so they must reach the upstream too.
 _OPENAI_HEADERS = frozenset({
     "authorization", "openai-organization", "openai-project", "openai-beta",
-    "chatgpt-account-id", "originator", "session_id",
+    "chatgpt-account-id", "originator", "session-id", "thread-id",
+    "x-openai-internal-codex-responses-lite",
 })
+
+
+def _is_openai_passthrough(name: str) -> bool:
+    """Codex sends a family of ``x-codex-*`` headers; forward them as a group."""
+    return name.startswith("x-codex-")
 _ANTHROPIC_HEADERS = frozenset({
     "authorization", "x-api-key", "anthropic-version", "anthropic-beta",
     "anthropic-dangerous-direct-browser-access",
@@ -97,7 +106,10 @@ _TRANSPORT_HEADERS = frozenset({
 def _client_headers(request: Request, provider: str) -> dict[str, str]:
     """Allowlisted headers for ``provider``; everything else is dropped."""
     allowed = _COMMON_HEADERS | PROVIDER_HEADERS.get(provider, frozenset())
-    return {k: v for k, v in request.headers.items() if k.lower() in allowed}
+    return {
+        k: v for k, v in request.headers.items()
+        if k.lower() in allowed or (provider == "openai" and _is_openai_passthrough(k.lower()))
+    }
 
 
 async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
@@ -154,8 +166,11 @@ async def ready(request: Request) -> JSONResponse:
         return JSONResponse({"ready": False, "reason": "masking engine not configured"},
                             status_code=503)
     try:
-        probe = "__securitymasker_readiness__"
-        await rt.store.get_or_create(probe, tenant_id="_readiness")
+        # Create and delete with the SAME arguments: the Redis store namespaces by
+        # tenant, so creating with a tenant and deleting without one wrote one key
+        # and removed another, leaking a probe session on every check.
+        probe = namespaced_key("_readiness", "__securitymasker_readiness__")
+        await rt.store.get_or_create(probe)
         await rt.store.delete(probe)
     except Exception as exc:  # noqa: BLE001 - any store fault means not ready
         _log.warning("sm_not_ready", reason=type(exc).__name__)
@@ -204,8 +219,17 @@ async def _handle(
         bound = await rt.store.resolve_response(
             namespaced_key(tenant, resolved.previous_response_id)
         )
-        if bound is not None:
-            store_key, stable = bound, True
+        if bound is None:
+            # The client is continuing a conversation we cannot place (expired,
+            # another tenant's, or never ours). Refuse unconditionally: the body
+            # may carry aliases we can neither recognise nor restore. Shape
+            # heuristics are NOT enough here — a numeric or uuid alias is
+            # indistinguishable from ordinary data, and such a request would be
+            # silently re-masked onto a new table (doc/06 P1-1).
+            _log.warning("sm_block_unknown_previous_response", path=path)
+            return _error(409, "session_unresolved",
+                          "previous_response_id does not match a known session.")
+        store_key, stable = bound, True
 
     if not stable and _payload_has_alias_shape(data):
         # Prior-turn aliases but no stable session to restore them: block instead
@@ -217,10 +241,14 @@ async def _handle(
     try:
         # Lock first so get/create/mask/save share one exclusion window — two
         # workers can't fork the same session's alias table (doc/06 P1-9).
-        async with rt.store.lock(store_key):
+        async with rt.store.lock(store_key) as held:
             session = await rt.store.get_or_create(store_key, tenant_id=tenant)
             await mask(rt.engine, session, data)
             await rt.store.save(session)
+            # A distributed lock can expire or be taken over mid-request. If we
+            # lost exclusivity, another worker may have written the same session,
+            # so refuse rather than send using state we no longer own (P1-9).
+            held.check()
         # Final block-only guard over the whole masked payload (doc/06 P0-4): a
         # registered secret in an unknown/structural field must never be forwarded.
         await rt.engine.assert_no_leak_in_payload(data, session=session, request_id=store_key)

@@ -38,6 +38,17 @@ services:
       # https://chatgpt.com/backend-api/codex / https://api.anthropic.com).
       SECURITYMASKER_OPENAI_UPSTREAM: http://mock-upstream:8081
       SECURITYMASKER_ANTHROPIC_UPSTREAM: http://mock-upstream:8081
+      # A container must bind 0.0.0.0 to be reachable; the publish mapping below
+      # keeps it on loopback. Acknowledged HERE (not baked into the image) so a
+      # bare `docker run -p 4000:4000` still hits the guard (doc/06 P0-9).
+      SECURITYMASKER_ALLOW_PUBLIC_BIND: "1"
+      # Shared session store. Only takes effect with `--profile redis`; without it
+      # the gateway would fail closed at startup, so both are set together below.
+      SECURITYMASKER_STORE: "${SECURITYMASKER_STORE:-memory}"
+      SECURITYMASKER_REDIS_URL: "${SECURITYMASKER_REDIS_URL:-redis://redis:6379/0}"
+      # Seals sessions at rest in Redis. Demo-only value — generate a real one
+      # (`openssl rand -base64 32`) and inject it from a secret store.
+      SECURITYMASKER_MASTER_KEY: "${SECURITYMASKER_MASTER_KEY:-ZGVtby1vbmx5LTMyLWJ5dGUta2V5LWZvci1jb21wb3Nl}"
     ports:
       - "127.0.0.1:4000:4000"   # keep the admin/proxy surface on localhost (§33)
     read_only: true
@@ -46,7 +57,10 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Optional shared session store for multi-worker deployments (§8).
+  # Optional shared session store for multi-worker deployments (§8). Enable with:
+  #   SECURITYMASKER_STORE=redis docker compose --profile redis up
+  # (the gateway needs SECURITYMASKER_STORE set too — starting Redis alone does
+  # not switch the store, and a half-configured store fails closed.)
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]

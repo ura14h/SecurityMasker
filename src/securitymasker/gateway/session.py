@@ -101,8 +101,19 @@ def resolve_tenant(
     return tenant
 
 
-def namespaced_key(tenant: str, session_id: str) -> str:
-    """Tenant-namespaced store key so one session id can't cross tenants (P0-9)."""
+def namespaced_key(tenant: str, session_id: str, user: str | None = None) -> str:
+    """Tenant(+user)-namespaced store key so a session id cannot cross a boundary.
+
+    KNOWN LIMITATION (doc/06 P0-9, audit round 3 finding 7): when ``user`` is not
+    supplied, isolation is per TENANT only. Two users of the same tenant who
+    present the same session id share one alias table, so this is safe for a
+    single-user local install or a tenant-per-customer deployment, but NOT for
+    multiple mutually-distrusting users inside one tenant. Per-user isolation
+    needs the authenticator to assert a user id (and to sign it), which is not
+    implemented — see doc/07.
+    """
+    if user:
+        return f"{tenant}\x1f{user}\x1f{session_id}"
     return f"{tenant}\x1f{session_id}"
 
 

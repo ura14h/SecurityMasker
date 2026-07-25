@@ -133,7 +133,12 @@ class ResponsesStreamProcessor:
                 if isinstance(item.get("arguments"), str) and self._trust.restores_arguments(
                     item.get("name")
                 ):
-                    item["arguments"] = self._safe_args(item["arguments"])
+                    restored_args = self._safe_args(item["arguments"])
+                    if restored_args is None:
+                        return [_error_event(
+                            "securitymasker: tool arguments were not valid JSON and "
+                            "could not be restored; the item was not forwarded.")]
+                    item["arguments"] = restored_args
             return [_reserialize(ev, payload)]
         if "response" in payload and isinstance(payload["response"], dict):
             rid = payload["response"].get("id")
@@ -195,16 +200,25 @@ class ResponsesStreamProcessor:
         # Restore to real values only for a trusted local tool (doc/06 P0-8).
         restored = raw
         if self._trust.restores_arguments(self._item_names.get(item_id)):
-            restored = self._safe_args(raw)
+            attempt = self._safe_args(raw)
+            if attempt is None:
+                # Arguments that will not parse cannot be restored, and re-emitting
+                # the malformed JSON would hand the client an unexecutable — or
+                # worse, half-restored — tool call. Fail closed like overflow does.
+                return [_error_event(
+                    "securitymasker: tool arguments were not valid JSON and could "
+                    "not be restored; the call was not forwarded to the client.")]
+            restored = attempt
         payload["arguments"] = restored
         emit_delta = _args_delta_event(payload, restored)
         return [emit_delta, _reserialize(ev, payload)]
 
-    def _safe_args(self, raw: str) -> str:
+    def _safe_args(self, raw: str) -> str | None:
+        """Restored arguments, or ``None`` when they cannot be restored safely."""
         try:
             return self._reasm.restore_arguments(raw)
-        except Exception:  # noqa: BLE001 - leave aliases, never approximate (§24)
-            return raw
+        except Exception:  # noqa: BLE001 - never approximate a restore (§24)
+            return None
 
 
 def _payload(ev: SSEEvent) -> dict[str, Any] | None:
