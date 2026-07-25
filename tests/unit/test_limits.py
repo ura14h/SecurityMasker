@@ -14,9 +14,9 @@ import pytest
 
 from securitymasker.aliases import factory
 from securitymasker.errors import MaskingError
-from securitymasker.gateway import responses_stream as rs
 from securitymasker.models import ReplacementProfile, RestorePolicy
 from securitymasker.sessions.memory import InMemorySessionStore
+from securitymasker.streaming import openai_responses_stream as rs
 from securitymasker.tool_trust import ToolTrustPolicy
 
 

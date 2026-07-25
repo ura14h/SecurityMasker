@@ -143,7 +143,7 @@ async def test_stale_binding_does_not_create_a_new_session(gateway) -> None:
 
 
 def test_untrusted_tool_invalid_json_is_not_resent() -> None:
-    from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
+    from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
     from securitymasker.tool_trust import ToolTrustPolicy
 
     # No trusted tools at all: validity must still be enforced.
@@ -164,7 +164,7 @@ def test_untrusted_tool_invalid_json_is_not_resent() -> None:
 
 
 def test_untrusted_tool_valid_json_keeps_aliases() -> None:
-    from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
+    from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
     from securitymasker.tool_trust import ToolTrustPolicy
 
     proc = ResponsesStreamProcessor({"SM_X": "real-value"}, lambda t: t.replace("SM_X", "real-value"),

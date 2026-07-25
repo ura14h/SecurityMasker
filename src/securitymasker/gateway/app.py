@@ -30,13 +30,13 @@ from securitymasker.engine import MaskingEngine, iter_strings
 from securitymasker.errors import SecurityMaskerError
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
 from securitymasker.gateway.identity import Identity, IdentityError, resolve_identity
-from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
 from securitymasker.gateway.runtime import GatewayRuntime
 from securitymasker.gateway.session import namespaced_key, resolve_session
 from securitymasker.logging import get_logger
 from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
-from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
+from securitymasker.streaming.anthropic_messages_stream import AnthropicStreamProcessor
+from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
 
 _log = get_logger(component="securitymasker.gateway")
 

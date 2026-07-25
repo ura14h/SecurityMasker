@@ -65,3 +65,31 @@ LiteLLM callbacks it replaced).
 
 See [compatibility.md](compatibility.md) for pinned versions and verified upstream
 event shapes, and [adr/](adr/) for design decisions (esp. ADR-0006).
+
+
+## Module ownership (updated after the round-4 review)
+
+One responsibility, one home:
+
+- `context/` — segmentation only. Knows nothing about detectors, HTTP or sessions.
+- `detectors/` — detection. `detectors/inference.py` owns the bounded pool that all
+  model-backed detectors share, so the thread ceiling is global rather than
+  per-detector.
+- `streaming/` — SSE restoration for BOTH protocols:
+  `openai_responses_stream.py` and `anthropic_messages_stream.py`. They previously
+  lived in different packages (`gateway/` vs `streaming/`) for no reason other
+  than the order they were written; the split invited the assumption that one was
+  gateway-specific.
+- `gateway/` — request orchestration. `gateway/identity.py` owns assertion
+  verification, so no crypto sits in a request handler and the store receives an
+  already-validated namespace.
+- `integrations/` — per-client knowledge (Codex/Claude), keeping provider
+  branching out of the CLI.
+- `devtools/` — the Compose demo's mock upstream and manual tooling. Deliberately
+  NOT under `tests/`: a runnable service is not a test, and pointing a Compose
+  service at a test module makes the test namespace a deployment dependency.
+
+The masking core (`engine`, `policy`, `aliases`, `detectors`, `normalization`)
+imports nothing from `gateway`, `integrations`, `cli` or `doctor`, and every
+optional dependency (torch, transformers, presidio, redis) is imported inside a
+function so a minimal install never loads them.

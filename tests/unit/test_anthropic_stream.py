@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
+from securitymasker.streaming.anthropic_messages_stream import AnthropicStreamProcessor
 from securitymasker.tool_trust import ToolTrustPolicy
 
 REPL = {"SM_PERSON_2B891C": "山田太郎", "sm-host-7f3a91.example.invalid": "prod-db01.internal.example"}

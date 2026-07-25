@@ -61,7 +61,7 @@
 
 | 項目 | 状態 | 備考 |
 |---|---|---|
-| P1-10 stream buffer上限＋done欠落で部分literal復元しない | done | `test_limits.py` |
+| P1-10 stream buffer上限＋done欠落＋invalid JSON | done | `test_limits.py`。**JSON validityはtrustと独立**に全tool callで検査（第4次で是正） |
 | P1-5 session mapping上限（fail-closed） | done | `aliases/factory.py` |
 | P1-5 detector timeout / ReDoS対策 | **done**（第2次で完了） | `detectors/safety.py` ＋ 検出器ごとの時間予算 |
 | P2-1 doctor実設定検証・CLI sessions honesty | done | `sessions`コマンドは未実装として非0終了 |

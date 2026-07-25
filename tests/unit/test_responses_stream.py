@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 
-from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
+from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
 from securitymasker.tool_trust import ToolTrustPolicy
 
 REPL = {"SM_ORG_7F3A91": "株式会社極秘技研", "SM_HOST": "prod-db01.internal.example"}

@@ -176,7 +176,7 @@ async def test_codex_headers_are_forwarded(gateway) -> None:
 
 
 def test_invalid_tool_json_becomes_an_error_event() -> None:
-    from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
+    from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
     from securitymasker.tool_trust import ToolTrustPolicy
 
     proc = ResponsesStreamProcessor({"SM_X": "real"}, lambda t: t,
