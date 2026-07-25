@@ -50,6 +50,8 @@ _CODE_CONTEXTS = frozenset({
 
 class PresidioDetector:
     name = "presidio"
+    # Model-backed: scheduled request-wide by the engine, not once per span.
+    fuzzy = True
 
     def __init__(
         self,

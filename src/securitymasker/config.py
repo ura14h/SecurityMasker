@@ -68,6 +68,12 @@ class Defaults(BaseModel):
     inject_alias_instruction: bool = True
     # Per-detector wall-clock budget (doc/06 P1-5). 0 disables the bound.
     detector_timeout_seconds: float = Field(default=10.0, ge=0.0, le=300.0)
+    # Ceiling on how much text one request may put through the model-backed
+    # detectors. Over it the request is REFUSED, because the alternative —
+    # scanning a prefix and reporting success — is a silent blind spot
+    # (ADR-0011). Sized for a very large prompt; raise it only with the
+    # inference cost in mind.
+    max_fuzzy_chars: int = Field(default=200_000, ge=1_000, le=10_000_000)
 
     @field_validator("fail_mode")
     @classmethod
@@ -480,4 +486,5 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         tool_trust=ToolTrustPolicy(frozenset(config.tool_trust.trusted_local_tools)),
         inject_alias_instruction=config.defaults.inject_alias_instruction,
         detector_timeout=config.defaults.detector_timeout_seconds,
+        max_fuzzy_chars=config.defaults.max_fuzzy_chars,
     )

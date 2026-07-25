@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
-from securitymasker.context import coalesce_for_detection, is_code_like, segment
+from securitymasker.context import Segment, coalesce_for_detection, is_code_like, segment
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
 from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
@@ -76,6 +76,45 @@ def _apply_replacements(text: str, spans: list[tuple[int, int, str]]) -> str:
     return "".join(out)
 
 
+# Joins fuzzy-eligible spans for the single request-wide model pass. A blank line
+# is a boundary no name or organisation crosses, so a detection that straddles one
+# is an artefact of joining rather than a real entity.
+_FUZZY_JOIN = "\n\n"
+
+
+def _is_fuzzy(detector: SensitiveDataDetector) -> bool:
+    """Whether ``detector`` is model-backed, and so scheduled request-wide.
+
+    An explicit ``fuzzy`` attribute, not an inference from ``skip_code_contexts``:
+    that flag is user-configurable and answers a different question (may this
+    detector opt out of code spans?). Reading it as "is a model" meant turning it
+    off silently promoted a model detector into the per-span deterministic pass.
+    """
+    return bool(getattr(detector, "fuzzy", False))
+
+
+def _map_to_segments(
+    det: DetectionResult, spans: Sequence[tuple[int, int, int]]
+) -> list[DetectionResult]:
+    """Map a detection on the joined text back to original coordinates.
+
+    Normally a detection sits inside one span and this is a subtraction. A
+    detection that overlaps the join is clipped to each span it covers and emitted
+    once per span, so the covered characters are still masked. Clipping can only
+    mask MORE than the model asked for, never less — the safe direction, and the
+    reason this does not simply drop such detections.
+    """
+    out: list[DetectionResult] = []
+    for j_start, j_end, o_start in spans:
+        lo, hi = max(det.start, j_start), min(det.end, j_end)
+        if lo >= hi:
+            continue
+        shift = o_start - j_start
+        out.append(replace(det, start=lo + shift, end=hi + shift,
+                           original_value=det.original_value[lo - det.start:hi - det.start]))
+    return out
+
+
 class MaskingEngine:
     def __init__(
         self,
@@ -90,14 +129,14 @@ class MaskingEngine:
         inject_alias_instruction: bool = False,
         detector_timeout: float = 10.0,
         segment_contexts: bool = True,
-        max_detector_passes: int = 64,
+        max_fuzzy_chars: int = 200_000,
     ) -> None:
         # How many spans get the FULL detector set (including model-backed ones)
         # per request. Beyond this the deterministic detectors still run on every
         # span — nothing goes unscanned — but the expensive ones stop, so a body
         # engineered into hundreds of context switches cannot multiply inference
         # cost (ADR-0011).
-        self._max_detector_passes = max_detector_passes
+        self._max_fuzzy_chars = max_fuzzy_chars
         self._detector_timeout = detector_timeout
         self._detectors = detectors
         self._normalization = normalization
@@ -167,42 +206,79 @@ class MaskingEngine:
     async def _detect_segmented(
         self, text: str, issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
-        found: list[DetectionResult] = []
-        segments = coalesce_for_detection(segment(text))
+        """Detect over typed spans without letting segmentation hide anything.
 
-        # Coalescing only merges CONTIGUOUS same-kind spans, so prose/code
-        # alternation still yields one prose span per gap. The budget below is
-        # therefore what actually bounds per-request work: past it the remaining
-        # spans of that kind are concatenated and scanned in ONE pass rather than
-        # individually. Concatenation is only safe for the fuzzy pass — offsets
-        # would not survive it — so the budget is applied by running the remainder
-        # as a single trailing span per kind (ADR-0011).
-        budget = self._max_detector_passes
-        for index, seg in enumerate(segments):
-            if index >= budget:
-                # Remaining spans are still scanned, but as one span each kind, so
-                # nothing goes unexamined while the pass count stays bounded.
-                break
-            for det in await self._detect_one(seg.text, seg.kind, issued_aliases):
+        Two passes with different shapes, because the two kinds of detector have
+        different costs and different rules:
+
+        - **Deterministic** detectors run on EVERY span, individually. They are
+          cheap, and a secret is a secret wherever it appears, so nothing may cap
+          them (invariant 8).
+        - **Fuzzy/model** detectors run ONCE, over the fuzzy-eligible spans joined
+          together, then the findings are mapped back to absolute offsets.
+
+        The previous version ran the full set on the first N spans and only the
+        deterministic ones after that. That made segmentation into an attack: pad
+        a request with inline-code spans and every unregistered name past the
+        limit was invisible to NER, deterministically. Cost is now a function of
+        how much prose the request contains, not how finely it is chopped, so
+        there is no arrangement of the same text that scans less of it.
+        """
+        segments = coalesce_for_detection(segment(text))
+        found: list[DetectionResult] = []
+
+        for seg in segments:
+            for det in await self._detect_one(seg.text, seg.kind, issued_aliases,
+                                              deterministic_only=True):
                 # Shift spans back into the ORIGINAL text's coordinates so every
                 # downstream consumer (replacement, leak scan) sees absolute offsets.
                 found.append(replace(det, start=det.start + seg.start,
                                      end=det.end + seg.start))
 
-        for seg in segments[budget:]:
-            # Over budget: scan each remaining span with the DETERMINISTIC
-            # detectors only. Those are cheap and must never be skipped (a secret
-            # past the budget is still a secret); the fuzzy/model detectors are the
-            # expensive ones and are what the budget exists to cap.
-            for det in await self._detect_one(seg.text, seg.kind, issued_aliases,
-                                              deterministic_only=True):
-                found.append(replace(det, start=det.start + seg.start,
-                                     end=det.end + seg.start))
+        found.extend(await self._detect_fuzzy(segments, issued_aliases))
         return policy.resolve(found)
+
+    async def _detect_fuzzy(
+        self, segments: Sequence[Segment], issued_aliases: frozenset[str]
+    ) -> list[DetectionResult]:
+        """Run the model-backed detectors once over all fuzzy-eligible spans.
+
+        Code-like spans are excluded, as they always were: a model that has learned
+        "capitalised token = name" fires on identifiers. Everything else is joined
+        with a blank line — a boundary no entity should span — and scanned as one
+        text so the model reads each span in context.
+        """
+        eligible = [seg for seg in segments if not is_code_like(seg.kind)]
+        if not eligible:
+            return []
+
+        joined_parts: list[str] = []
+        # (start in joined text, end in joined text, start in original text)
+        spans: list[tuple[int, int, int]] = []
+        cursor = 0
+        for seg in eligible:
+            spans.append((cursor, cursor + len(seg.text), seg.start))
+            joined_parts.append(seg.text)
+            cursor += len(seg.text) + len(_FUZZY_JOIN)
+        joined = _FUZZY_JOIN.join(joined_parts)
+
+        if len(joined) > self._max_fuzzy_chars:
+            # Fail closed. Silently scanning a prefix is what the old budget did,
+            # and it is indistinguishable from a clean result — the caller would
+            # believe the text had been checked.
+            raise DetectionError(
+                f"request has {len(joined)} characters of scannable text, over the "
+                f"{self._max_fuzzy_chars} limit for model-backed detection. Refusing "
+                "rather than scanning only part of it."
+            )
+
+        raw = await self._detect_one(joined, ContextKind.PROSE.value, issued_aliases,
+                                     fuzzy_only=True)
+        return [mapped for det in raw for mapped in _map_to_segments(det, spans)]
 
     async def _detect_one(
         self, text: str, context_kind: str, issued_aliases: frozenset[str],
-        *, deterministic_only: bool = False,
+        *, deterministic_only: bool = False, fuzzy_only: bool = False,
     ) -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
         ctx = DetectionContext(norm=norm, context_kind=context_kind, issued_aliases=issued_aliases)
@@ -210,8 +286,10 @@ class MaskingEngine:
         for detector in self._detectors:
             if self._skips_context(detector, context_kind):
                 continue
-            if deterministic_only and getattr(detector, "skip_code_contexts", False):
-                continue     # model-backed detector, over the per-request budget
+            if deterministic_only and _is_fuzzy(detector):
+                continue     # scanned once, request-wide, by _detect_fuzzy
+            if fuzzy_only and not _is_fuzzy(detector):
+                continue     # already scanned per-span with exact offsets
             try:
                 if self._detector_timeout > 0:
                     # Bound how long any one detector may take. This does NOT stop

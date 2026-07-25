@@ -86,6 +86,11 @@ class UnsupportedLabelSchemaError(ConfigError):
 
 class JapaneseNerDetector:
     name = "jp_ner"
+    # Model-backed: the engine schedules this differently from the deterministic
+    # detectors (one bounded request-wide pass, not one call per span). This is an
+    # explicit marker rather than an inference from `skip_code_contexts`, which is
+    # user-configurable and means something else.
+    fuzzy = True
 
     def __init__(
         self,
@@ -100,6 +105,14 @@ class JapaneseNerDetector:
         inference_timeout: float | None = None,
     ) -> None:
         self._inference_timeout = inference_timeout
+        # Kept below the model's 512-token limit with room for the special tokens
+        # the pipeline adds; the overlap is generous enough to contain any Japanese
+        # personal or organisation name that lands on a window boundary.
+        self._window_tokens = 448
+        self._window_overlap = 64
+        # Used only when no offset-capable tokenizer is available (see _windows).
+        self._window_chars = 400
+        self._window_overlap_chars = 64
         # Fuzzy NER opts out of code-like spans (§17); the dictionary and the
         # deterministic detectors keep running there.
         self.skip_code_contexts = skip_code_contexts
@@ -238,6 +251,70 @@ class JapaneseNerDetector:
         if required:
             raise UnsupportedLabelSchemaError(message)
 
+    def _windows(self, text: str) -> list[tuple[int, str]]:
+        """Split ``text`` into (offset, chunk) pairs the model can actually read.
+
+        A transformer has a hard input length (512 tokens here). Handing it more
+        does NOT raise — the tokenizer warns to stderr and the pipeline silently
+        classifies only the prefix, so every entity past the limit comes back as
+        "nothing found". For a masking proxy that is the worst possible failure:
+        indistinguishable from a clean scan, and it hides exactly the long pasted
+        documents most likely to contain names.
+
+        So the text is cut into bounded windows, with an overlap, and each window
+        is inferred separately. The overlap exists because a name split across a
+        cut would be missed by both halves; entities found twice are de-duplicated
+        afterwards. Offsets are in ``text`` coordinates — the caller shifts by
+        ``offset`` and nothing else changes.
+        """
+        offsets = self._token_offsets(text)
+        if offsets is None:
+            # No usable tokenizer (a stub, or one without offset mapping). Fall
+            # back to character windows: cruder, but it still cannot truncate,
+            # and truncation is the failure that matters. Japanese runs close to
+            # one token per character, so the character budget stays under the
+            # token limit.
+            return _slice(text, len(text), self._window_chars, self._window_overlap_chars,
+                          start_of=lambda i: i, end_of=lambda i: i + 1)
+        return _slice(text, len(offsets), self._window_tokens, self._window_overlap,
+                      start_of=lambda i: offsets[i][0], end_of=lambda i: offsets[i][1])
+
+    def _token_offsets(self, text: str) -> list[tuple[int, int]] | None:
+        """Character offsets per token, or None when the tokenizer cannot say."""
+        tokenizer = getattr(self._pipeline, "tokenizer", None)
+        if tokenizer is None:
+            return None
+        try:
+            # verbose=False: the tokenizer warns on stderr whenever the input
+            # exceeds model_max_length. Here that is expected and handled —
+            # windowing is the whole point of this call — so the warning would
+            # only teach operators to ignore a message that matters elsewhere.
+            encoded = tokenizer(text, add_special_tokens=False,
+                                return_offsets_mapping=True, verbose=False)
+            mapping = encoded["offset_mapping"]
+        except Exception:  # noqa: BLE001 - any tokenizer shortfall -> char windows
+            return None
+        if not mapping or any(o is None or o[1] is None for o in mapping):
+            return None
+        return [(int(a), int(b)) for a, b in mapping]
+
+    async def _infer(self, text: str) -> list[dict[str, Any]]:
+        try:
+            # Synchronous, CPU-bound inference on a BOUNDED pool. A timeout cannot
+            # stop the worker (nothing can interrupt CPU-bound Python), so the
+            # protection is the admission limit: abandoned work keeps its slot
+            # until it finishes, and further requests are refused rather than
+            # queued behind it (ADR-0011).
+            return list(await shared_runner().run(
+                self._pipeline, text, timeout=self._inference_timeout
+            ))
+        except (InferenceOverloaded, TimeoutError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise DetectionError(
+                f"jp_ner pipeline failed at runtime: {type(exc).__name__}"
+            ) from exc
+
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         if not self.available or self._pipeline is None:
             return []
@@ -245,20 +322,19 @@ class JapaneseNerDetector:
             return []
         text = context.norm.normalized
         try:
-            # Synchronous, CPU-bound inference on a BOUNDED pool. A timeout cannot
-            # stop the worker (nothing can interrupt CPU-bound Python), so the
-            # protection is the admission limit: abandoned work keeps its slot
-            # until it finishes, and further requests are refused rather than
-            # queued behind it (ADR-0011).
-            entities = await shared_runner().run(
-                self._pipeline, text, timeout=self._inference_timeout
-            )
-        except (InferenceOverloaded, TimeoutError):
-            raise
-        except Exception as exc:  # noqa: BLE001
+            windows = self._windows(text)
+        except Exception as exc:  # noqa: BLE001 - tokenizer failure is a detection failure
             raise DetectionError(
-                f"jp_ner pipeline failed at runtime: {type(exc).__name__}"
+                f"jp_ner could not window the input: {type(exc).__name__}"
             ) from exc
+
+        entities: list[dict[str, Any]] = []
+        for offset, chunk in windows:
+            entities.extend(
+                {**ent, "start": int(ent["start"]) + offset, "end": int(ent["end"]) + offset}
+                for ent in await self._infer(chunk)
+            )
+        entities = _dedupe(entities)
 
         results: list[DetectionResult] = []
         for ent in entities:
@@ -294,6 +370,53 @@ class JapaneseNerDetector:
                 )
             )
         return results
+
+
+def _slice(
+    text: str,
+    total: int,
+    size: int,
+    overlap: int,
+    *,
+    start_of: Any,
+    end_of: Any,
+) -> list[tuple[int, str]]:
+    """Windows of at most ``size`` units, overlapping by ``overlap``.
+
+    ``start_of(i)`` is the first character of unit ``i``; ``end_of(i)`` is the
+    exclusive last character of unit ``i``. The same walk then serves both the
+    token-based and the character-based cut.
+    """
+    if total <= size:
+        return [(0, text)]
+    windows: list[tuple[int, str]] = []
+    step = max(1, size - overlap)
+    for begin in range(0, total, step):
+        last = min(begin + size, total) - 1
+        if last < begin:
+            break
+        windows.append((start_of(begin), text[start_of(begin):end_of(last)]))
+        if begin + size >= total:
+            break
+    return windows
+
+
+def _dedupe(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop entities the overlap between windows reported twice.
+
+    Two windows share ``_window_overlap`` tokens, so anything inside that region
+    is found by both. Same span and same label is the same finding; the higher
+    score wins, because the window that saw more of the surrounding sentence is
+    the one that was more confident.
+    """
+    best: dict[tuple[int, int, str], dict[str, Any]] = {}
+    for ent in entities:
+        key = (int(ent["start"]), int(ent["end"]),
+               str(ent.get("entity_group") or ent.get("entity") or ""))
+        current = best.get(key)
+        if current is None or float(ent.get("score", 0.0)) > float(current.get("score", 0.0)):
+            best[key] = ent
+    return sorted(best.values(), key=lambda e: (int(e["start"]), int(e["end"])))
 
 
 def _is_code_like(kind: str) -> bool:
