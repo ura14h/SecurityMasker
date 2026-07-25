@@ -174,12 +174,12 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
         print("error: no NER model/revision configured to fetch", file=sys.stderr)
         return 2
 
-    result = fetch(model, revision)
+    result = fetch(model, revision, allow_unverified=args.allow_unverified)
     print(f"fetched {result.model}@{result.revision}")
     for name in sorted(result.verified):
         print(f"  verified   {name}")
-    for name in sorted(result.unverified):
-        print(f"  UNVERIFIED {name} (no pinned digest on record)")
+    if not result.verified and args.allow_unverified:
+        print("  WARNING: accepted UNVERIFIED — no artifact manifest on record")
     return 0 if result.ok else 1
 
 
@@ -284,6 +284,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch = models_sub.add_parser("fetch", help="download + verify a pinned NER model")
     p_fetch.add_argument("--model", default=None)
     p_fetch.add_argument("--revision", default=None)
+    p_fetch.add_argument("--allow-unverified", action="store_true",
+                         help="DANGEROUS: accept a model with no artifact manifest")
     add_config(p_fetch)
     p_fetch.set_defaults(func=cmd_models_fetch)
 

@@ -235,6 +235,9 @@ class NerConfig(BaseModel):
     # an explicit preparation step or baked into the image.
     local_files_only: bool = True
     skip_code_contexts: bool = True
+    # A model with no artifact manifest cannot be verified. Accepting one is an
+    # explicit, argued-for choice, never a default (ADR-0010).
+    allow_unverified_model: bool = False
 
     @model_validator(mode="after")
     def _pinned(self) -> NerConfig:
@@ -422,6 +425,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
                 min_score=config.ner.min_score,
                 local_files_only=config.ner.local_files_only,
                 skip_code_contexts=config.ner.skip_code_contexts,
+                allow_unverified_model=config.ner.allow_unverified_model,
                 required=True,
             )
         )

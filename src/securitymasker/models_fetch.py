@@ -1,12 +1,25 @@
-"""Explicit, auditable model preparation (ADR-0009).
+"""Model artifact manifests, fetching, and verification (ADR-0009, ADR-0010).
 
-The runtime loads models ``local_files_only``, so it never downloads anything
-while serving a request — user text can never trigger a call to the Hub. That
-makes fetching a separate, deliberate step, which is what this module is.
+The runtime loads models ``local_files_only``, so nothing a user types can trigger
+a download. Fetching is therefore a separate, deliberate step — and this is where
+the artifacts are pinned and checked.
 
-It is also where the digests get checked. Pinning a revision stops the weights
-changing under us; verifying the file digests additionally detects a corrupted or
-substituted download. Both are recorded in ADR-0009 and in the config.
+Pinning a revision stops the weights changing under us. It does not, on its own,
+tell us that the files on disk are the ones we pinned: a partial download, a
+corrupted cache, or a swapped file all leave a plausible-looking directory. So a
+model is described by a **complete manifest** — every artifact we require, with
+its expected size and SHA-256 — and verification fails closed when any required
+artifact is missing, mismatched, or of a weight format we refuse to load.
+
+Three rules follow from "a NER model is untrusted code-adjacent input":
+
+- **safetensors only.** ``.bin``/``.pt``/``.pth`` are pickle formats that execute
+  arbitrary code on load. They are rejected by name, and ``use_safetensors=True``
+  is forced at load time so transformers cannot fall back to one.
+- **known models only.** A model with no manifest cannot be verified, so it is
+  refused by default; allowing one is an explicit, argued-for choice.
+- **verify at load, not just at fetch.** A cache can change between the fetch and
+  the next process start, so the runtime re-checks before trusting it.
 """
 
 from __future__ import annotations
@@ -17,32 +30,94 @@ from pathlib import Path
 
 from securitymasker.errors import ConfigError
 
-# Digests for the models we publish pins for. Recorded in ADR-0009; a model not
-# listed here can still be fetched, but its files are not digest-verified and the
-# caller is told so rather than being left to assume they were.
-KNOWN_DIGESTS: dict[str, dict[str, str]] = {
-    "tsmatz/xlm-roberta-ner-japanese@aba094e118d5ffc622e9b25e07edc49f9dd85feb": {
-        "model.safetensors":
-            "a042d71446dd23e16dc2dbb1c7bf5b56b616dd8a53cdbb9af26597ba978b40be",
-        "sentencepiece.bpe.model":
-            "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865",
-        "tokenizer.json":
-            "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
-    },
+# Weight formats that execute arbitrary code when loaded. Never accepted.
+UNSAFE_WEIGHT_SUFFIXES = (".bin", ".pt", ".pth", ".ckpt", ".pkl")
+
+
+@dataclass(frozen=True)
+class Artifact:
+    name: str
+    sha256: str
+    size: int
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class ModelManifest:
+    """The complete set of artifacts one pinned model revision must present."""
+
+    model: str
+    revision: str
+    artifacts: tuple[Artifact, ...]
+
+    @property
+    def key(self) -> str:
+        return f"{self.model}@{self.revision}"
+
+    @property
+    def required_names(self) -> set[str]:
+        return {a.name for a in self.artifacts if a.required}
+
+    def expected(self, name: str) -> Artifact | None:
+        return next((a for a in self.artifacts if a.name == name), None)
+
+
+# Manifests for the models we publish pins for (ADR-0009). Digests were taken from
+# the Hugging Face registry API at adoption time and are reproduced in the ADR.
+MANIFESTS: dict[str, ModelManifest] = {
+    "tsmatz/xlm-roberta-ner-japanese@aba094e118d5ffc622e9b25e07edc49f9dd85feb":
+        ModelManifest(
+            model="tsmatz/xlm-roberta-ner-japanese",
+            revision="aba094e118d5ffc622e9b25e07edc49f9dd85feb",
+            artifacts=(
+                Artifact("model.safetensors",
+                         "a042d71446dd23e16dc2dbb1c7bf5b56b616dd8a53cdbb9af26597ba978b40be",
+                         1109868164),
+                Artifact("sentencepiece.bpe.model",
+                         "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865",
+                         5069051),
+                Artifact("tokenizer.json",
+                         "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
+                         17082660),
+            ),
+        ),
 }
 
 
+def manifest_for(model: str, revision: str | None) -> ModelManifest | None:
+    return MANIFESTS.get(f"{model}@{revision}")
+
+
 @dataclass
-class FetchResult:
+class VerificationResult:
     model: str
     revision: str
     verified: list[str] = field(default_factory=list)
-    unverified: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
     mismatched: list[str] = field(default_factory=list)
+    unsafe: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return not self.mismatched
+        return not (self.missing or self.mismatched or self.unsafe)
+
+    def failure_reason(self) -> str:
+        parts = []
+        if self.missing:
+            parts.append(f"missing required artifacts {sorted(self.missing)}")
+        if self.mismatched:
+            parts.append(f"digest mismatch for {sorted(self.mismatched)}")
+        if self.unsafe:
+            parts.append(f"refused unsafe weight format {sorted(self.unsafe)}")
+        return "; ".join(parts)
+
+
+class UnknownModelError(ConfigError):
+    """No manifest exists for this model@revision, so it cannot be verified."""
+
+
+class ArtifactVerificationError(ConfigError):
+    """A required artifact is missing, altered, or in a format we refuse."""
 
 
 def file_sha256(path: Path) -> str:
@@ -53,27 +128,86 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_digests(files: dict[str, Path], expected: dict[str, str]) -> FetchResult:
-    """Compare downloaded files against the pinned digests."""
-    result = FetchResult(model="", revision="")
-    for name, path in files.items():
-        want = expected.get(name)
-        if want is None:
-            result.unverified.append(name)
+def verify_directory(manifest: ModelManifest, directory: Path) -> VerificationResult:
+    """Check ``directory`` against ``manifest``.
+
+    Iterates the MANIFEST (not the directory), so an artifact that is simply
+    absent is caught — the previous implementation only inspected files that
+    happened to exist and therefore passed on an incomplete download.
+    """
+    result = VerificationResult(model=manifest.model, revision=manifest.revision)
+
+    for artifact in manifest.artifacts:
+        path = directory / artifact.name
+        if not path.is_file():
+            if artifact.required:
+                result.missing.append(artifact.name)
             continue
-        if file_sha256(path) == want:
-            result.verified.append(name)
+        if artifact.size and path.stat().st_size != artifact.size:
+            result.mismatched.append(artifact.name)
+            continue
+        if file_sha256(path) == artifact.sha256:
+            result.verified.append(artifact.name)
         else:
-            result.mismatched.append(name)
+            result.mismatched.append(artifact.name)
+
+    # Anything pickle-shaped in the directory is refused outright, even if the
+    # required safetensors are present: transformers must not be able to pick it.
+    for path in directory.iterdir():
+        if path.is_file() and path.suffix.lower() in UNSAFE_WEIGHT_SUFFIXES:
+            result.unsafe.append(path.name)
+
     return result
 
 
-def fetch(model: str, revision: str) -> FetchResult:
-    """Download ``model`` at ``revision`` into the local cache and verify digests.
+def require_verified(
+    model: str, revision: str | None, directory: Path, *, allow_unverified: bool = False
+) -> VerificationResult:
+    """Verify or raise. This is the gate both fetch and runtime load go through."""
+    manifest = manifest_for(model, revision)
+    if manifest is None:
+        if not allow_unverified:
+            raise UnknownModelError(
+                f"{model}@{revision} has no artifact manifest, so its files cannot be "
+                "verified. Add a manifest (see ADR-0009) or set "
+                "ner.allow_unverified_model=true to accept it UNVERIFIED."
+            )
+        return VerificationResult(model=model, revision=revision or "", verified=[])
 
-    Raises ``ConfigError`` when a digest does not match: a mismatched artefact is
-    not something to warn about and continue past.
+    result = verify_directory(manifest, directory)
+    if not result.ok:
+        raise ArtifactVerificationError(
+            f"{manifest.key} failed verification: {result.failure_reason()}"
+        )
+    return result
+
+
+def cache_directory(model: str, revision: str) -> Path | None:
+    """Where the local cache holds this exact revision, if it is present."""
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        return None
+    try:
+        return Path(snapshot_download(repo_id=model, revision=revision,
+                                      local_files_only=True))
+    except Exception:  # noqa: BLE001 - not cached is a normal, expected outcome
+        return None
+
+
+def fetch(
+    model: str, revision: str, *, allow_unverified: bool = False
+) -> VerificationResult:
+    """Download ``model`` at ``revision`` and verify it against its manifest.
+
+    Raises rather than warning: an unverifiable model is not something to note and
+    carry on past.
     """
+    if manifest_for(model, revision) is None and not allow_unverified:
+        raise UnknownModelError(
+            f"refusing to fetch {model}@{revision}: no artifact manifest on record. "
+            "Add one (ADR-0009) or pass --allow-unverified to accept it UNVERIFIED."
+        )
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
@@ -81,22 +215,11 @@ def fetch(model: str, revision: str) -> FetchResult:
             "fetching models needs the NER extra (pip install -e '.[ner]')"
         ) from exc
 
-    # Only the file types we actually load. Notably excludes *.bin: we do not load
-    # pickle weights (ADR-0009).
-    local = Path(snapshot_download(
+    directory = Path(snapshot_download(
         repo_id=model,
         revision=revision,
+        # Only the formats we load. Excluding *.bin at download time means a
+        # pickle artifact never lands in the cache to be picked up later.
         allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt"],
     ))
-
-    expected = KNOWN_DIGESTS.get(f"{model}@{revision}", {})
-    files = {p.name: p for p in local.iterdir() if p.is_file()}
-    result = verify_digests(files, expected)
-    result.model, result.revision = model, revision
-
-    if result.mismatched:
-        raise ConfigError(
-            f"digest mismatch for {model}@{revision}: {sorted(result.mismatched)}. "
-            "The downloaded artefact differs from the pinned one; refusing it."
-        )
-    return result
+    return require_verified(model, revision, directory, allow_unverified=allow_unverified)

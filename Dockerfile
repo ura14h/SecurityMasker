@@ -51,6 +51,24 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # SECURITYMASKER_ANTHROPIC_UPSTREAM select the upstreams (set in compose).
 CMD ["securitymasker", "gateway", "--host", "0.0.0.0", "--port", "4000"]
 
+# --- ner stage ---------------------------------------------------------------
+# Optional Japanese NER (ADR-0009). A SEPARATE image, not a flag on the default
+# one: it adds torch and ~800MB of resident model, which most deployments should
+# not pay for. Build explicitly with `--target ner`.
+#
+# The model itself is NOT baked in here — it is fetched at deploy time into a
+# mounted cache with `securitymasker models fetch`, which verifies every artifact
+# against its manifest. Baking it would put a 1GB binary in the image layer and
+# make re-pinning a rebuild.
+FROM runtime AS ner
+USER root
+COPY requirements-ner.lock ./
+RUN pip install --no-cache-dir -r requirements-ner.lock
+USER securitymasker
+# Set HF_HOME to a writable, mountable location so the fetched model survives
+# container restarts and can be verified once per deploy rather than per start.
+ENV HF_HOME=/app/.cache/huggingface
+
 # --- demo stage -------------------------------------------------------------
 # Adds the synthetic mock upstream ONLY for the docker-compose demo. The mock and
 # other test code are intentionally kept OUT of the production `runtime` image

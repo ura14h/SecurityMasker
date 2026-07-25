@@ -93,6 +93,7 @@ class JapaneseNerDetector:
         required: bool = False,
         skip_code_contexts: bool = True,
         local_files_only: bool = True,
+        allow_unverified_model: bool = False,
     ) -> None:
         # Fuzzy NER opts out of code-like spans (§17); the dictionary and the
         # deterministic detectors keep running there.
@@ -118,6 +119,28 @@ class JapaneseNerDetector:
                 ) from exc
             return
 
+        # Re-verify the cached artifacts BEFORE loading them. Fetch-time
+        # verification says what was downloaded once; a cache can be altered
+        # afterwards, so the gate has to be here too (ADR-0010).
+        if local_files_only:
+            from securitymasker.models_fetch import cache_directory, require_verified
+
+            directory = cache_directory(model, revision or "")
+            if directory is None:
+                if required:
+                    raise ConfigError(
+                        f"ner.model={model!r}@{revision} is not in the local cache. "
+                        "Run 'securitymasker models fetch' first."
+                    )
+                return
+            try:
+                require_verified(model, revision, directory,
+                                 allow_unverified=allow_unverified_model)
+            except ConfigError:
+                if required:
+                    raise      # message already names the artifacts, not any secret
+                return
+
         try:
             # Load the weights and tokenizer EXPLICITLY rather than letting
             # `pipeline()` resolve them: this is where `revision` pins the exact
@@ -132,7 +155,11 @@ class JapaneseNerDetector:
             # transformers ships no stubs for this factory; the kwargs are checked
             # by the explicit `load_kwargs` dict above.
             tokenizer = AutoTokenizer.from_pretrained(model, **load_kwargs)  # type: ignore[no-untyped-call]
-            weights = AutoModelForTokenClassification.from_pretrained(model, **load_kwargs)
+            # use_safetensors=True is REQUIRED, not preferred: without it
+            # transformers silently falls back to a pickle .bin, which executes
+            # arbitrary code on load (ADR-0010).
+            weights = AutoModelForTokenClassification.from_pretrained(
+                model, use_safetensors=True, **load_kwargs)
             self._pipeline = pipeline(
                 "token-classification",
                 model=weights,
