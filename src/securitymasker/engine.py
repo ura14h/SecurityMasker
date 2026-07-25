@@ -14,14 +14,15 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
+from securitymasker.context import is_code_like, segment
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
 from securitymasker.errors import DetectionError, LeakageError, MaskingError
-from securitymasker.models import DetectionResult, MaskingSession, RestorePolicy
+from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
 from securitymasker.sessions.crypto import decrypt
 from securitymasker.tool_trust import ToolTrustPolicy
@@ -88,6 +89,7 @@ class MaskingEngine:
         tool_trust: ToolTrustPolicy | None = None,
         inject_alias_instruction: bool = False,
         detector_timeout: float = 10.0,
+        segment_contexts: bool = True,
     ) -> None:
         self._detector_timeout = detector_timeout
         self._detectors = detectors
@@ -115,6 +117,21 @@ class MaskingEngine:
             d for d in self._leak_scanners
             if getattr(d, "name", "") in {"secret_patterns", "dictionary", "user_regex"}
         ]
+        self._segment_contexts = segment_contexts
+
+    @staticmethod
+    def _skips_context(detector: SensitiveDataDetector, context_kind: str) -> bool:
+        """Whether ``detector`` opts out of this context (§17, doc/06 P1-7).
+
+        Only FUZZY detectors may opt out, and only in code-like contexts, where a
+        model that has learned "capitalised token = name" fires on identifiers.
+        The dictionary, secret patterns, and every deterministic recognizer run
+        everywhere — a real secret pasted into a code fence is still a secret
+        (invariant 8).
+        """
+        return bool(getattr(detector, "skip_code_contexts", False)) and is_code_like(
+            context_kind
+        )
 
     async def detect(
         self,
@@ -123,10 +140,38 @@ class MaskingEngine:
         context_kind: str = "prose",
         issued_aliases: frozenset[str] = frozenset(),
     ) -> list[DetectionResult]:
+        """Detect over ``text``, segmenting mixed prose/code when asked to.
+
+        For a prose body the text is split into typed spans first (§17), so the
+        detector policy can differ inside a fenced block or a diff while the
+        surrounding prose keeps full coverage. Callers that already know the exact
+        kind (a tool argument, a JSON string) pass it and no segmentation happens.
+        """
+        if self._segment_contexts and context_kind == ContextKind.PROSE.value:
+            return await self._detect_segmented(text, issued_aliases)
+        return await self._detect_one(text, context_kind, issued_aliases)
+
+    async def _detect_segmented(
+        self, text: str, issued_aliases: frozenset[str]
+    ) -> list[DetectionResult]:
+        found: list[DetectionResult] = []
+        for seg in segment(text):
+            for det in await self._detect_one(seg.text, seg.kind, issued_aliases):
+                # Shift spans back into the ORIGINAL text's coordinates so every
+                # downstream consumer (replacement, leak scan) sees absolute offsets.
+                found.append(replace(det, start=det.start + seg.start,
+                                     end=det.end + seg.start))
+        return policy.resolve(found)
+
+    async def _detect_one(
+        self, text: str, context_kind: str, issued_aliases: frozenset[str]
+    ) -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
         ctx = DetectionContext(norm=norm, context_kind=context_kind, issued_aliases=issued_aliases)
         found: list[DetectionResult] = []
         for detector in self._detectors:
+            if self._skips_context(detector, context_kind):
+                continue
             try:
                 if self._detector_timeout > 0:
                     # Bound how long any one detector may take. `re` cannot be

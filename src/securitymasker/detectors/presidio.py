@@ -64,6 +64,9 @@ class PresidioDetector:
         self._language = language
         self._min_score = min_score
         self._entities = list(entities) if entities else None
+        # Read by the engine's context policy (§17): fuzzy NER opts out of
+        # code-like spans. Public so the wiring is visible, not implicit.
+        self.skip_code_contexts = skip_code_contexts
         self._skip_code = skip_code_contexts
         self._required = required
         self._analyzer: Any = None

@@ -18,11 +18,14 @@ class ContextKind(str, Enum):
     """Where a value was found, which constrains a safe replacement form (§17)."""
 
     PROSE = "prose"
-    MARKDOWN_CODE = "markdown_code"
+    MARKDOWN_CODE = "markdown_code"          # fenced block
+    MARKDOWN_INLINE_CODE = "markdown_inline_code"
     JSON_STRING = "json_string"
     YAML_SCALAR = "yaml_scalar"
     SHELL = "shell"
     SOURCE_CODE = "source_code"
+    DIFF = "diff"
+    PATCH = "patch"
     URL = "url"
     FILE_PATH = "file_path"
     TOOL_ARGUMENT = "tool_argument"

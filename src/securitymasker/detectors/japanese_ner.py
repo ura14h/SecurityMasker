@@ -34,8 +34,12 @@ class JapaneseNerDetector:
     name = "jp_ner"
 
     def __init__(
-        self, *, model: str | None = None, min_score: float = 0.85, required: bool = False
+        self, *, model: str | None = None, min_score: float = 0.85, required: bool = False,
+        skip_code_contexts: bool = True,
     ) -> None:
+        # Fuzzy NER opts out of code-like spans (§17); deterministic detectors
+        # and the dictionary keep running there.
+        self.skip_code_contexts = skip_code_contexts
         self._min_score = min_score
         self._pipeline = None
         self.available = False
