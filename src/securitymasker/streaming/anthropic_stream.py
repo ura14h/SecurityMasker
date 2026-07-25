@@ -69,6 +69,17 @@ class AnthropicStreamProcessor:
             if leftover:
                 out.append(_text_delta_event(idx, leftover))
         self._text_restorers.clear()
+        # Stream ended before these tool blocks stopped: never emit incomplete JSON
+        # as an executable call, but report it rather than dropping it (P1-10).
+        pending = sorted(set(self._json_buffers) | self._json_overflow)
+        if pending:
+            out.append(_error_event(
+                "securitymasker: the response stream ended before "
+                f"{len(pending)} tool call(s) completed; their inputs were "
+                "incomplete and were not forwarded."))
+        self._json_buffers.clear()
+        self._json_sizes.clear()
+        self._json_overflow.clear()
         return _serialize(out)
 
     def _emit(self, events: Any) -> bytes:
@@ -112,10 +123,17 @@ class AnthropicStreamProcessor:
             delta["text"] = restorer.feed(str(delta.get("text", "")))
             return [_reserialize(ev, payload)]
         if delta.get("type") == "input_json_delta" and isinstance(idx, int):
+            if idx in self._json_overflow:
+                return []  # already over the cap: discard, never keep growing
             partial = str(delta.get("partial_json", ""))
             size = self._json_sizes.get(idx, 0) + len(partial)
             if size > _MAX_JSON_BUFFER_BYTES:
-                self._json_overflow.add(idx)  # stop restoring; emit raw at stop (P1-10)
+                # Stop accumulating and drop the buffer: keeping it would defeat
+                # the cap. The block is failed closed at content_block_stop.
+                self._json_overflow.add(idx)
+                self._json_buffers.pop(idx, None)
+                self._json_sizes[idx] = size
+                return []
             self._json_buffers.setdefault(idx, []).append(partial)
             self._json_sizes[idx] = size
             return []  # suppress until the block completes (§21)
@@ -134,15 +152,20 @@ class AnthropicStreamProcessor:
             self._json_sizes.pop(idx, None)
             overflowed = idx in self._json_overflow
             self._json_overflow.discard(idx)
-            if raw:
-                # Restore real values only for a trusted local tool (doc/06 P0-8) and
-                # only within the buffer cap (P1-10); otherwise emit raw (aliased).
-                if not overflowed and self._trust.restores_arguments(
-                    self._block_names.pop(idx, None)
-                ):
-                    partial = self._safe_restore_json(raw)
-                else:
-                    partial = raw
+            name = self._block_names.pop(idx, None)
+            if overflowed:
+                # Fail closed and visibly: the input exceeded the cap so we no
+                # longer hold it; emitting the remainder would hand the client a
+                # tool call it must not execute (doc/06 P1-10).
+                extra.append(_error_event(
+                    "securitymasker: tool input exceeded the "
+                    f"{_MAX_JSON_BUFFER_BYTES}-byte buffer limit; the call was not "
+                    "forwarded to the client."))
+            elif raw:
+                # Restore real values only for a trusted local tool (doc/06 P0-8);
+                # otherwise re-emit the buffered aliased JSON unchanged.
+                partial = self._safe_restore_json(raw) if self._trust.restores_arguments(
+                    name) else raw
                 extra.append(_json_delta_event(idx, partial))
         return [*extra, ev]
 
@@ -175,6 +198,17 @@ def _text_delta_event(idx: int, text: str) -> SSEEvent:
     payload = {"type": "content_block_delta", "index": idx,
                "delta": {"type": "text_delta", "text": text}}
     return SSEEvent(event="content_block_delta", data=[json.dumps(payload, ensure_ascii=False)])
+
+
+def _error_event(message: str) -> SSEEvent:
+    """Anthropic-compatible error event (doc/06 P1-10).
+
+    An SSE stream's HTTP status is fixed once it starts, so a mid-stream
+    fail-closed outcome is reported as an ``error`` event. Carries no user content.
+    """
+    payload = {"type": "error", "error": {"type": "securitymasker_stream_error",
+                                          "message": message}}
+    return SSEEvent(event="error", data=[json.dumps(payload, ensure_ascii=False)])
 
 
 def _json_delta_event(idx: int, partial_json: str) -> SSEEvent:

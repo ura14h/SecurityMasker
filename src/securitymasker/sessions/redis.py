@@ -45,9 +45,17 @@ _UNLOCK_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
     "return redis.call('del', KEYS[1]) else return 0 end"
 )
+# Extend the TTL only while we are still the owner (compare-and-expire).
+_RENEW_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+    "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+)
 _LOCK_TTL_SECONDS = 30
 _LOCK_WAIT_SECONDS = 10.0
 _LOCK_POLL_SECONDS = 0.05
+# Renew well inside the TTL so a slow request (large input, slow detector) cannot
+# outlive its own lock and let a second worker fork the session (doc/06 P1-9).
+_LOCK_RENEW_SECONDS = 10.0
 
 
 def load_master_key() -> bytes:
@@ -264,9 +272,26 @@ class RedisSessionStore:
                 f"could not acquire session lock within {_LOCK_WAIT_SECONDS}s; "
                 "refusing to proceed unlocked"
             )
+
+        async def _renew() -> None:
+            """Extend the TTL while we still hold it, so the lock cannot expire
+            mid-request and let another worker fork the same session (P1-9)."""
+            while True:
+                await asyncio.sleep(_LOCK_RENEW_SECONDS)
+                # Only extend if we are still the owner; never revive someone
+                # else's lock or one we already lost.
+                with contextlib.suppress(Exception):
+                    await self._redis.eval(
+                        _RENEW_LUA, 1, lock_key, token, str(_LOCK_TTL_SECONDS)
+                    )
+
+        watchdog = asyncio.create_task(_renew())
         try:
             yield
         finally:
+            watchdog.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watchdog
             # Best-effort atomic release; if it fails, the TTL reclaims the lock.
             with contextlib.suppress(Exception):
                 await self._redis.eval(_UNLOCK_LUA, 1, lock_key, token)

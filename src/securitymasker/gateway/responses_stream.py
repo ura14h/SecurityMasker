@@ -89,6 +89,18 @@ class ResponsesStreamProcessor:
             if leftover:
                 out.append(_text_delta_event(key[0], key[1], leftover))
         self._text_restorers.clear()
+        # The stream ended without a `.done` for these tool calls (upstream error,
+        # cancel, truncation). Never emit the incomplete JSON as an executable
+        # call — but say so explicitly rather than dropping it silently (P1-10).
+        pending = sorted(set(self._arg_buffers) | self._arg_overflow)
+        if pending:
+            out.append(_error_event(
+                "securitymasker: the response stream ended before "
+                f"{len(pending)} tool call(s) completed; their arguments were "
+                "incomplete and were not forwarded."))
+        self._arg_buffers.clear()
+        self._arg_sizes.clear()
+        self._arg_overflow.clear()
         return _serialize(out)
 
     def _handle(self, ev: SSEEvent) -> list[SSEEvent]:
@@ -152,9 +164,17 @@ class ResponsesStreamProcessor:
     def _on_args_delta(self, payload: dict[str, Any]) -> list[SSEEvent]:
         item_id = str(payload.get("item_id", ""))
         delta = str(payload.get("delta", ""))
+        if item_id in self._arg_overflow:
+            return []  # already over the cap: discard, never keep growing (P1-10)
         size = self._arg_sizes.get(item_id, 0) + len(delta)
         if size > _MAX_ARG_BUFFER_BYTES:
-            self._arg_overflow.add(item_id)  # stop restoring; emit raw at done (P1-10)
+            # Stop accumulating entirely and drop what we have: retaining it would
+            # let a runaway stream grow memory without bound, which is the whole
+            # point of the cap. The call is failed closed at `.done`.
+            self._arg_overflow.add(item_id)
+            self._arg_buffers.pop(item_id, None)
+            self._arg_sizes[item_id] = size
+            return []
         self._arg_buffers.setdefault(item_id, []).append(delta)
         self._arg_sizes[item_id] = size
         return []  # suppress until done (§21)
@@ -165,12 +185,17 @@ class ResponsesStreamProcessor:
         self._arg_sizes.pop(item_id, None)
         overflowed = item_id in self._arg_overflow
         self._arg_overflow.discard(item_id)
-        # Restore to real values only for a trusted local tool (doc/06 P0-8) and only
-        # when the buffer stayed within the cap (P1-10); otherwise emit raw (aliased).
-        if not overflowed and self._trust.restores_arguments(self._item_names.get(item_id)):
+        if overflowed:
+            # Fail closed and VISIBLY: the arguments exceeded the buffer cap, so we
+            # no longer hold them. Emitting the truncated remainder would hand the
+            # client a tool call it must not execute (doc/06 P1-10).
+            return [_error_event("securitymasker: tool arguments exceeded the "
+                                 f"{_MAX_ARG_BUFFER_BYTES}-byte buffer limit; the call "
+                                 "was not forwarded to the client.")]
+        # Restore to real values only for a trusted local tool (doc/06 P0-8).
+        restored = raw
+        if self._trust.restores_arguments(self._item_names.get(item_id)):
             restored = self._safe_args(raw)
-        else:
-            restored = raw
         payload["arguments"] = restored
         emit_delta = _args_delta_event(payload, restored)
         return [emit_delta, _reserialize(ev, payload)]
@@ -202,6 +227,18 @@ def _text_delta_event(output_index: int, content_index: int, text: str) -> SSEEv
                "content_index": content_index, "delta": text}
     return SSEEvent(event="response.output_text.delta",
                     data=[json.dumps(payload, ensure_ascii=False)])
+
+
+def _error_event(message: str) -> SSEEvent:
+    """Provider-compatible error event (doc/06 P1-10).
+
+    Once an SSE stream has begun the HTTP status can no longer change, so a
+    fail-closed outcome mid-stream is reported as an ``error`` event. The message
+    describes the limit that was hit and never contains user content (§25).
+    """
+    payload = {"type": "error", "error": {"type": "securitymasker_stream_error",
+                                          "message": message}}
+    return SSEEvent(event="error", data=[json.dumps(payload, ensure_ascii=False)])
 
 
 def _args_delta_event(done_payload: dict[str, Any], arguments: str) -> SSEEvent:

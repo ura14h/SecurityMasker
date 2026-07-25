@@ -25,6 +25,7 @@ class FakeRedis:
 
     def __init__(self) -> None:
         self.store: dict[str, bytes] = {}
+        self.renewals: list[str] = []
 
     async def get(self, key: str) -> bytes | None:
         return self.store.get(key)
@@ -44,14 +45,18 @@ class FakeRedis:
         return [k for k in self.store if fnmatch.fnmatch(k, pattern)]
 
     async def eval(self, script: str, numkeys: int, *args: Any) -> int:
-        # Only the compare-and-delete script is used: del iff value == token.
+        # Two scripts are used, both owner-checked: compare-and-delete (unlock)
+        # and compare-and-expire (renew).
         key, token = args[0], args[1]
         cur = self.store.get(key)
         stored = cur.decode() if isinstance(cur, bytes) else cur
-        if stored == token:
-            self.store.pop(key, None)
+        if stored != token:
+            return 0
+        if "expire" in script:
+            self.renewals.append(key)
             return 1
-        return 0
+        self.store.pop(key, None)
+        return 1
 
 
 def _store() -> RedisSessionStore:
@@ -143,6 +148,22 @@ async def test_lock_release_only_deletes_own_token() -> None:
         fake.store[lock_key] = b"other-owner-token"
     # Our release must NOT have deleted the other owner's lock.
     assert fake.store.get(lock_key) == b"other-owner-token"
+
+
+@pytest.mark.asyncio
+async def test_lock_ttl_is_renewed_while_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Re-audit finding 7: a fixed 30s TTL with no renewal let the lock expire
+    # mid-request, so another worker could enter and fork the session.
+    import asyncio
+
+    from securitymasker.sessions import redis as redismod
+
+    monkeypatch.setattr(redismod, "_LOCK_RENEW_SECONDS", 0.02)
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    async with store.lock("slow", tenant_id="t1"):
+        await asyncio.sleep(0.12)  # a request slower than the renew interval
+    assert fake.renewals, "lock TTL was never renewed while held"
 
 
 @pytest.mark.asyncio

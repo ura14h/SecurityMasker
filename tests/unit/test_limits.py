@@ -52,7 +52,25 @@ def _run(sse: str, *, trusted=("connect_db",)) -> list[dict]:
     return events
 
 
-def test_arg_buffer_overflow_emits_raw_not_partial(monkeypatch) -> None:
+def _proc(trusted=("connect_db",)) -> rs.ResponsesStreamProcessor:
+    return rs.ResponsesStreamProcessor({}, lambda t: t, ToolTrustPolicy(frozenset(trusted)))
+
+
+def test_arg_buffer_cap_actually_bounds_memory(monkeypatch) -> None:
+    # Re-audit finding 6: the cap only set a flag while the buffer kept growing,
+    # so 100 chars x 100 deltas retained 10,000 chars under a 50-char cap.
+    monkeypatch.setattr(rs, "_MAX_ARG_BUFFER_BYTES", 50)
+    proc = _proc()
+    proc.feed(_ev({"type": "response.output_item.added", "output_index": 0,
+                   "item": {"id": "fc_1", "type": "function_call", "name": "connect_db"}}).encode())
+    for _ in range(100):
+        proc.feed(_ev({"type": "response.function_call_arguments.delta",
+                       "item_id": "fc_1", "delta": "A" * 100}).encode())
+    retained = sum(len(p) for parts in proc._arg_buffers.values() for p in parts)
+    assert retained <= 50, f"buffer kept growing past the cap: {retained} chars"
+
+
+def test_arg_buffer_overflow_fails_closed_with_error_event(monkeypatch) -> None:
     monkeypatch.setattr(rs, "_MAX_ARG_BUFFER_BYTES", 50)
     added = _ev({"type": "response.output_item.added", "output_index": 0,
                  "item": {"id": "fc_1", "type": "function_call", "name": "connect_db"}})
@@ -62,14 +80,16 @@ def test_arg_buffer_overflow_emits_raw_not_partial(monkeypatch) -> None:
         for i in range(0, len(big), 20))
     done = _ev({"type": "response.function_call_arguments.done", "item_id": "fc_1", "arguments": big})
     events = _run(added + deltas + done)
-    done_ev = [e for e in events if e.get("type") == "response.function_call_arguments.done"][0]
-    # Overflow -> raw buffered content, never a corrupted partial restore.
-    assert done_ev["arguments"] == big
+    # No tool-call payload is emitted, and the client is told why (never silent).
+    assert not [e for e in events if e.get("type") == "response.function_call_arguments.done"]
+    errors = [e for e in events if e.get("type") == "error"]
+    assert len(errors) == 1 and "buffer limit" in errors[0]["error"]["message"]
 
 
-def test_missing_done_drops_tool_buffer(monkeypatch) -> None:
-    # Args stream that never gets a `.done`: buffered content must not be emitted
-    # as an executable (or partially restored) tool call.
+def test_missing_done_reports_incomplete_tool_call() -> None:
+    # A stream that ends before `.done`: the incomplete JSON must never be emitted
+    # as an executable call, but the client must be told rather than silently
+    # losing the call (doc/06 P1-10).
     added = _ev({"type": "response.output_item.added", "output_index": 0,
                  "item": {"id": "fc_1", "type": "function_call", "name": "connect_db"}})
     deltas = _ev({"type": "response.function_call_arguments.delta", "item_id": "fc_1",
@@ -77,3 +97,5 @@ def test_missing_done_drops_tool_buffer(monkeypatch) -> None:
     events = _run(added + deltas)
     assert not [e for e in events if e.get("type") == "response.function_call_arguments.done"]
     assert not [e for e in events if e.get("type") == "response.function_call_arguments.delta"]
+    errors = [e for e in events if e.get("type") == "error"]
+    assert len(errors) == 1 and "incomplete" in errors[0]["error"]["message"]
