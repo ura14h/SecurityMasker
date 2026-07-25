@@ -27,6 +27,11 @@ from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 from securitymasker.tool_trust import ToolTrustPolicy
 
+# Cap on buffered tool-argument bytes per call (doc/06 P1-10): beyond this we stop
+# accumulating and emit the raw (aliased) buffer without restoration, so a runaway
+# tool-call stream can't grow memory without bound. Never a partial literal restore.
+_MAX_ARG_BUFFER_BYTES = 1_000_000
+
 
 def _restore_content_parts(content: Any, restore: Callable[[str], str]) -> None:
     if isinstance(content, list):
@@ -59,6 +64,8 @@ class ResponsesStreamProcessor:
         self._parser = SSEParser()
         self._text_restorers: dict[tuple[int, int], StreamingRestorer] = {}
         self._arg_buffers: dict[str, list[str]] = {}
+        self._arg_sizes: dict[str, int] = {}
+        self._arg_overflow: set[str] = set()
         self._item_names: dict[str, str] = {}  # item_id -> tool name (for trust, P0-8)
         self._reasm = ToolArgumentReassembler(restore)
 
@@ -138,15 +145,23 @@ class ResponsesStreamProcessor:
 
     def _on_args_delta(self, payload: dict[str, Any]) -> list[SSEEvent]:
         item_id = str(payload.get("item_id", ""))
-        self._arg_buffers.setdefault(item_id, []).append(str(payload.get("delta", "")))
+        delta = str(payload.get("delta", ""))
+        size = self._arg_sizes.get(item_id, 0) + len(delta)
+        if size > _MAX_ARG_BUFFER_BYTES:
+            self._arg_overflow.add(item_id)  # stop restoring; emit raw at done (P1-10)
+        self._arg_buffers.setdefault(item_id, []).append(delta)
+        self._arg_sizes[item_id] = size
         return []  # suppress until done (§21)
 
     def _on_args_done(self, ev: SSEEvent, payload: dict[str, Any]) -> list[SSEEvent]:
         item_id = str(payload.get("item_id", ""))
         raw = "".join(self._arg_buffers.pop(item_id, [])) or str(payload.get("arguments", ""))
-        # Restore to real values only for a trusted local tool (doc/06 P0-8);
-        # otherwise emit the buffered aliased JSON unchanged.
-        if self._trust.restores_arguments(self._item_names.get(item_id)):
+        self._arg_sizes.pop(item_id, None)
+        overflowed = item_id in self._arg_overflow
+        self._arg_overflow.discard(item_id)
+        # Restore to real values only for a trusted local tool (doc/06 P0-8) and only
+        # when the buffer stayed within the cap (P1-10); otherwise emit raw (aliased).
+        if not overflowed and self._trust.restores_arguments(self._item_names.get(item_id)):
             restored = self._safe_args(raw)
         else:
             restored = raw

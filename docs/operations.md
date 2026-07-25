@@ -12,8 +12,10 @@ export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
 securitymasker gateway --port 4000
 ```
 
-`SECURITYMASKER_CONFIG` points at your dictionary YAML; if unset, the proxy forwards
-transparently (no masking). Upstreams are configurable:
+`SECURITYMASKER_CONFIG` points at your dictionary YAML and is **required** — the
+gateway fails to start without it (fail-closed, doc/06 P0-1). A masking-free
+development mode exists only behind the explicit `SECURITYMASKER_DEV_TRANSPARENT=1`
+flag and must never front a real provider. Upstreams are configurable:
 `SECURITYMASKER_OPENAI_UPSTREAM` (default `https://chatgpt.com/backend-api/codex`),
 `SECURITYMASKER_ANTHROPIC_UPSTREAM` (default `https://api.anthropic.com`).
 

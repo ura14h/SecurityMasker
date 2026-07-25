@@ -7,6 +7,12 @@
 - 初期ブリーフ（方針）: [`doc/00-First-Order.md`](doc/00-First-Order.md)
 - 実装計画: [`doc/01-Plan.md`](doc/01-Plan.md) / アーキテクチャ転換: [`docs/adr/0006-drop-litellm-purpose-built-proxy.md`](docs/adr/0006-drop-litellm-purpose-built-proxy.md)
 - 開発エージェント向けルール: [`AGENTS.md`](AGENTS.md) / 運用: [`docs/operations.md`](docs/operations.md)
+- **セキュリティ是正の到達状況と既知の制限**: [`doc/07-Remediation-Status.md`](doc/07-Remediation-Status.md)
+  （実装済み／partial／deferred を明示。URL/パスの完全な構造保持や未登録名の NER は未実装）
+
+> ⚠️ `SECURITYMASKER_CONFIG`（マスキング辞書）は**必須**です。未設定だと起動に失敗します
+> （fail-closed）。マスキングなしの開発モードは `SECURITYMASKER_DEV_TRANSPARENT=1` を明示した
+> ときだけで、実プロバイダーには決して向けないでください。
 
 > ✅ Codex（OpenAI Responses）と Claude Code（Anthropic Messages）を、**自作の薄い透過プロキシ**
 > （Starlette+httpx、LiteLLM 非依存 — [ADR-0006](docs/adr/0006-drop-litellm-purpose-built-proxy.md)）で

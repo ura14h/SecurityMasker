@@ -28,6 +28,11 @@ from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 from securitymasker.tool_trust import ToolTrustPolicy
 
+# Cap on buffered tool-input bytes per block (doc/06 P1-10): beyond this we emit the
+# raw (aliased) buffer without restoration so a runaway stream can't grow memory
+# without bound. Never a partial literal restore.
+_MAX_JSON_BUFFER_BYTES = 1_000_000
+
 
 class AnthropicStreamProcessor:
     def __init__(
@@ -43,6 +48,8 @@ class AnthropicStreamProcessor:
         self._text_restorers: dict[int, StreamingRestorer] = {}
         self._json_blocks: set[int] = set()
         self._json_buffers: dict[int, list[str]] = {}
+        self._json_sizes: dict[int, int] = {}
+        self._json_overflow: set[int] = set()
         self._block_names: dict[int, str] = {}  # block index -> tool name (P0-8)
         self._reasm = ToolArgumentReassembler(restore)
 
@@ -105,7 +112,12 @@ class AnthropicStreamProcessor:
             delta["text"] = restorer.feed(str(delta.get("text", "")))
             return [_reserialize(ev, payload)]
         if delta.get("type") == "input_json_delta" and isinstance(idx, int):
-            self._json_buffers.setdefault(idx, []).append(str(delta.get("partial_json", "")))
+            partial = str(delta.get("partial_json", ""))
+            size = self._json_sizes.get(idx, 0) + len(partial)
+            if size > _MAX_JSON_BUFFER_BYTES:
+                self._json_overflow.add(idx)  # stop restoring; emit raw at stop (P1-10)
+            self._json_buffers.setdefault(idx, []).append(partial)
+            self._json_sizes[idx] = size
             return []  # suppress until the block completes (§21)
         return [ev]
 
@@ -119,10 +131,15 @@ class AnthropicStreamProcessor:
         if isinstance(idx, int) and idx in self._json_blocks:
             self._json_blocks.discard(idx)
             raw = "".join(self._json_buffers.pop(idx, []))
+            self._json_sizes.pop(idx, None)
+            overflowed = idx in self._json_overflow
+            self._json_overflow.discard(idx)
             if raw:
-                # Restore real values only for a trusted local tool (doc/06 P0-8);
-                # otherwise re-emit the buffered aliased JSON unchanged.
-                if self._trust.restores_arguments(self._block_names.pop(idx, None)):
+                # Restore real values only for a trusted local tool (doc/06 P0-8) and
+                # only within the buffer cap (P1-10); otherwise emit raw (aliased).
+                if not overflowed and self._trust.restores_arguments(
+                    self._block_names.pop(idx, None)
+                ):
                     partial = self._safe_restore_json(raw)
                 else:
                     partial = raw

@@ -11,13 +11,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from securitymasker.aliases.profiles import alias_for
-from securitymasker.errors import AliasCollisionError
+from securitymasker.errors import AliasCollisionError, MaskingError
 from securitymasker.models import AliasMapping, MaskingSession
 from securitymasker.sessions.crypto import encrypt, fingerprint
 
 _MIN_TOKEN_HEX = 6
 _MAX_TOKEN_HEX = 32
 _TOKEN_STEP = 2
+
+# Upper bound on distinct secrets per session (doc/06 P1-5): a bounded resource so a
+# hostile or runaway input can't grow a session's mapping table without limit.
+# Reached only by thousands of *distinct* secrets in one session; fail closed.
+MAX_MAPPINGS_PER_SESSION = 10_000
 
 
 def _now() -> datetime:
@@ -46,6 +51,14 @@ def get_or_create_alias(
     if existing is not None:
         existing.last_used_at = _now()
         return existing
+
+    if len(session.mappings_by_fingerprint) >= MAX_MAPPINGS_PER_SESSION:
+        # Fail closed rather than grow unbounded (doc/06 P1-5). The message names
+        # no value; the caller turns this into a request block.
+        raise MaskingError(
+            f"session mapping limit ({MAX_MAPPINGS_PER_SESSION}) reached; "
+            "refusing to allocate more aliases"
+        )
 
     alias = _allocate_alias(session, fp, entity_type, replacement_profile, original_value)
 

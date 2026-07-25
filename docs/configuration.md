@@ -13,10 +13,18 @@ securitymasker gateway --port 4000
 
 Environment:
 
-- `SECURITYMASKER_CONFIG` — dictionary/policy YAML (below). Unset → transparent (no masking).
+- `SECURITYMASKER_CONFIG` — dictionary/policy YAML (below). **Required**: if unset the
+  gateway fails to start (fail-closed, doc/06 P0-1). To run without masking for
+  development only, set `SECURITYMASKER_DEV_TRANSPARENT=1` explicitly — never point that
+  mode at a real provider.
 - `SECURITYMASKER_OPENAI_UPSTREAM` — default `https://chatgpt.com/backend-api/codex`
   (Codex ChatGPT auth). For API-key OpenAI: `https://api.openai.com/v1`.
 - `SECURITYMASKER_ANTHROPIC_UPSTREAM` — default `https://api.anthropic.com`.
+- `SECURITYMASKER_MODE` — `local` (default; one implicit tenant) or `multitenant`
+  (tenant read from `SECURITYMASKER_TENANT_HEADER`, which a trusted authenticator sets;
+  missing tenant fails closed, doc/06 P0-9).
+- `SECURITYMASKER_STORE` — `memory` (default) or `redis`; `redis` also needs
+  `SECURITYMASKER_REDIS_URL` and fails closed if the package/URL is missing (doc/06 P1-9).
 - `SECURITYMASKER_MASTER_KEY` — 32 bytes base64, required by the Redis session store (§8).
 
 Clients: Codex uses a `requires_openai_auth = true` provider pointing at the proxy

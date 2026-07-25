@@ -137,24 +137,30 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
     if args.config:
         os.environ["SECURITYMASKER_CONFIG"] = args.config
+    configured = bool(os.environ.get("SECURITYMASKER_CONFIG"))
+    dev = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
+    mode = "masking" if configured else ("DEV transparent (no masking!)" if dev else "will fail")
     print(
-        f"[securitymasker] gateway on http://{args.host}:{args.port} "
-        f"(config={'set' if os.environ.get('SECURITYMASKER_CONFIG') else 'none — transparent'})",
+        f"[securitymasker] gateway on http://{args.host}:{args.port} ({mode})",
         file=sys.stderr,
     )
+    # create_app() -> GatewayRuntime.from_env() fails closed if unconfigured (P0-1).
     uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
     return 0
 
 
 def cmd_sessions(args: argparse.Namespace) -> int:
-    # The MVP session store is in-memory inside the running gateway process and is
-    # not shared with this CLI. A shared (Redis) store lands in Phase 5 (§8).
+    # Honest non-zero exit: this command is not implemented (doc/06 P2-1). The
+    # in-memory store lives inside the gateway process and is not reachable here;
+    # a CLI that manages sessions requires the shared Redis store to be wired to
+    # this process too. Do NOT exit 0 as if it succeeded.
     print(
-        f"sessions {args.subaction}: the in-memory store lives in the gateway process "
-        "and is not reachable from the CLI yet. A shared store (Redis) is planned for "
-        "Phase 5; until then manage sessions via the gateway."
+        f"sessions {args.subaction}: not implemented. The session store lives in the "
+        "gateway process; CLI session management needs a shared (Redis) store. "
+        "This command is a placeholder and intentionally exits non-zero.",
+        file=sys.stderr,
     )
-    return 0
+    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -7,7 +7,10 @@
 #     -d '{"model":"m","input":"担当は山田太郎、株式会社極秘技研の件です"}'
 services:
   mock-upstream:
-    build: .
+    # The mock lives only in the `demo` image stage, never in the production image.
+    build:
+      context: .
+      target: demo
     command: python -m uvicorn tests.integration.mock_upstream:app --host 0.0.0.0 --port 8081
     environment:
       SM_MOCK_RECORD: /tmp/mock_record.jsonl
@@ -18,7 +21,10 @@ services:
       - no-new-privileges:true
 
   gateway:
-    build: .
+    # Production `runtime` stage (no mock/test code in the image, doc/06 P2-3).
+    build:
+      context: .
+      target: runtime
     depends_on:
       - mock-upstream
     environment:
