@@ -96,7 +96,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if args.config:
         try:
             config = load_config(args.config)
-            print(f"config OK: {len(config.entities)} entities, {len(config.patterns)} patterns")
+            # Build the engine so the SAME startup checks the gateway runs fire here:
+            # required env vars, required detector models, regex/enum validation
+            # (doc/06 P0-6, P2-1). A no-op "config OK" would hide these.
+            build_engine(config)
+            print(
+                f"config OK: {len(config.entities)} entities, {len(config.patterns)} "
+                f"patterns, fail_mode={config.defaults.fail_mode}, "
+                f"presidio={'on' if config.presidio.enabled else 'off'}, "
+                f"ner={'on' if config.ner.model else 'off'}"
+            )
         except SecurityMaskerError as exc:
             ok = False
             print(f"config ERROR: {exc}")

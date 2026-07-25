@@ -19,12 +19,18 @@ from typing import Any
 from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
-from securitymasker.errors import LeakageError, MaskingError
+from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
 from securitymasker.sessions.crypto import decrypt
 
 REDACTION_MARK = "[REDACTED]"
+
+# In ``fail_mode: open`` only these fuzzy, best-effort detectors may be skipped on
+# a runtime error; every other detector (dictionary, secrets, regex, formats, My
+# Number, and anything new) always fails closed so critical secrets never leak on
+# a detector fault (doc/06 P0-6, §26).
+_FAIL_OPEN_ELIGIBLE = frozenset({"presidio", "jp_ner"})
 
 
 def _iter_strings(node: Any) -> Iterator[str]:
@@ -76,10 +82,12 @@ class MaskingEngine:
         merge_surface_forms: bool = False,
         registered_literals: tuple[str, ...] = (),
         leak_scanners: list[SensitiveDataDetector] | None = None,
+        fail_mode: str = "closed",
     ) -> None:
         self._detectors = detectors
         self._normalization = normalization
         self._merge_surface_forms = merge_surface_forms
+        self._fail_mode = fail_mode
         # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
         # literals (pre-normalized) and high-precision, deterministic detectors.
         self._registered_literals = tuple(
@@ -92,7 +100,13 @@ class MaskingEngine:
         ctx = DetectionContext(norm=norm, context_kind=context_kind)
         found: list[DetectionResult] = []
         for detector in self._detectors:
-            found.extend(await detector.detect(ctx))
+            try:
+                found.extend(await detector.detect(ctx))
+            except DetectionError:
+                name = getattr(detector, "name", "")
+                if self._fail_mode == "open" and name in _FAIL_OPEN_ELIGIBLE:
+                    continue  # best-effort detector skipped; critical ones never are
+                raise
         return policy.resolve(found)
 
     async def mask_text(

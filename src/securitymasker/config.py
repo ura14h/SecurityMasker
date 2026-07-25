@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from securitymasker.detectors.base import SensitiveDataDetector
 from securitymasker.detectors.date_of_birth import DateOfBirthDetector
@@ -34,9 +35,26 @@ from securitymasker.normalization import NormForm
 
 _VALID_PROFILES = {p.value for p in ReplacementProfile}
 _VALID_POLICIES = {p.value for p in RestorePolicy}
+_SCHEMA_VERSION = 1
+
+_DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
+_DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+
+
+def parse_duration(value: str) -> timedelta:
+    """Parse a ``\\d+[smhd]`` duration (e.g. ``4h``, ``30m``) to a ``timedelta``."""
+    match = _DURATION_RE.match(value)
+    if not match:
+        raise ValueError(f"invalid duration {value!r} (expected e.g. '4h', '30m', '90s', '1d')")
+    amount, unit = int(match.group(1)), match.group(2)
+    if amount <= 0:
+        raise ValueError(f"duration {value!r} must be positive")
+    return timedelta(**{_DURATION_UNITS[unit]: amount})
 
 
 class Defaults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     fail_mode: str = "closed"
     normalization: NormForm = "nfkc"
     merge_surface_forms: bool = False
@@ -52,8 +70,16 @@ class Defaults(BaseModel):
             raise ValueError("fail_mode must be 'closed' or 'open'")
         return v
 
+    @field_validator("session_idle_ttl", "session_absolute_ttl")
+    @classmethod
+    def _durations(cls, v: str) -> str:
+        parse_duration(v)  # validate at load time; conversion happens in the runtime
+        return v
+
 
 class EntityConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     type: str
     values: list[str] = Field(default_factory=list)
@@ -93,6 +119,8 @@ class EntityConfig(BaseModel):
 
 
 class RegexConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     pattern: str
     type: str
@@ -101,17 +129,37 @@ class RegexConfig(BaseModel):
     priority: int = 150
     group: int = 0
 
-    @field_validator("pattern")
+    @field_validator("replacement_profile")
     @classmethod
-    def _compiles(cls, v: str) -> str:
-        try:
-            re.compile(v)
-        except re.error as exc:
-            raise ValueError(f"invalid regex {v!r}: {exc}") from exc
+    def _profile(cls, v: str) -> str:
+        if v not in _VALID_PROFILES:
+            raise ValueError(f"unknown replacement_profile: {v}")
         return v
+
+    @field_validator("restore_policy")
+    @classmethod
+    def _policy(cls, v: str) -> str:
+        if v not in _VALID_POLICIES:
+            raise ValueError(f"unknown restore_policy: {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _compiles(self) -> RegexConfig:
+        try:
+            compiled = re.compile(self.pattern)
+        except re.error as exc:
+            raise ValueError(f"invalid regex {self.pattern!r}: {exc}") from exc
+        if self.group < 0 or self.group > compiled.groups:
+            raise ValueError(
+                f"capture group {self.group} out of range for {self.pattern!r} "
+                f"(has {compiled.groups} group(s))"
+            )
+        return self
 
 
 class JapanesePiiConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = True
     my_number_restore_policy: str = RestorePolicy.BLOCK.value
 
@@ -124,6 +172,8 @@ class JapanesePiiConfig(BaseModel):
 
 
 class PresidioConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     language: str = "ja"
     model_name: str = "ja_core_news_md"
@@ -132,11 +182,15 @@ class PresidioConfig(BaseModel):
 
 
 class NerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     model: str | None = None  # HF token-classification model id; None disables (§14.1)
     min_score: float = 0.85
 
 
 class SecurityMaskerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     version: int = 1
     defaults: Defaults = Field(default_factory=Defaults)
     entities: list[EntityConfig] = Field(default_factory=list)
@@ -146,6 +200,16 @@ class SecurityMaskerConfig(BaseModel):
     japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
     presidio: PresidioConfig = Field(default_factory=PresidioConfig)
     ner: NerConfig = Field(default_factory=NerConfig)
+
+    @field_validator("version")
+    @classmethod
+    def _version(cls, v: int) -> int:
+        if v != _SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported config version {v}; this build understands version "
+                f"{_SCHEMA_VERSION} only"
+            )
+        return v
 
     @model_validator(mode="after")
     def _unique_ids(self) -> SecurityMaskerConfig:
@@ -166,8 +230,27 @@ def load_config(path: str | Path) -> SecurityMaskerConfig:
         raise ConfigError(str(exc)) from exc
 
 
+def _require_env_values(config: SecurityMaskerConfig) -> None:
+    """Fail startup if any ``value_from_env`` is unset/empty (doc/06 P0-6).
+
+    A declared env-backed secret that resolves to nothing would otherwise silently
+    disable that entity's masking — a leak. The error names only the env var and
+    entity id, never a value (§25).
+    """
+    for entity in config.entities:
+        if entity.value_from_env is None:
+            continue
+        value = os.environ.get(entity.value_from_env)
+        if not value:
+            raise ConfigError(
+                f"entity {entity.id!r} requires environment variable "
+                f"{entity.value_from_env!r}, which is unset or empty"
+            )
+
+
 def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
     """Assemble the detector pipeline in priority order (§11)."""
+    _require_env_values(config)
     norm = config.defaults.normalization
     dict_entries = [
         DictionaryEntry(
@@ -192,7 +275,9 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
         for p in config.patterns
     ]
 
-    detectors: list[SensitiveDataDetector] = [ExistingAliasDetector()]
+    detectors: list[SensitiveDataDetector] = []
+    if config.defaults.preserve_aliases:
+        detectors.append(ExistingAliasDetector())
     if dict_entries:
         detectors.append(DictionaryDetector(dict_entries, normalization=norm))
     if regex_entries:
@@ -212,19 +297,24 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
     if config.presidio.enabled:
         from securitymasker.detectors.presidio import PresidioDetector
 
+        # Enabled in config => required: a failed load must fail startup, not
+        # silently no-op (doc/06 P0-6).
         detectors.append(
             PresidioDetector(
                 language=config.presidio.language,
                 model_name=config.presidio.model_name,
                 min_score=config.presidio.min_score,
                 skip_code_contexts=config.presidio.skip_code_contexts,
+                required=True,
             )
         )
     if config.ner.model:
         from securitymasker.detectors.japanese_ner import JapaneseNerDetector
 
         detectors.append(
-            JapaneseNerDetector(model=config.ner.model, min_score=config.ner.min_score)
+            JapaneseNerDetector(
+                model=config.ner.model, min_score=config.ner.min_score, required=True
+            )
         )
     return detectors
 
@@ -256,4 +346,5 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         merge_surface_forms=config.defaults.merge_surface_forms,
         registered_literals=registered_literals,
         leak_scanners=build_leak_scanners(config),
+        fail_mode=config.defaults.fail_mode,
     )

@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from securitymasker.detectors.base import DetectionContext
+from securitymasker.errors import ConfigError, DetectionError
 from securitymasker.models import (
     ContextKind,
     DetectionResult,
@@ -58,11 +59,13 @@ class PresidioDetector:
         min_score: float = 0.5,
         entities: tuple[str, ...] | None = None,
         skip_code_contexts: bool = True,
+        required: bool = False,
     ) -> None:
         self._language = language
         self._min_score = min_score
         self._entities = list(entities) if entities else None
         self._skip_code = skip_code_contexts
+        self._required = required
         self._analyzer: Any = None
         try:
             from presidio_analyzer import AnalyzerEngine
@@ -78,8 +81,18 @@ class PresidioDetector:
                 nlp_engine=nlp_engine, supported_languages=[language]
             )
             self.available = True
-        except Exception:  # noqa: BLE001 - optional dependency / model missing
+        # spaCy's loader raises SystemExit (via wasabi) on a missing model, so we
+        # must catch that too and convert it into a clean fail-closed outcome.
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
             self.available = False
+            if required:
+                # Enabled in config but unusable => fail startup, never silently
+                # no-op (doc/06 P0-6). Message names the model, not any input.
+                raise ConfigError(
+                    f"presidio is enabled but could not load (language={language!r}, "
+                    f"model={model_name!r}): {type(exc).__name__}. Install "
+                    f"'.[presidio]' and the spaCy model, or disable presidio."
+                ) from exc
 
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         if not self.available or self._analyzer is None:
@@ -91,8 +104,12 @@ class PresidioDetector:
             hits = self._analyzer.analyze(
                 text=text, language=self._language, entities=self._entities
             )
-        except Exception:  # noqa: BLE001 - never fail the pipeline on analyzer error
-            return []
+        except Exception as exc:  # noqa: BLE001
+            # A loaded detector that fails at runtime is a fail-closed event: block
+            # rather than under-scan and forward (doc/06 P0-6).
+            raise DetectionError(
+                f"presidio analyzer failed at runtime: {type(exc).__name__}"
+            ) from exc
         results: list[DetectionResult] = []
         for h in hits:
             if h.score < self._min_score or h.entity_type not in _MAP:

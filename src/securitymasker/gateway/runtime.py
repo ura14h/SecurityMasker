@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 
-from securitymasker.config import build_engine, load_config
+from securitymasker.config import build_engine, load_config, parse_duration
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError
 from securitymasker.sessions.memory import InMemorySessionStore
@@ -49,11 +49,17 @@ class GatewayRuntime:
                     "(development only; do not point at real providers)."
                 )
             engine = None
+            store: SessionStore = InMemorySessionStore()
         else:
-            engine = build_engine(load_config(config_path))
+            config = load_config(config_path)
+            engine = build_engine(config)
+            store = InMemorySessionStore(
+                idle_ttl=parse_duration(config.defaults.session_idle_ttl),
+                absolute_ttl=parse_duration(config.defaults.session_absolute_ttl),
+            )
         return cls(
             engine,
-            InMemorySessionStore(),
+            store,
             openai_upstream=os.environ.get(
                 "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
             ),

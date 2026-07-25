@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.detectors.context import has_context
+from securitymasker.errors import ConfigError, DetectionError
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
 _LABEL_MAP: dict[str, str] = {
@@ -32,7 +33,9 @@ _PERSON_CONTEXT = (
 class JapaneseNerDetector:
     name = "jp_ner"
 
-    def __init__(self, *, model: str | None = None, min_score: float = 0.85) -> None:
+    def __init__(
+        self, *, model: str | None = None, min_score: float = 0.85, required: bool = False
+    ) -> None:
         self._min_score = min_score
         self._pipeline = None
         self.available = False
@@ -43,9 +46,16 @@ class JapaneseNerDetector:
 
             self._pipeline = pipeline("token-classification", model=model, aggregation_strategy="simple")
             self.available = True
-        except Exception:  # noqa: BLE001 - optional dependency / model missing
+        except Exception as exc:  # noqa: BLE001 - optional dependency / model missing
             self._pipeline = None
             self.available = False
+            if required:
+                # Model requested in config but unusable => fail startup (doc/06 P0-6).
+                raise ConfigError(
+                    f"ner.model={model!r} is configured but the pipeline could not "
+                    f"load ({type(exc).__name__}); install 'transformers' and the "
+                    f"model, or clear ner.model."
+                ) from exc
 
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         if not self.available or self._pipeline is None:
@@ -53,8 +63,10 @@ class JapaneseNerDetector:
         text = context.norm.normalized
         try:
             entities = self._pipeline(text)
-        except Exception:  # noqa: BLE001
-            return []
+        except Exception as exc:  # noqa: BLE001
+            raise DetectionError(
+                f"jp_ner pipeline failed at runtime: {type(exc).__name__}"
+            ) from exc
         results: list[DetectionResult] = []
         for ent in entities:
             label = str(ent.get("entity_group") or ent.get("entity") or "").upper()
