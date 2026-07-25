@@ -29,9 +29,10 @@ from securitymasker.detectors.existing_alias import contains_alias_shape
 from securitymasker.engine import MaskingEngine, iter_strings
 from securitymasker.errors import SecurityMaskerError
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
+from securitymasker.gateway.identity import Identity, IdentityError, resolve_identity
 from securitymasker.gateway.responses_stream import ResponsesStreamProcessor
 from securitymasker.gateway.runtime import GatewayRuntime
-from securitymasker.gateway.session import namespaced_key, resolve_session, resolve_tenant
+from securitymasker.gateway.session import namespaced_key, resolve_session
 from securitymasker.logging import get_logger
 from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
@@ -206,23 +207,30 @@ async def _handle(
     if err is not None or data is None:
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
-    tenant = resolve_tenant(rt.mode, rt.tenant_header, request.headers,
-                            auth_secret=rt.tenant_auth_secret)
-    if tenant is None:
-        # Multitenant mode with no trusted tenant: fail closed rather than risk
-        # sharing one tenant's alias table with another (doc/06 P0-9).
-        _log.warning("sm_block_no_tenant", path=path)
-        return _error(403, "tenant_required", "A trusted tenant identity is required.")
+    try:
+        # Verified by the identity module, not by this handler: crypto and header
+        # parsing stay out of request orchestration (§ architecture).
+        identity = resolve_identity(
+            rt.mode, request.headers,
+            auth_secret=rt.tenant_auth_secret,
+            max_skew_seconds=rt.max_clock_skew_seconds,
+        )
+    except IdentityError as exc:
+        # Fail closed: sharing one caller's alias table with another is exactly
+        # what this boundary exists to prevent (doc/06 P0-9). The message never
+        # echoes the presented proof or claimed identity (§25).
+        _log.warning("sm_block_identity", path=path, reason=str(exc))
+        return _error(403, "identity_required", str(exc))
 
     resolved = resolve_session(request.headers, data)
-    store_key = namespaced_key(tenant, resolved.session_id)
+    store_key = namespaced_key(identity, resolved.session_id)
     stable = resolved.stable
     if not stable and resolved.previous_response_id:
         # previous_response_id changes every turn, so it is a lookup handle only:
         # continue the session that actually produced that response (doc/06 P1-1).
         # The stored value is already a full, tenant-namespaced store key.
         bound = await rt.store.resolve_response(
-            namespaced_key(tenant, resolved.previous_response_id)
+            namespaced_key(identity, resolved.previous_response_id)
         )
         if bound is not None and await rt.store.get(bound) is None:
             # The binding outlived its session (expired, revoked, purged). Creating
@@ -252,7 +260,8 @@ async def _handle(
         # Lock first so get/create/mask/save share one exclusion window — two
         # workers can't fork the same session's alias table (doc/06 P1-9).
         async with rt.store.lock(store_key) as held:
-            session = await rt.store.get_or_create(store_key, tenant_id=tenant)
+            session = await rt.store.get_or_create(
+                store_key, tenant_id=identity.tenant, user_id=identity.user)
             await mask(rt.engine, session, data)
             # Confirm we STILL own the lock *before* writing: masking can take
             # long enough for a distributed lock to expire and be taken over, and
@@ -294,11 +303,12 @@ async def _handle(
                                 rt.engine.tool_trust)
         # Bind response ids seen in the stream back to THIS session so the next
         # turn's previous_response_id continues it (doc/06 P1-1).
-        bind_tenant: str = tenant
+        bound_identity = identity
 
-        async def _bind_stream(p: Any, key: str = store_key, t: str = bind_tenant) -> None:
+        async def _bind_stream(p: Any, key: str = store_key,
+                               ident: Identity = bound_identity) -> None:
             for rid in getattr(p, "response_ids", ()):
-                await rt.store.bind_response(namespaced_key(t, rid), key)
+                await rt.store.bind_response(namespaced_key(ident, rid), key)
 
         return await forward_streaming(request.method, url, headers, masked, proc,
                                        on_complete=_bind_stream)
@@ -315,7 +325,7 @@ async def _handle(
         # previous_response_id resolves back here (doc/06 P1-1).
         rid = resp.get("id")
         if isinstance(rid, str) and rid:
-            await rt.store.bind_response(namespaced_key(tenant, rid), store_key)
+            await rt.store.bind_response(namespaced_key(identity, rid), store_key)
         restore_dict(rt.engine, session, resp)
         return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
                         media_type="application/json")

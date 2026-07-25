@@ -56,10 +56,9 @@ TENANT_SECRET = "unit-test-secret"
 
 
 def _proof(tenant: str) -> str:
-    import hmac
-    from hashlib import sha256
+    from securitymasker.gateway.identity import LOCAL_USER, sign
 
-    return hmac.new(TENANT_SECRET.encode(), tenant.encode(), sha256).hexdigest()
+    return sign(TENANT_SECRET, tenant, LOCAL_USER)
 
 
 def _app(monkeypatch, *, mode="local", tenant_header="x-securitymasker-tenant-id"):
@@ -95,7 +94,7 @@ async def test_unresolved_session_with_aliases_blocks(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_multitenant_without_tenant_blocks(monkeypatch) -> None:
-    client, calls = _app(monkeypatch, mode="multitenant")
+    client, calls = _app(monkeypatch, mode="tenant")
     async with client:
         r = await client.post("/responses", headers={"X-SecurityMasker-Session-ID": "s1"},
                               json={"input": "hi"})
@@ -104,7 +103,7 @@ async def test_multitenant_without_tenant_blocks(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_same_session_id_different_tenant_are_isolated(monkeypatch) -> None:
-    client, calls = _app(monkeypatch, mode="multitenant")
+    client, calls = _app(monkeypatch, mode="tenant")
     hdr = {"X-SecurityMasker-Session-ID": "s1"}
     async with client:
         await client.post("/responses",

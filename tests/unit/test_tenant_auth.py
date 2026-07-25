@@ -10,9 +10,6 @@ must not be usable in front of a real provider.
 
 from __future__ import annotations
 
-import hmac
-from hashlib import sha256
-
 import httpx
 import pytest
 from starlette.responses import Response
@@ -20,6 +17,7 @@ from starlette.responses import Response
 from securitymasker.config import SecurityMaskerConfig, build_engine
 from securitymasker.errors import ConfigError, SessionError
 from securitymasker.gateway import app as gwapp
+from securitymasker.gateway.identity import LOCAL_USER, MODE_TENANT, sign
 from securitymasker.gateway.runtime import GatewayRuntime
 from securitymasker.sessions.memory import InMemorySessionStore
 
@@ -31,7 +29,8 @@ def _engine():
 
 
 def _tenant_proof(tenant: str, secret: str = SECRET) -> str:
-    return hmac.new(secret.encode(), tenant.encode(), sha256).hexdigest()
+    # The authenticator signs the versioned canonical payload, not the bare id.
+    return sign(secret, tenant, LOCAL_USER)
 
 
 @pytest.fixture
@@ -50,7 +49,7 @@ def multitenant(monkeypatch):
     monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)
     rt = GatewayRuntime(_engine(), InMemorySessionStore(),
                         openai_upstream="http://oai.test", anthropic_upstream="http://an.test",
-                        mode="multitenant", tenant_auth_secret=SECRET)
+                        mode=MODE_TENANT, tenant_auth_secret=SECRET)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(rt)),
                                base_url="http://gw")
     return client, calls

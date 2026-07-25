@@ -19,18 +19,14 @@ caller must fail closed rather than share one tenant's table with another.
 
 from __future__ import annotations
 
-import hmac
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any
 
+from securitymasker.gateway.identity import Identity
+
 SESSION_HEADER = "x-securitymasker-session-id"
-DEFAULT_TENANT_HEADER = "x-securitymasker-tenant-id"
-# Proof header set by the trusted authenticator, never by the end client.
-TENANT_AUTH_HEADER = "x-securitymasker-tenant-auth"
-LOCAL_TENANT = "local"
 
 
 @dataclass(frozen=True)
@@ -70,51 +66,21 @@ def resolve_session(
     return ResolvedSession(f"eph:{uuid.uuid4()}", stable=False)
 
 
-def resolve_tenant(
-    mode: str,
-    tenant_header: str,
-    headers: Mapping[str, str],
-    *,
-    auth_secret: str | None = None,
-    auth_header: str = TENANT_AUTH_HEADER,
-) -> str | None:
-    """Resolve the tenant, or ``None`` if it cannot be *proven* (=> block).
+def namespaced_key(identity: Identity | str, session_id: str) -> str:
+    """Identity-namespaced store key, so a session id cannot cross a boundary.
 
-    In multitenant mode the tenant id alone is untrusted — any client can set a
-    header. The fronting authenticator (which alone knows ``auth_secret``) must
-    also send ``HMAC-SHA256(secret, tenant_id)`` hex in ``auth_header``; the tenant
-    is accepted only if that proof verifies for *this* tenant id, so a client can
-    neither invent a tenant nor replay another tenant's proof (doc/06 P0-9).
+    The namespace is length-prefixed (see ``Identity.namespace``), so no
+    combination of tenant/user/session values can be made to collide with a
+    different combination. Two callers presenting the SAME session id therefore
+    still get separate alias tables whenever their identities differ (§8, P0-9).
+
+    A plain string is accepted for internal, identity-free keys (the readiness
+    probe); it is namespaced under a reserved prefix that no verified identity can
+    produce, so it can never alias a real caller's key.
     """
-    if mode != "multitenant":
-        return LOCAL_TENANT
-    h = {k.lower(): v for k, v in headers.items()}
-    tenant = h.get(tenant_header.lower())
-    if not tenant:
-        return None
-    if not auth_secret:
-        return None  # misconfigured: never trust a bare header
-    presented = h.get(auth_header.lower(), "")
-    expected = hmac.new(auth_secret.encode(), tenant.encode(), sha256).hexdigest()
-    if not presented or not hmac.compare_digest(presented, expected):
-        return None
-    return tenant
-
-
-def namespaced_key(tenant: str, session_id: str, user: str | None = None) -> str:
-    """Tenant(+user)-namespaced store key so a session id cannot cross a boundary.
-
-    KNOWN LIMITATION (doc/06 P0-9, audit round 3 finding 7): when ``user`` is not
-    supplied, isolation is per TENANT only. Two users of the same tenant who
-    present the same session id share one alias table, so this is safe for a
-    single-user local install or a tenant-per-customer deployment, but NOT for
-    multiple mutually-distrusting users inside one tenant. Per-user isolation
-    needs the authenticator to assert a user id (and to sign it), which is not
-    implemented — see doc/07.
-    """
-    if user:
-        return f"{tenant}\x1f{user}\x1f{session_id}"
-    return f"{tenant}\x1f{session_id}"
+    if isinstance(identity, str):
+        return f"\x1e{identity}\x1f{session_id}"
+    return f"{identity.namespace}\x1f{session_id}"
 
 
 # Backwards-compatible shim used by older call sites/tests.

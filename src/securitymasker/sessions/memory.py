@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
+from securitymasker.errors import SessionError
 from securitymasker.models import MaskingSession
 from securitymasker.sessions.store import (
     DEFAULT_ABSOLUTE_TTL,
@@ -42,13 +43,22 @@ class InMemorySessionStore:
         # response_id -> (session_key, bound_at) for multi-turn continuity (P1-1).
         self._response_bindings: dict[str, tuple[str, datetime]] = {}
 
-    async def get(self, session_id: str) -> MaskingSession | None:
+    async def get(
+        self, session_id: str, *, tenant_id: str | None = None, user_id: str | None = None
+    ) -> MaskingSession | None:
         session = self._sessions.get(session_id)
         if session is None:
             return None
         if is_expired(session, self._idle_ttl):
             await self.delete(session_id)
             return None
+        # Defence in depth: the key is already identity-namespaced, but a stored
+        # session whose recorded identity disagrees must never be handed back —
+        # that would be a cross-boundary read (§8, doc/06 P0-9).
+        if tenant_id is not None and session.tenant_id != tenant_id:
+            raise SessionError("session does not belong to the requesting tenant")
+        if user_id is not None and session.user_id != user_id:
+            raise SessionError("session does not belong to the requesting user")
         return session
 
     async def create(
@@ -78,7 +88,7 @@ class InMemorySessionStore:
         client_type: str = "unknown",
     ) -> MaskingSession:
         async with self._guard:
-            existing = await self.get(session_id)
+            existing = await self.get(session_id, tenant_id=tenant_id, user_id=user_id)
             if existing is not None:
                 return existing
             return await self.create(

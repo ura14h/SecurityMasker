@@ -164,7 +164,9 @@ class RedisSessionStore:
     def _aad(self, session_id: str, tenant_id: str | None) -> bytes:
         return f"{tenant_id or '_'}:{session_id}".encode()
 
-    async def get(self, session_id: str, tenant_id: str | None = None) -> MaskingSession | None:
+    async def get(
+        self, session_id: str, tenant_id: str | None = None, *, user_id: str | None = None
+    ) -> MaskingSession | None:
         blob = await self._redis.get(self._key(session_id, tenant_id))
         if blob is None:
             return None
@@ -177,6 +179,12 @@ class RedisSessionStore:
         if is_expired(session, self._idle_ttl):
             await self.delete(session_id, tenant_id)
             return None
+        # Same defence in depth as the in-memory store: never return a session
+        # whose recorded identity disagrees with the caller's (§8, doc/06 P0-9).
+        if tenant_id is not None and session.tenant_id != tenant_id:
+            raise SessionError("session does not belong to the requesting tenant")
+        if user_id is not None and session.user_id != user_id:
+            raise SessionError("session does not belong to the requesting user")
         return session
 
     async def create(
@@ -202,7 +210,7 @@ class RedisSessionStore:
         user_id: str | None = None,
         client_type: str = "unknown",
     ) -> MaskingSession:
-        existing = await self.get(session_id, tenant_id)
+        existing = await self.get(session_id, tenant_id, user_id=user_id)
         if existing is not None:
             return existing
         return await self.create(

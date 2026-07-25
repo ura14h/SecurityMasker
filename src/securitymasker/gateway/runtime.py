@@ -15,6 +15,12 @@ from urllib.parse import urlsplit
 from securitymasker.config import build_engine, load_config, parse_duration
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError
+from securitymasker.gateway.identity import (
+    DEFAULT_MAX_SKEW_SECONDS,
+    MODE_LOCAL,
+    MODE_TENANT,
+    VALID_MODES,
+)
 from securitymasker.sessions.memory import InMemorySessionStore
 from securitymasker.sessions.store import SessionStore
 
@@ -71,6 +77,7 @@ class GatewayRuntime:
         mode: str = "local",
         tenant_header: str = "x-securitymasker-tenant-id",
         tenant_auth_secret: str | None = None,
+        max_clock_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
     ) -> None:
         self.engine = engine
         self.store = store
@@ -82,6 +89,7 @@ class GatewayRuntime:
         self.mode = mode
         self.tenant_header = tenant_header
         self.tenant_auth_secret = tenant_auth_secret
+        self.max_clock_skew_seconds = max_clock_skew_seconds
 
     @classmethod
     def from_env(cls) -> GatewayRuntime:
@@ -105,9 +113,16 @@ class GatewayRuntime:
                 idle_ttl=parse_duration(config.defaults.session_idle_ttl),
                 absolute_ttl=parse_duration(config.defaults.session_absolute_ttl),
             )
-        mode = os.environ.get("SECURITYMASKER_MODE", "local")
-        if mode not in {"local", "multitenant"}:
-            raise ConfigError("SECURITYMASKER_MODE must be 'local' or 'multitenant'")
+        mode = os.environ.get("SECURITYMASKER_MODE", MODE_LOCAL)
+        # `multitenant` was the old name for tenant-only isolation; keep it working
+        # but map it onto the explicit name so the mode never over-promises.
+        if mode == "multitenant":
+            mode = MODE_TENANT
+        if mode not in VALID_MODES:
+            raise ConfigError(
+                "SECURITYMASKER_MODE must be 'local', 'tenant' or 'tenant_user' "
+                f"(got {mode!r})"
+            )
 
         openai_upstream = os.environ.get(
             "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
@@ -128,12 +143,12 @@ class GatewayRuntime:
                     )
 
         tenant_auth_secret = os.environ.get("SECURITYMASKER_TENANT_AUTH_SECRET")
-        if mode == "multitenant" and not tenant_auth_secret:
+        if mode != MODE_LOCAL and not tenant_auth_secret:
             # Without a secret the tenant header is unverifiable and any client
             # could claim any tenant (doc/06 P0-9).
             raise ConfigError(
-                "SECURITYMASKER_MODE=multitenant requires SECURITYMASKER_TENANT_AUTH_SECRET; "
-                "the trusted authenticator signs the tenant id with it "
+                f"SECURITYMASKER_MODE={mode} requires SECURITYMASKER_TENANT_AUTH_SECRET; "
+                "the trusted authenticator signs the tenant (and user) with it "
                 "(HMAC-SHA256 hex in X-SecurityMasker-Tenant-Auth)."
             )
         return cls(
@@ -146,4 +161,8 @@ class GatewayRuntime:
                 "SECURITYMASKER_TENANT_HEADER", "x-securitymasker-tenant-id"
             ),
             tenant_auth_secret=tenant_auth_secret,
+            max_clock_skew_seconds=int(
+                os.environ.get("SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS",
+                               DEFAULT_MAX_SKEW_SECONDS)
+            ),
         )
