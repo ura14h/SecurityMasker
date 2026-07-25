@@ -84,42 +84,29 @@ def cmd_entities_test(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    ok = True
-    print(f"securitymasker {__version__}")
-    print(f"python {sys.version.split()[0]}")
-    try:
-        from importlib.metadata import version
+    """Run every runtime check and exit non-zero if any FAILED (doc/06 P2-1)."""
+    from securitymasker import doctor as checks
 
-        print(f"gateway deps: starlette {version('starlette')}, uvicorn {version('uvicorn')}")
-    except Exception:  # noqa: BLE001
-        ok = False
-        print("gateway deps missing (pip install -e .)")
-    try:
-        from securitymasker.detectors.presidio import PresidioDetector
-
-        avail = "available" if PresidioDetector().available else "not installed"
-        print(f"presidio (JA NER): {avail}")
-    except Exception:  # noqa: BLE001
-        print("presidio: not installed")
-    if args.config:
+    gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
+    config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
+    results = list(checks.run_checks(config_path=config_path,
+                                     environ=dict(os.environ), gateway=gateway))
+    # Probing the store needs an event loop and a built runtime, so it runs here
+    # rather than inside the pure check sequence.
+    if config_path:
         try:
-            config = load_config(args.config)
-            # Build the engine so the SAME startup checks the gateway runs fire here:
-            # required env vars, required detector models, regex/enum validation
-            # (doc/06 P0-6, P2-1). A no-op "config OK" would hide these.
-            build_engine(config)
-            print(
-                f"config OK: {len(config.entities)} entities, {len(config.patterns)} "
-                f"patterns, fail_mode={config.defaults.fail_mode}, "
-                f"presidio={'on' if config.presidio.enabled else 'off'}, "
-                f"ner={'on' if config.ner.model else 'off'}"
-            )
+            from securitymasker.gateway.runtime import GatewayRuntime
+
+            # `--config` must drive the probe too, not just the pure checks.
+            os.environ["SECURITYMASKER_CONFIG"] = config_path
+            runtime = GatewayRuntime.from_env()
+            results.append(asyncio.run(checks.check_store_probe(runtime.store)))
         except SecurityMaskerError as exc:
-            ok = False
-            print(f"config ERROR: {exc}")
-    else:
-        print("no --config given (skip dictionary check)")
-    return 0 if ok else 1
+            results.append(checks.CheckResult(
+                "store.probe", checks.Status.FAIL, f"runtime not constructible: {exc}"))
+
+    print(checks.render_json(results) if args.json else checks.render(results))
+    return 1 if any(r.failed for r in results) else 0
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -279,7 +266,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_config(p_test)
     p_test.set_defaults(func=cmd_entities_test)
 
-    p_doctor = sub.add_parser("doctor", help="environment and config sanity checks")
+    p_doctor = sub.add_parser("doctor", help="runtime, config and connectivity checks")
+    p_doctor.add_argument("--json", action="store_true",
+                          help="machine-readable output (no secrets)")
+    p_doctor.add_argument("--gateway", default=None)
     add_config(p_doctor)
     p_doctor.set_defaults(func=cmd_doctor)
 
