@@ -115,10 +115,50 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
    しても二重復元にならない。
 10. Anthropic 非ストリームのレスポンスは pydantic オブジェクト（`.content[].text` / `tool_use .input`）。
 
+### Codex 実バージョン E2E で判明した重要事項（2026-07-25、実測）
+
+実 Codex CLI 0.145.0 → Gateway → 本物の ChatGPT バックエンド（`litellm chatgpt/` プロバイダ、
+OAuth 再利用・API キー不要）を送信内容タップ付きで検証。ハーネス: `scripts/codex_e2e_setup.py`
+（隔離 `CODEX_HOME`/`CHATGPT_TOKEN_DIR`・`~/.codex` 無変更）/ `config/litellm.codex-e2e.yaml` /
+`tests/integration/chatgpt_tap.py`（透過フォワーダで送信ボディ記録、`Authorization` は記録せず）。
+
+11. **マスクは実環境で機能（§38-1 を実バックエンドで実証）**: chatgpt.com へ実送信されたボディに
+    登録機密が **0 件**、alias のみ。最重要要件を本物の外部 LLM への実呼び出しで達成。
+12. **`litellm chatgpt/` プロバイダは API キー不要**: `Authenticator` が `auth.openai.com` の
+    デバイスコード OAuth（`~/.config/litellm/chatgpt/auth.json`、`CHATGPT_TOKEN_DIR` で差し替え可）で
+    自己認証し `chatgpt.com/backend-api/codex` へ送る。**パススルーではなく Gateway が終端・再送信**
+    （マスクのため不可避）。Codex の `~/.codex/auth.json` は `tokens.*` ネスト構造で、トップレベル
+    キーを期待する litellm とは非互換 → 整形コピーで再利用可。
+13. **Responses API の HTTP ストリーミング復元は、どのコールバック hook でも不可能**（1.93.0・
+    最新 main とも）。3 hook すべてを実測:
+    - `async_post_call_streaming_iterator_hook`: parsed イベントを変更しても破棄。
+    - `async_post_call_streaming_hook`（per-chunk）: `isinstance(response, (ModelResponse,
+      ModelResponseStream))` ガードで **Responses イベントを除外**（main でも同一・未修正）。
+    - `async_post_call_streaming_deployment_hook`: イテレータ `__anext__` 内で毎チャンク発火・
+      `request_data` あり・戻り値で差し替え可 → **実測で 18 回発火・session 解決・chunk 復元・返却
+      しても Codex 出力は不変**。
+    → LiteLLM は Responses HTTP ストリーミングで**上流の生 SSE をそのままクライアントへ流し、
+    parsed イベントはログ/ガードレール検査専用**。マスク（安全性）は全経路で担保され、復元されない
+    のは表示のみ（ユーザーには不透明 alias が見えるだけで、機密漏えい・誤データではない＝fail-safe）。
+14. **LiteLLM は Responses API にネイティブ可逆マスキングを実装中**（main の WebSocket モード
+    `ResponsesWebSocketStreaming`: `_mask_response_create`/`_unmask_response_event`/
+    `_mask_response_completed`・`apply_to_output`・`output_guardrail_callbacks`）。HTTP へ展開されれば
+    コールバック経由の復元が可能になる見込み。
+15. `async_post_call_streaming_deployment_hook` ＋ `_restore_chunk_plain` は意味的に正しい最上流の
+    復元点として実装済み（他プロバイダ/将来の litellm 挙動では有効）。現状 Responses HTTP ストリームでは
+    litellm 側の制約で無効、と docstring に明記。
+
+### 方針の選択肢（Responses ストリーミング完全復元）
+
+- (a) LiteLLM 本体の HTTP 対応を待つ / 上流貢献。
+- (b) litellm のモデルルーティングを使わず、**専用 in-process Responses パススルー proxy**（mask/unmask を
+  1 プロセスで完結＝§25 遵守）を自作。
+- (c) 非ストリーム運用 / Anthropic 経路（stream 含め完全動作）を推奨。
+
 ### 残（後続フェーズ）
 
 - thinking blocks / citations の詳細処理（現状は透過、text は復元対象）
-- Codex / Claude Code 実バージョンでの E2E（optional integration）
+- Claude Code 実バージョンでの E2E（optional integration）
 - 外部ログ連携（Langfuse 等）は raw request 非送信を保証できるまで既定無効（デプロイ検証で担保）
 
 暫定の安全既定（§25）: 本番では詳細デバッグログを無効化し、外部ログ連携は raw request

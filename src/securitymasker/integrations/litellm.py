@@ -30,7 +30,7 @@ from securitymasker.integrations.runtime import Runtime, resolve_session_id
 from securitymasker.logging import get_logger
 from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
-from securitymasker.protocols.base import TEXT_KEYS
+from securitymasker.protocols.base import TEXT_KEYS, RestoreTransform
 from securitymasker.streaming.anthropic_stream import AnthropicStreamProcessor
 from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
@@ -119,6 +119,8 @@ class SecurityMaskerCallback(CustomGuardrail):
 
         engine = self._runtime.engine
         restorer = StreamingRestorer(engine.literal_restorations(session))
+        plain_restore = engine.make_restorer(session)
+        reasm = ToolArgumentReassembler(plain_restore)
         anthropic_proc: AnthropicStreamProcessor | None = None
         last_chunk: Any = None
         async for chunk in response:
@@ -127,13 +129,13 @@ class SecurityMaskerCallback(CustomGuardrail):
                 # Anthropic /v1/messages passthrough streams raw SSE bytes.
                 if anthropic_proc is None:
                     anthropic_proc = AnthropicStreamProcessor(
-                        engine.literal_restorations(session), engine.make_restorer(session)
+                        engine.literal_restorations(session), plain_restore
                     )
                 out = anthropic_proc.feed(bytes(chunk))
                 if out:
                     yield out
             else:
-                _restore_chunk_text(chunk, restorer, engine, session)
+                _restore_chunk_text(chunk, restorer, plain_restore, reasm)
                 yield chunk
         if anthropic_proc is not None:
             tail_bytes = anthropic_proc.flush()
@@ -143,6 +145,37 @@ class SecurityMaskerCallback(CustomGuardrail):
             tail = restorer.flush()
             if tail and (last := _make_text_chunk(last_chunk, tail)) is not None:
                 yield last
+
+    async def async_post_call_streaming_deployment_hook(
+        self,
+        request_data: dict[str, Any],
+        response_chunk: Any,
+        call_type: Any = None,
+    ) -> Any:
+        """Restore OpenAI Responses streaming chunks (§19).
+
+        LiteLLM invokes this per-chunk *inside* the Responses streaming iterator
+        (``ResponsesAPIStreamingIterator.__anext__``), passing ``request_data`` so
+        the session is resolvable, and swaps in the returned chunk. This is the
+        semantically-correct, most-upstream restore point and it works for any
+        provider/path that serializes the client SSE from the (mutated) event.
+
+        NOTE (litellm==1.93.0, verified by the real Codex E2E, docs/compatibility.md):
+        for the OpenAI Responses **HTTP streaming** path, litellm emits the raw
+        upstream SSE to the client and uses these parsed events only for
+        logging/guardrails, so this restoration does not reach the client there —
+        a fundamental litellm limitation, not a SecurityMasker defect. Masking
+        (the security boundary) is unaffected and fully enforced.
+        """
+        if self._runtime is None:
+            return response_chunk
+        session_id = resolve_session_id(request_data)
+        session = await self._runtime.store.get(session_id)
+        if session is None:
+            return response_chunk
+        restore = self._runtime.engine.make_restorer(session)
+        _restore_chunk_plain(response_chunk, restore, ToolArgumentReassembler(restore))
+        return response_chunk
 
     async def async_post_call_failure_hook(
         self,
@@ -165,18 +198,25 @@ def _is_anthropic(call_type: Any, data: dict[str, Any]) -> bool:
     return anthropic_messages.is_anthropic_request(data) and "input" not in data
 
 
-def _restore_response_object(
-    engine: MaskingEngine, session: MaskingSession, response: Any
+def _restore_content_part(part: Any, restore: RestoreTransform) -> None:
+    for key in TEXT_KEYS:
+        if isinstance(getattr(part, key, None), str):
+            setattr(part, key, restore(getattr(part, key)))
+
+
+def _restore_output_item(
+    item: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler
 ) -> None:
-    """Restore aliases in a live LiteLLM response object in place (§19).
+    for part in getattr(item, "content", None) or []:
+        _restore_content_part(part, restore)
+    if isinstance(getattr(item, "arguments", None), str):
+        item.arguments = reasm.restore_arguments(item.arguments)
 
-    Handles both Chat Completions (``choices[].message``) and Responses
-    (``output[].content[].text``) shapes via attribute access, since LiteLLM
-    returns typed pydantic objects (not dicts) at this hook.
-    """
-    restore = engine.make_restorer(session)
-    reasm = ToolArgumentReassembler(restore)
 
+def _restore_response_fields(
+    response: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler
+) -> None:
+    """Restore text/tool-args in a Chat or Responses object (attribute access)."""
     for choice in getattr(response, "choices", None) or []:
         msg = getattr(choice, "message", None)
         if msg is None:
@@ -189,22 +229,70 @@ def _restore_response_object(
                 fn.arguments = reasm.restore_arguments(fn.arguments)
 
     for item in getattr(response, "output", None) or []:
-        for part in getattr(item, "content", None) or []:
-            for key in TEXT_KEYS:
-                if isinstance(getattr(part, key, None), str):
-                    setattr(part, key, restore(getattr(part, key)))
-        if isinstance(getattr(item, "arguments", None), str):
-            item.arguments = reasm.restore_arguments(item.arguments)
+        _restore_output_item(item, restore, reasm)
+
+
+def _restore_response_object(
+    engine: MaskingEngine, session: MaskingSession, response: Any
+) -> None:
+    """Restore aliases in a live non-streaming response object in place (§19)."""
+    restore = engine.make_restorer(session)
+    _restore_response_fields(response, restore, ToolArgumentReassembler(restore))
+
+
+def _restore_chunk_plain(
+    chunk: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler
+) -> None:
+    """Restore a streaming chunk statelessly (no cross-chunk carry buffer).
+
+    Used by the Responses-streaming deployment hook, which fires per chunk without
+    per-stream state. Full-text "done"/"completed" events are authoritative for the
+    client's final render, so plain restoration of every text field is sufficient;
+    an alias split across raw ``output_text.delta`` events is corrected by the
+    subsequent ``output_text.done`` / ``response.completed`` full-text event.
+    """
+    raw_type = getattr(chunk, "type", None)
+    ctype = getattr(raw_type, "value", raw_type)
+    if isinstance(ctype, str) and ctype.endswith("output_text.delta"):
+        if isinstance(getattr(chunk, "delta", None), str):
+            chunk.delta = restore(chunk.delta)
+        return
+    if isinstance(getattr(chunk, "text", None), str):
+        chunk.text = restore(chunk.text)
+    part = getattr(chunk, "part", None)
+    if part is not None:
+        _restore_content_part(part, restore)
+    item = getattr(chunk, "item", None)
+    if item is not None:
+        _restore_output_item(item, restore, reasm)
+    embedded = getattr(chunk, "response", None)
+    if embedded is not None:
+        _restore_response_fields(embedded, restore, reasm)
+    for choice in getattr(chunk, "choices", None) or []:
+        delta = getattr(choice, "delta", None)
+        if delta is not None and isinstance(getattr(delta, "content", None), str):
+            delta.content = restore(delta.content)
 
 
 def _restore_chunk_text(
-    chunk: Any, restorer: StreamingRestorer, engine: MaskingEngine, session: MaskingSession
+    chunk: Any,
+    restorer: StreamingRestorer,
+    restore: RestoreTransform,
+    reasm: ToolArgumentReassembler,
 ) -> None:
     """Restore text in a streaming chunk, in place.
 
-    Handles Chat Completions (``choices[].delta.content``), Responses
-    ``OutputTextDeltaEvent`` (``.delta``), and Responses created/completed events
-    that embed a full ``.response`` object. Unknown chunks pass through unchanged.
+    Covers every text-bearing Responses streaming event, since a client may render
+    from the incremental delta OR from a "done"/completed event that carries the
+    full text (this bit the real Codex E2E):
+
+    - Chat: ``choices[].delta.content`` (carry buffer for aliases split across chunks)
+    - Responses ``OutputTextDeltaEvent.delta`` (carry buffer)
+    - Responses ``OutputTextDoneEvent.text`` / ``ContentPart*Event.part`` /
+      ``OutputItem*Event.item`` / ``Response*Event.response`` (full text — restored
+      with a plain, idempotent restorer)
+
+    Unknown chunks pass through unchanged (§22).
     """
     choices = getattr(chunk, "choices", None) or (
         chunk.get("choices") if isinstance(chunk, dict) else None
@@ -227,18 +315,26 @@ def _restore_chunk_text(
                     delta.content = restored
         return
 
-    ctype = getattr(chunk, "type", None) or (chunk.get("type") if isinstance(chunk, dict) else None)
+    raw_type = getattr(chunk, "type", None)
+    ctype = getattr(raw_type, "value", raw_type)  # str-enum members -> their value
     if isinstance(ctype, str) and ctype.endswith("output_text.delta"):
         delta_text = getattr(chunk, "delta", None)
         if isinstance(delta_text, str) and delta_text:
             chunk.delta = restorer.feed(delta_text)
         return
 
-    # response.created / response.completed embed a full response object; restore it
-    # with a direct (non-carry-buffer) restorer so its full text is clean too.
+    # Full-text "done"/lifecycle events: restore in place with the plain restorer.
+    if isinstance(getattr(chunk, "text", None), str):
+        chunk.text = restore(chunk.text)
+    part = getattr(chunk, "part", None)
+    if part is not None:
+        _restore_content_part(part, restore)
+    item = getattr(chunk, "item", None)
+    if item is not None:
+        _restore_output_item(item, restore, reasm)
     embedded = getattr(chunk, "response", None)
     if embedded is not None:
-        _restore_response_object(engine, session, embedded)
+        _restore_response_fields(embedded, restore, reasm)
 
 
 def _make_text_chunk(template: Any, text: str) -> Any | None:

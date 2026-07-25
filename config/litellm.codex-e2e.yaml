@@ -1,0 +1,19 @@
+# LiteLLM config for the real Codex E2E via the ChatGPT backend (no API key).
+# The `chatgpt/` provider authenticates itself using a token dir set by the
+# CHATGPT_TOKEN_DIR env var (isolated for this test — see scripts/codex_e2e_setup.py).
+# SecurityMasker masks the request before LiteLLM forwards it to chatgpt.com.
+#
+# Start with:
+#   export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
+#   export CHATGPT_TOKEN_DIR=/private/tmp/sm-codex-e2e/litellm_chatgpt
+#   litellm --config config/litellm.codex-e2e.yaml --port 4000
+model_list:
+  - model_name: securitymasker-codex
+    litellm_params:
+      # Matches the user's Codex default (see ~/.codex/config.toml). Alternatives
+      # entitled to this account: gpt-5.6-luna / gpt-5.6-terra / gpt-5.5 / gpt-5.4.
+      model: chatgpt/gpt-5.6-sol
+
+litellm_settings:
+  set_verbose: false
+  callbacks: ["securitymasker_guardrail.securitymasker_callback"]
