@@ -265,6 +265,14 @@ def test_standard_setup_does_not_install_redis() -> None:
     assert "--no-build-isolation --no-deps -e" in setup
 
 
+def test_initialized_product_files_are_ignored_at_repository_root() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "/securitymasker.config" in gitignore
+    assert "/securitymasker.dict" in gitignore
+    assert "/securitymasker.state/" in gitignore
+
+
 def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> None:
     test_setup = (ROOT / "scripts/test-setup").read_text(encoding="utf-8")
     release = (ROOT / "scripts/release-check").read_text(encoding="utf-8")
