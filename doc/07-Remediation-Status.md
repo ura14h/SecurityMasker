@@ -1,14 +1,38 @@
 # 07 — doc/06 Remediation Status
 
-作成日: 2026-07-25 / 更新: 2026-07-25（第2回監査の是正を反映）
+作成日: 2026-07-25 / 更新: 2026-07-26（第7回監査の是正を反映）
 
-> **第2回監査（HEAD `50925d6`）の結果、本書の初版にあった複数の `done` 判定は実装と一致していなかった。**
-> 指摘された8件のリリースブロッカーはすべて再現確認のうえ修正し、回帰テストを追加した（`Audit fix 1..5`）。
-> 判定の誤りの内訳と是正内容は末尾「第2回監査の是正」を参照。
+---
+
+## 現在の状態（ここだけ読めば最新がわかる）
+
+**総合: 未受け入れ。** 第7回監査で P1 3件を指摘され、いずれも是正済み。再判定待ち。
+
+| 領域 | 状態 | 補足 |
+|---|---|---|
+| 外部送信ゲート・fail-closed | done | 最終payload＋header の block-only 再検査 |
+| session / tenant / user 分離 | done | ADR-0008。`local` / `tenant` / `tenant_user` |
+| 構造保持（JSON・コード・URL・file path） | done | `aliases/structure.py` |
+| 文脈分割とモデル検出器のスケジューリング | done | ADR-0011。分割による回避不可、超過は fail-closed |
+| NER 供給網（pin・検証・オフライン） | done | ADR-0010。実snapshot検証テストあり。`local_files_only` は実測0接続 |
+| 実CLI E2E（codex / claude） | done（sandbox必須） | 送信マスクと復元表示の両方を検査。egress遮断が無い環境では実行しない |
+| 検出精度（識別子の誤検出） | done | UUID内部の誤検出を抑止（実測 0.5% → 0%） |
+| Redis 排他 | **partial** | owner token・所有権再確認まで。fencing token 未実装 |
+| 日本固有識別子（旅券・免許 等） | **partial** | 公開チェックディジットが無いものは形式＋文脈語のみ |
+| metrics / audit の網羅配線 | **partial** | 安全labelのlogのみ |
+| 供給網（hash検証・署名・SBOM・CI scan） | **未実装** | `docs/operations.md` に明記 |
+| 実provider送信の検証 | **行わない方針** | E2Eの上流はmock。方針として維持 |
+
+**`done` の基準**: 実装・製品への配線・回帰テスト・運用手順が揃っていること。
+1つでも欠ければ `partial` と、何が欠けているかを書く。
+
+以下は**追記型の履歴**である。各回の監査で何を過大に主張し、何が実際に壊れていたかを
+残すために、判定を書き換えずに当時の記述と是正を並べている。
+
+---
 
 `doc/06-Issue.md` の是正実装の到達状況を、コードとテストに一致する形で記録する。
 「implemented / tested」「partial」「deferred」を区別し、誇大な保証を残さない（doc/06 §10, P2-4）。
-コミットはマイルストーン境界ごと（`git log` の `Milestone A..E`）。
 
 ## Milestone A — 外部送信ゲート（実装・テスト済み）
 
@@ -324,3 +348,54 @@ JSON記法は文字列になり `http_headers` の型検査で弾かれる。**r
 - **実provider（OpenAI / Anthropic）側の挙動**。E2Eの上流は意図的にmockであり、
   実providerへの送信は行わない方針を維持する。
 - 実CLIの**全サブコマンド・全機能**を網羅したわけではない（`exec` / `-p` の1ターン）。
+
+## 第7回監査の是正（`R25..R32`）
+
+### P1
+
+| 項目 | 実際の不具合 | 是正 |
+|---|---|---|
+| `local_files_only` が外部通信していた | マニフェスト検証後もモデルIDを `from_pretrained()` に渡していたため、transformers 4.57 では **検証器構築のたびに外部へ1接続**（実測）。オフライン環境では起動不能で、境界を守るはずの部品が境界の外へ出ていた | 検証済みsnapshotディレクトリを渡す方式へ変更。**実測0接続**。`revision` はローカルパスに対しては無意味なので外し、代わりに「そのrevisionのsnapshotを解決し、全成果物のbyte列を検証済み」という、kwargより強い形で pin を担保 |
+| `skip_code_contexts: false` が無視されていた | `_detect_fuzzy` が検出器を見る前に code系spanを一律除外。利用者が「コードも検査せよ」と設定しても**黙って逆の（検査量が減る）方向**に働いていた | 検出器を当該フラグでグループ分けし、各グループに専用の連結パスを与える（最大2パス。span数・検出器数に依存しない） |
+| 実CLI E2E に外部送信の遮断が無い | ローカルURLを指すのは経路の選択であって封じ込めではない。両CLIとも provider 以外への更新確認・analytics・crash reporting 経路を持つため、経路設定を誤れば**失敗ではなく外部送信**になる | 3層化。(1) loopback限定の network namespace（`unshare -n`）があればそれを使う＝唯一の保証。(2) 無ければ**実行しない**（`SM_E2E_ALLOW_UNSANDBOXED=1` を明示した場合のみ）。(3) 継承環境変数を除去し、telemetry/自動更新を停止、proxy変数を閉じたloopbackポートへ。macOSでは既定でskipになる |
+
+### P2
+
+| 項目 | 是正 |
+|---|---|
+| fuzzy検出器不在時も `max_fuzzy_chars` が適用 | 上限は当該パスの中へ移動。Presidio/NERが既定OFFの構成では適用されない |
+| E2Eが復元を検査していない | 両CLIの**標準出力に元の値が現れること**と**aliasが現れないこと**を検査。付随して mock の Responses SSE を公式のitemライフサイクル（`output_item.added` / `content_part.added` / `*.done`）まで実装 — 従来は delta のみで実クライアントがテキストを破棄していたため、そもそも復元を観測できなかった |
+| 実モデル検証がCIでskip | `SM_REQUIRE_MODEL=1` で skip を失敗に変える release gate を追加 |
+| 長文NERの回帰テストが未コミット | window被覆・重なり・重複除去をオフラインで、先頭/中間/末尾の検出を実モデルで固定 |
+
+### P3
+
+`test_thread_pool_size_is_capped` のスレッド数え上げ（共有runnerと同じprefixを見ていた）、
+ADR-0009 の `asyncio.to_thread` 記述、`MaskingEngine` の旧budget説明、本書の冒頭要約 — いずれも是正。
+
+### この回で見つかった、指摘外の実バグ
+
+E2Eの封じ込めを入れた直後に、**何も機密を含まないリクエストが gateway に拒否された**。
+
+```
+SecurityMasker blocked this request ... Entity type: CREDIT_CARD
+019f9c69-1f5a-7803-9210-9274c7fa4f67  ->  "03-9210-9274"（東京の市外局番として一致）
+```
+
+UUID は 32桁の16進数であり、Codex は1リクエストに session / thread / installation /
+window / prompt-cache key と複数の UUID を載せる。最終 leak gate は payload の全文字列を
+走査するため、**数字形状のルールはいずれ必ずどれかに当たる**。
+ランダムなUUIDv7を3000件測定したところ **0.5%** が PHONE / CREDIT_CARD / MY_NUMBER に一致した。
+識別子が1リクエストに複数あり、会話が多数のリクエストからなる以上、
+実運用セッションが理由なく全面拒否されるのは時間の問題だった。
+
+- 識別子の**真部分文字列**である検出のみ破棄する（**0/3000** に低下）。
+  UUID全体を覆う検出は残す — 顧客IDやAPIキーがUUIDであることは普通にあり、
+  そこを抑止すると精度改善が漏えいに変わる。
+- あわせて、先頭ゼロを含むオクテットは IPv4 とみなさないようにした。
+  ドット10進表記に先頭ゼロは無く（`inet_aton` は8進と解釈する）、実際にそれは
+  たいてい版番号である。Claude Code は毎リクエスト `cc_version=2.1.212.057` を送るため、
+  leak gate がこれを IP として拒否していた。
+
+**教訓**: 合成データだけで検査していると、*実クライアントが実際に送るもの*で壊れる。
+実CLI E2E を入れて最初に得た成果が、単体テストでは決して見つからないこの2件だった。

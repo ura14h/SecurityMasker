@@ -81,6 +81,14 @@ openssl rand -base64 32
 SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
 ```
 
+  It refuses to run without an egress boundary. Pointing a CLI at a local URL is a
+  routing choice, not containment: both tools make update, analytics and crash
+  reporting requests that never go through the configured provider, so a routing
+  mistake would reach the internet instead of failing. Where a loopback-only
+  network namespace exists (`unshare -n`) the test uses it; otherwise it skips
+  unless you set `SM_E2E_ALLOW_UNSANDBOXED=1`, which asserts that egress is
+  blocked some other way. Set that only on a host where you know it is.
+
   What remains uncovered is the provider itself: the E2E upstream is a local mock,
   deliberately, so nothing here says how a real provider behaves.
 - The proxy passes the client's own credentials through and never stores/logs them (§25).
