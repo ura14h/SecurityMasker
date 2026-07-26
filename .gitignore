@@ -27,9 +27,16 @@ env/
 *.key
 secrets/
 config/*.local.yaml
-/securitymasker.config
-/securitymasker.dict
-/securitymasker.state/
+
+# SecurityMasker user data
+/*.config
+/*.dict
+/*.state/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.db.lock
 
 # Editor
 .idea/
