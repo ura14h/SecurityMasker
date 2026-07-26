@@ -14,19 +14,28 @@ boundary: both tools have update checks, analytics and crash reporting that do n
 go through the configured provider at all, so a routing mistake here would leak to
 the internet rather than fail. Dummy credentials do not change that.
 
-So containment is **measured, not declared**: before anything starts, the test
-tries to open a TCP connection to a routable address. If that succeeds, this
-process can reach the internet, and the test skips. No environment variable
-overrides this — an earlier version had an ``SM_E2E_ALLOW_UNSANDBOXED`` flag, and
-a flag meaning "trust me, egress is blocked" is exactly the assurance that cannot
-be checked. The probe can be, so it is.
+So containment is **checked structurally**: the host must have no non-loopback
+interface and no default route. That is a property of the network stack, and it is
+what a namespace or a ``--network none`` container actually produces.
 
-To make the probe fail, run the WHOLE stack — pytest, the gateway, the mock and
-the CLI — inside one network namespace or a ``--network none`` container:
+An earlier version instead tried to connect to 1.1.1.1 and 8.8.8.8 and treated
+failure as safety. That is not a proof of anything: a network can drop those two
+addresses and still route to a provider, block IPv4 while allowing IPv6, or filter
+public DNS but not HTTPS. Failing to reach two addresses says nothing about the
+third. It also ran at import, so merely collecting this file opened outbound
+connections. The check now touches the network only to enumerate interfaces, and
+runs at fixture time, so an un-opted-in collection does nothing at all.
+
+A connect attempt survives only as a secondary assertion AFTER the structural
+check has passed: if the stack says isolated and a connection still succeeds,
+something is wrong enough to fail rather than skip.
+
+Run the WHOLE stack — pytest, the gateway, the mock and the CLI — inside one
+namespace:
 
     devtools/run_cli_e2e.sh          # unshare -rn around pytest itself (Linux)
 
-Isolating only the CLI does not work, and was the previous mistake here: a network
+Isolating only the CLI does not work, and was an earlier mistake here: a network
 namespace has its own loopback, so a CLI inside one cannot reach a gateway on the
 parent's 127.0.0.1. Everything has to share the namespace.
 
@@ -46,6 +55,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -75,24 +85,76 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _can_reach_the_internet(timeout: float = 1.5) -> bool:
-    """Whether this process can open a TCP connection off-box.
+def _has_default_route_v4(proc: str = "/proc/net/route") -> bool:
+    """A default route out of a non-loopback device."""
+    try:
+        lines = Path(proc).read_text().splitlines()[1:]
+    except OSError:
+        return True          # cannot tell -> assume not isolated
+    for line in lines:
+        fields = line.split()
+        # Iface, Destination, ... — destination 0.0.0.0 is the default route.
+        if len(fields) > 1 and fields[1] == "00000000" and fields[0] != "lo":
+            return True
+    return False
 
-    Deliberately empirical. A firewall, an offline host and a network namespace
-    all look different from the inside, and none of them can be recognised by
-    checking for a tool or reading a flag — but all of them show up here. Only a
-    connection is attempted; nothing is sent.
 
-    A drop-style firewall makes this time out rather than refuse, so a timeout
-    counts as blocked.
+def _has_default_route_v6(proc: str = "/proc/net/ipv6_route") -> bool:
+    try:
+        lines = Path(proc).read_text().splitlines()
+    except OSError:
+        return False         # no IPv6 stack at all is fine
+    for line in lines:
+        fields = line.split()
+        # dest(32 hex) prefixlen(hex) ... device(last). `::/0` is the default.
+        if (len(fields) >= 10 and fields[0] == "0" * 32 and fields[1] == "00"
+                and fields[-1] != "lo"):
+            return True
+    return False
+
+
+def _isolation_failure() -> str | None:
+    """Why this host is not network-isolated, or None when it is.
+
+    Structural, not probabilistic: a host with no interface other than loopback
+    and no default route cannot reach anything off-box, whatever the firewall
+    policy happens to be. That is exactly what `unshare -n` and `--network none`
+    produce, and it is checkable without sending a packet anywhere.
+
+    The interface check is the decisive one — with only `lo` there is nowhere for
+    a packet to go. The route checks are defence in depth, and ignore routes bound
+    to `lo`, which a fresh namespace can carry without them meaning anything.
+    """
+    if sys.platform != "linux":
+        return (f"network isolation cannot be verified on {sys.platform}; run the "
+                "whole stack in a Linux namespace (devtools/run_cli_e2e.sh) or a "
+                "--network none container")
+    external = sorted(name for _, name in socket.if_nameindex() if name != "lo")
+    if external:
+        return f"non-loopback interfaces are present: {external}"
+    if _has_default_route_v4():
+        return "an IPv4 default route exists"
+    if _has_default_route_v6():
+        return "an IPv6 default route exists"
+    return None
+
+
+def _assert_nothing_routes_off_box() -> None:
+    """Secondary check, only meaningful once the structural one has passed.
+
+    If the stack says there is nowhere to go and a connection nevertheless
+    succeeds, the structural check is being fooled — which is a failure, not a
+    reason to skip quietly.
     """
     for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53)):
         try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True
+            with socket.create_connection((host, port), timeout=1.0):
+                raise AssertionError(
+                    f"reached {host}:{port} despite no default route — this "
+                    "process is not contained"
+                )
         except OSError:
-            continue
-    return False
+            pass
 
 
 PERSON = "山田太郎"                       # synthetic, already used across the suite
@@ -102,16 +164,21 @@ CARRIER = "接続する Python を書いて"       # non-sensitive; proves the b
 # A port nothing listens on: proxy settings pointed here fail immediately.
 CLOSED_PORT = 1
 
+# Only an environment read at import time. The isolation check is a fixture, so
+# collecting this file never touches the network.
 pytestmark = [
     pytest.mark.skipif(os.environ.get("SM_RUN_CLI_E2E") != "1",
                        reason="set SM_RUN_CLI_E2E=1 to drive the real CLI"),
-    pytest.mark.skipif(
-        _can_reach_the_internet(),
-        reason="this process can reach the internet, so the CLIs could too; run "
-               "the whole stack in a network namespace (devtools/run_cli_e2e.sh) "
-               "or a --network none container",
-    ),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _require_network_isolation():
+    """No test in this module runs on a host that can reach anything off-box."""
+    reason = _isolation_failure()
+    if reason is not None:
+        pytest.skip(f"not network-isolated: {reason}")
+    _assert_nothing_routes_off_box()
 
 
 def _contained_env(**overrides: str) -> dict[str, str]:
@@ -191,6 +258,19 @@ def _last_request(record: Path) -> dict:
     return json.loads(lines[-1])
 
 
+def _aliases_sent_upstream(record: Path) -> set[str]:
+    """Every alias in the outbound body, read from the request itself.
+
+    Taken from what was actually sent rather than matched by prefix, so the
+    hostname alias — which is host-shaped (`sm-host-….example.invalid`) and shares
+    no prefix with `SM_PERSON_…` — is covered too.
+    """
+    body = json.dumps(_last_request(record)["body"], ensure_ascii=False)
+    return set(re.findall(r"SM_[A-Z]+_[0-9A-F]+", body)) | set(
+        re.findall(r"sm-[a-z]+-[0-9a-f]+\.example\.invalid", body)
+    )
+
+
 def _assert_masked_upstream(record: Path) -> None:
     """Only aliases left the process — and the body actually arrived."""
     body = json.dumps(_last_request(record)["body"], ensure_ascii=False)
@@ -199,22 +279,32 @@ def _assert_masked_upstream(record: Path) -> None:
     assert CARRIER in body, "the prompt never reached the upstream at all"
     assert PERSON not in body, "the person's name reached the upstream"
     assert HOST not in body, "the internal hostname reached the upstream"
-    assert "SM_PERSON_" in body, f"no PERSON alias in the outbound body: {body[:400]}"
+
+    aliases = _aliases_sent_upstream(record)
+    assert any(a.startswith("SM_PERSON_") for a in aliases), (
+        f"no PERSON alias in the outbound body: {body[:400]}"
+    )
+    assert any(a.startswith("sm-host-") for a in aliases), (
+        f"no HOSTNAME alias in the outbound body: {body[:400]}"
+    )
 
 
-def _assert_restored_to_the_user(stdout: str) -> None:
-    """The user got their own data back.
+def _assert_restored_to_the_user(stdout: str, record: Path) -> None:
+    """The user got their own data back, and no alias with it.
 
     Masking without restoration is not the feature — it is the product broken in a
-    safe direction, and every upstream assertion would still pass. The mock echoes
-    what it was sent, so both originals come back down the stream and must appear.
+    safe direction, and every upstream assertion would still pass. Checking that
+    the originals appear is not sufficient either: a response containing BOTH the
+    original and a leftover alias would pass that alone, so every alias actually
+    sent is checked against the output.
     """
     for original, what in ((PERSON, "name"), (HOST, "hostname")):
         assert original in stdout, (
             f"the CLI never showed the restored {what}; the response was not "
             f"restored. stdout: {stdout[-800:]}"
         )
-    assert "SM_PERSON_" not in stdout, "an alias leaked into the CLI output"
+    leaked = sorted(a for a in _aliases_sent_upstream(record) if a in stdout)
+    assert not leaked, f"aliases survived into the CLI output: {leaked}"
 
 
 @pytest.fixture
@@ -263,7 +353,7 @@ def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
     assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
 
     _assert_masked_upstream(record)
-    _assert_restored_to_the_user(result.stdout)
+    _assert_restored_to_the_user(result.stdout, record)
 
 
 @needs_codex
@@ -349,4 +439,4 @@ def test_real_claude_code_through_run_sends_only_aliases(stack, tmp_path) -> Non
         f"expected the Anthropic path, got {_last_request(record)['path']}"
     )
     _assert_masked_upstream(record)
-    _assert_restored_to_the_user(result.stdout)
+    _assert_restored_to_the_user(result.stdout, record)
