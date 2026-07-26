@@ -1,0 +1,5 @@
+# Linux source/build environments must select the official CPU-only wheel before
+# applying requirements-ner.lock. The public-version pin there (torch==2.13.0)
+# accepts this local version and will not replace it.
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu

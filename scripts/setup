@@ -26,6 +26,10 @@ fi
 
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     -r "$PROJECT_DIRECTORY/requirements.lock"
+if [ "$(uname -s)" = "Linux" ]; then
+    "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
+        --no-deps -r "$PROJECT_DIRECTORY/requirements-torch-cpu.lock"
+fi
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \

@@ -263,6 +263,12 @@ def test_standard_setup_does_not_install_redis() -> None:
     assert "\nredis==" not in f"\n{standard_lock}"
     assert "python3.12" in setup
     assert "--no-build-isolation --no-deps -e" in setup
+    assert 'if [ "$(uname -s)" = "Linux" ]' in setup
+    assert "requirements-torch-cpu.lock" in setup
+
+    cpu_lock = (ROOT / "requirements-torch-cpu.lock").read_text(encoding="utf-8")
+    assert "https://download.pytorch.org/whl/cpu" in cpu_lock
+    assert "torch==2.13.0+cpu" in cpu_lock
 
 
 def test_initialized_product_files_are_ignored_at_repository_root() -> None:
@@ -299,6 +305,7 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
 
     assert "pyinstaller==6.21.0" in lock
     assert "requirements-build.lock" in build
+    assert "requirements-torch-cpu.lock" in build
     assert "requirements-dev.lock" not in build
     assert "binary build requires Python 3.12+" in build
     assert "--no-build-isolation --no-deps -e" in build

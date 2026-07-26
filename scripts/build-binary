@@ -35,6 +35,10 @@ mkdir -p "$BUILD_DIRECTORY" "$DIST_DIRECTORY"
 "$PYTHON_COMMAND" -m venv "$BUILD_VENV"
 "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
     -r "$PROJECT_DIRECTORY/requirements.lock"
+if [ "$(uname -s)" = "Linux" ]; then
+    "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
+        --no-deps -r "$PROJECT_DIRECTORY/requirements-torch-cpu.lock"
+fi
 "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
     --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
 "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
