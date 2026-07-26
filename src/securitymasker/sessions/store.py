@@ -1,4 +1,4 @@
-"""Session store interface (§8). In-memory now, Redis-swappable later.
+"""session store interface（§8）。in-memoryとRedis実装を差し替え可能にする。
 
 The store owns session lifetime (idle + absolute TTL, §7) and hands out a
 per-session async lock so alias allocation for one session is serialized across
@@ -19,7 +19,7 @@ DEFAULT_ABSOLUTE_TTL = timedelta(hours=24)
 
 
 class LockHandle:
-    """Handle yielded by ``SessionStore.lock``.
+    """``SessionStore.lock``が返すhandle。
 
     A distributed lock can expire or be taken over mid-request, so the holder must
     confirm it still owns the lock before mutating the protected state.
@@ -50,7 +50,7 @@ class LockHandle:
             self._raise()
 
     async def verify(self) -> None:
-        """Actively confirm ownership, then raise if it has been lost."""
+        """ownershipを能動的に確認し、喪失していれば例外を送出する。"""
         if (self._verifier is not None and not await self._verifier()
                 and self._lost is not None):
             self._lost.set()
@@ -77,7 +77,7 @@ def new_session(
     client_type: str = "unknown",
     absolute_ttl: timedelta = DEFAULT_ABSOLUTE_TTL,
 ) -> MaskingSession:
-    """Construct a session with fresh CSPRNG keys (§7)."""
+    """新しいCSPRNG鍵でsessionを構築する（§7）。"""
     index_key, aead_key = generate_session_keys()
     now = _now()
     return MaskingSession(

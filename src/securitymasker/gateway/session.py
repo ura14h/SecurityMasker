@@ -1,4 +1,4 @@
-"""Session resolution from request headers/body (§7, doc/06 P1-1).
+"""request header／bodyからのsession解決（§7、doc/06 P1-1）。
 
 The proxy masks (request) and restores (response) in a *single* handler
 invocation, so one resolved session covers the whole turn. Cross-turn consistency
@@ -65,7 +65,7 @@ def resolve_session(
 
 
 def namespaced_key(identity: Identity | str, session_id: str) -> str:
-    """Identity-namespaced store key, so a session id cannot cross a boundary.
+    """identityで名前空間化したstore keyを作り、session IDの境界越えを防ぐ。
 
     The namespace is length-prefixed (see ``Identity.namespace``), so no
     combination of tenant/user/session values can be made to collide with a
@@ -79,4 +79,3 @@ def namespaced_key(identity: Identity | str, session_id: str) -> str:
     if isinstance(identity, str):
         return f"\x1e{identity}\x1f{session_id}"
     return f"{identity.namespace}\x1f{session_id}"
-

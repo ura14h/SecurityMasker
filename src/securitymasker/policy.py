@@ -1,4 +1,4 @@
-"""Merge/resolve detections and decide the final action per span (§11 steps 8-9).
+"""detectionを統合・解決し、spanごとの最終処理を決定する（§11 step 8-9）。
 
 Input: every detector's raw hits (original coordinates). Output: a set of
 non-overlapping spans to act on, plus their restore policy. Rules:
@@ -45,7 +45,7 @@ def _floor_rank(entity_type: str) -> int:
 
 
 def _clamp_policy(d: DetectionResult) -> DetectionResult:
-    """Raise a detection's restore policy to at least its entity-type floor."""
+    """detectionのrestore policyをentity typeの最低強度以上へ引き上げる。"""
     floor = _SAFETY_FLOOR.get(d.entity_type)
     if floor is None:
         return d
@@ -55,8 +55,7 @@ def _clamp_policy(d: DetectionResult) -> DetectionResult:
 
 
 def _safety_rank(d: DetectionResult) -> int:
-    """How strictly this detection would be handled: its own restore policy or its
-    entity type's floor, whichever is stricter."""
+    """固有restore policyとentity type最低強度のうち厳しい方を返す。"""
     return max(_floor_rank(d.entity_type), _POLICY_STRENGTH.get(d.restore_policy, 0))
 
 
@@ -74,7 +73,7 @@ def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:
 
 
 def _resolve_cluster(cluster: list[DetectionResult]) -> list[DetectionResult]:
-    """Preference-greedy within a small cluster of mutually-reachable overlaps.
+    """互いに到達可能な小overlap cluster内でpreference-greedyに選ぶ。
 
     Existing-alias spans are protected: they suppress overlapping candidates and are
     themselves excluded from the result (idempotency, §11).
@@ -92,7 +91,7 @@ def _resolve_cluster(cluster: list[DetectionResult]) -> list[DetectionResult]:
 
 
 def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
-    """Return non-overlapping detections to act on, ordered by start position.
+    """処理対象の重ならないdetectionをstart位置順で返す。
 
     Near-linear: sort by start, sweep into clusters of transitively-overlapping
     spans, and run the preference greedy (priority, then length, then score, §11)
@@ -122,7 +121,7 @@ def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
 
 
 def blocking_entities(resolved: list[DetectionResult]) -> list[str]:
-    """Entity types whose restore policy is ``block`` (request must fail closed, §10)."""
+    """restore policyが``block``のentity type。requestをfail-closedにする（§10）。"""
     return [
         d.entity_type
         for d in resolved

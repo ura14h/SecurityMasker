@@ -1,4 +1,4 @@
-"""Model artifact manifests, fetching, and verification (ADR-0009, ADR-0010).
+"""model artifactのmanifest、取得、検証（ADR-0009、ADR-0010）。
 
 The runtime loads models ``local_files_only``, so nothing a user types can trigger
 a download. Fetching is therefore a separate, deliberate step — and this is where
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from securitymasker.errors import ConfigError
 
-# Weight formats that execute arbitrary code when loaded. Never accepted.
+# load時に任意codeを実行するweight形式。常に拒否する。
 UNSAFE_WEIGHT_SUFFIXES = (".bin", ".pt", ".pth", ".ckpt", ".pkl")
 
 
@@ -44,7 +44,7 @@ class Artifact:
 
 @dataclass(frozen=True)
 class ModelManifest:
-    """The complete set of artifacts one pinned model revision must present."""
+    """固定した一model revisionに必要なartifactの完全な集合。"""
 
     model: str
     revision: str
@@ -62,14 +62,14 @@ class ModelManifest:
         return next((a for a in self.artifacts if a.name == name), None)
 
 
-# Manifests for the models we publish pins for (ADR-0009). Digests were taken from
+# 固定値を公開するmodelのmanifest（ADR-0009）。配布byteからdigestを取得する。
 # the Hugging Face registry API at adoption time and are reproduced in the ADR.
 MANIFESTS: dict[str, ModelManifest] = {
     "tsmatz/xlm-roberta-ner-japanese@aba094e118d5ffc622e9b25e07edc49f9dd85feb":
         ModelManifest(
             model="tsmatz/xlm-roberta-ner-japanese",
             revision="aba094e118d5ffc622e9b25e07edc49f9dd85feb",
-            # EVERY file transformers reads, not just the weights. config.json
+            # weightだけでなくtransformersが読む全fileを固定する。
             # carries id2label — the label schema we validate against — and the
             # architecture; the tokenizer files decide how text is split. Altering
             # any of them changes what gets detected, so leaving them unpinned made
@@ -84,7 +84,7 @@ MANIFESTS: dict[str, ModelManifest] = {
                 Artifact("tokenizer.json",
                          "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
                          17082660),
-                # Digests are of the file bytes EXACTLY as distributed, trailing
+                # digestは末尾newlineを含む配布byteそのものから計算する。
                 # newline included. The first version of these three entries was
                 # hashed after stripping it, so every one of them rejected the real
                 # snapshot — see the pinned-snapshot test in
@@ -133,11 +133,11 @@ class VerificationResult:
 
 
 class UnknownModelError(ConfigError):
-    """No manifest exists for this model@revision, so it cannot be verified."""
+    """このmodel@revisionにはmanifestがなく検証できない。"""
 
 
 class ArtifactVerificationError(ConfigError):
-    """A required artifact is missing, altered, or in a format we refuse."""
+    """必須artifactの欠落・改変、または拒否形式を示す。"""
 
 
 def file_sha256(path: Path) -> str:
@@ -149,7 +149,7 @@ def file_sha256(path: Path) -> str:
 
 
 def verify_directory(manifest: ModelManifest, directory: Path) -> VerificationResult:
-    """Check ``directory`` against ``manifest``.
+    """``directory``を``manifest``と照合する。
 
     Iterates the MANIFEST (not the directory), so an artifact that is simply
     absent is caught — the previous implementation only inspected files that
@@ -171,7 +171,7 @@ def verify_directory(manifest: ModelManifest, directory: Path) -> VerificationRe
         else:
             result.mismatched.append(artifact.name)
 
-    # Anything pickle-shaped in the directory is refused outright, even if the
+    # safetensorsがあってもdirectory内のpickle形式は無条件で拒否する。
     # required safetensors are present: transformers must not be able to pick it.
     for path in directory.iterdir():
         if path.is_file() and path.suffix.lower() in UNSAFE_WEIGHT_SUFFIXES:
@@ -183,7 +183,7 @@ def verify_directory(manifest: ModelManifest, directory: Path) -> VerificationRe
 def require_verified(
     model: str, revision: str | None, directory: Path, *, allow_unverified: bool = False
 ) -> VerificationResult:
-    """Verify or raise. This is the gate both fetch and runtime load go through."""
+    """検証し、失敗時は例外を送出する。fetchとruntime loadが共有するgate。"""
     manifest = manifest_for(model, revision)
     if manifest is None:
         if not allow_unverified:
@@ -203,7 +203,7 @@ def require_verified(
 
 
 def cache_directory(model: str, revision: str) -> Path | None:
-    """Where the local cache holds this exact revision, if it is present."""
+    """正確なrevisionが存在する場合、そのlocal cache位置を返す。"""
     try:
         from huggingface_hub import snapshot_download
     except ImportError:
@@ -218,7 +218,7 @@ def cache_directory(model: str, revision: str) -> Path | None:
 def fetch(
     model: str, revision: str, *, allow_unverified: bool = False
 ) -> VerificationResult:
-    """Download ``model`` at ``revision`` and verify it against its manifest.
+    """``revision``の``model``をdownloadし、manifestと照合する。
 
     Raises rather than warning: an unverifiable model is not something to note and
     carry on past.
@@ -238,7 +238,7 @@ def fetch(
     directory = Path(snapshot_download(
         repo_id=model,
         revision=revision,
-        # Only the formats we load. Excluding *.bin at download time means a
+        # load対象形式だけを取得する。`*.bin`だけのmodelは不完全downloadとして拒否される。
         # pickle artifact never lands in the cache to be picked up later.
         allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt"],
     ))

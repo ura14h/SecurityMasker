@@ -1,4 +1,4 @@
-"""Masking engine — the non-streaming mask/unmask core (§18, §19).
+"""masking engine — 非streamingのmask／unmask core（§18、§19）。
 
 Ties together normalization → detection → policy resolution → alias allocation →
 structure-preserving replacement, and the inverse restoration. Protocol/streaming
@@ -34,7 +34,7 @@ from securitymasker.tool_trust import ToolTrustPolicy
 
 REDACTION_MARK = "[REDACTED]"
 
-# In ``fail_mode: open`` only these fuzzy, best-effort detectors may be skipped on
+# ``fail_mode: open``でも障害時にskipできるのはbest-effortなfuzzy detectorだけ。
 # a runtime error; every other detector (dictionary, secrets, regex, formats, My
 # Number, and anything new) always fails closed so critical secrets never leak on
 # a detector fault (doc/06 P0-6, §26).
@@ -42,7 +42,7 @@ _FAIL_OPEN_ELIGIBLE = frozenset({"presidio", "jp_ner"})
 
 
 def iter_strings(node: Any) -> Iterator[str]:
-    """Yield every string leaf in a parsed JSON structure — dict keys included.
+    """parse済みJSON構造の全string leafを列挙する。dict keyも含む。
 
     Keys are yielded because a registered secret can be smuggled into a schema
     property name or other structural key, not only into a value (doc/06 P0-4).
@@ -67,7 +67,7 @@ class MaskResult:
 
 
 def _apply_replacements(text: str, spans: list[tuple[int, int, str]]) -> str:
-    """Rebuild ``text`` replacing each non-overlapping ``(start, end, repl)``."""
+    """重複しない各``(start, end, repl)``を置換して``text``を再構築する。"""
     spans = sorted(spans, key=lambda s: s[0])
     out: list[str] = []
     cursor = 0
@@ -81,7 +81,7 @@ def _apply_replacements(text: str, spans: list[tuple[int, int, str]]) -> str:
     return "".join(out)
 
 
-# Joins fuzzy-eligible spans for the single request-wide model pass. A blank line
+# request全体のmodel pass一回分としてfuzzy対象spanを結合する。
 # is a boundary no name or organisation crosses, so a detection that straddles one
 # is an artefact of joining rather than a real entity.
 _FUZZY_JOIN = "\n\n"
@@ -90,7 +90,7 @@ _FUZZY_JOIN = "\n\n"
 def _drop_inside_identifiers(
     found: list[DetectionResult], text: str
 ) -> list[DetectionResult]:
-    """Remove findings that are a proper substring of a structural identifier."""
+    """構造的identifierの真部分文字列になっているfindingを除く。"""
     if not found:
         return found
     spans = identifier_spans(text)
@@ -101,7 +101,7 @@ def _drop_inside_identifiers(
 
 
 def _is_fuzzy(detector: SensitiveDataDetector) -> bool:
-    """Whether ``detector`` is model-backed, and so scheduled request-wide.
+    """``detector``がmodel-backedでrequest全体にscheduleすべきかを返す。
 
     An explicit ``fuzzy`` attribute, not an inference from ``skip_code_contexts``:
     that flag is user-configurable and answers a different question (may this
@@ -114,7 +114,7 @@ def _is_fuzzy(detector: SensitiveDataDetector) -> bool:
 def _map_to_segments(
     det: DetectionResult, spans: Sequence[tuple[int, int, int]]
 ) -> list[DetectionResult]:
-    """Map a detection on the joined text back to original coordinates.
+    """結合text上のdetectionを原文座標へ戻す。
 
     Normally a detection sits inside one span and this is a subtraction. A
     detection that overlaps the join is clipped to each span it covers and emitted
@@ -149,10 +149,10 @@ class MaskingEngine:
         segment_contexts: bool = True,
         max_fuzzy_chars: int = 200_000,
     ) -> None:
-        # Ceiling on how much text one request may put through the model-backed
+        # 一requestがmodel-backed detectorへ渡せるtext量の上限。
         # detectors. Over it the request is REFUSED — never partially scanned,
         # which the caller could not distinguish from a clean result. It bounds
-        # VOLUME, not span count: the span-pass budget this replaced could be
+        # span数ではなくtext量を制限する。旧span-pass budgetは検出回避を許した。
         # defeated by chopping a request into more pieces (ADR-0011).
         self._max_fuzzy_chars = max_fuzzy_chars
         self._detector_timeout = detector_timeout
@@ -162,18 +162,18 @@ class MaskingEngine:
         self._fail_mode = fail_mode
         self.tool_trust = tool_trust if tool_trust is not None else ToolTrustPolicy()
         self.inject_alias_instruction = inject_alias_instruction
-        # Final-payload block-only guard inputs (doc/06 P0-4): registered secret
+        # 最終payloadのblock-only guard入力（doc/06 P0-4）。
         # literals (pre-normalized) and the deterministic detectors.
         self._registered_literals = tuple(
             lit for lit in (normalize_value(v, normalization) for v in registered_literals) if lit
         )
-        # Case-folded copies so a case variant of a registered value cannot slip
+        # 登録値の大文字小文字variantを逃さないためcase-fold済みcopyも保持する。
         # through the final guard in a field the adapter never masks (P0-4).
         self._registered_literals_ci = tuple(
             lit.casefold() for lit in self._registered_literals
         )
         self._leak_scanners = leak_scanners or []
-        # Header scanning uses a NARROWER set than the body: headers legitimately
+        # header scanはbodyより狭いdetector集合を使う。
         # carry IPs and hostnames (Host, X-Forwarded-For), so scanning them with the
         # full PII set would block ordinary traffic. doc/06 P0-4 scopes headers to
         # "registered secrets" — registered literals plus the secret patterns.
@@ -185,13 +185,12 @@ class MaskingEngine:
 
     @property
     def detectors(self) -> list[SensitiveDataDetector]:
-        """The active pipeline. Exposed so diagnostics can inspect what was built
-        instead of building a second copy (and loading the models twice)."""
+        """有効なpipeline。診断が二つ目を構築してmodelを二重loadせず検査できるよう公開する。"""
         return list(self._detectors)
 
     @staticmethod
     def _skips_context(detector: SensitiveDataDetector, context_kind: str) -> bool:
-        """Whether ``detector`` opts out of this context (§17, doc/06 P1-7).
+        """``detector``がこのcontextを対象外にするかを返す（§17、doc/06 P1-7）。
 
         Only FUZZY detectors may opt out, and only in code-like contexts, where a
         model that has learned "capitalised token = name" fires on identifiers.
@@ -210,7 +209,7 @@ class MaskingEngine:
         context_kind: str = "prose",
         issued_aliases: frozenset[str] = frozenset(),
     ) -> list[DetectionResult]:
-        """Detect over ``text``, segmenting mixed prose/code when asked to.
+        """必要に応じてprose／code混在textをsegment化して検出する。
 
         For a prose body the text is split into typed spans first (§17), so the
         detector policy can differ inside a fenced block or a diff while the
@@ -224,7 +223,7 @@ class MaskingEngine:
     async def _detect_segmented(
         self, text: str, issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
-        """Detect over typed spans without letting segmentation hide anything.
+        """segmentationで情報を隠さずtyped span上を検出する。
 
         Two passes with different shapes, because the two kinds of detector have
         different costs and different rules:
@@ -248,7 +247,7 @@ class MaskingEngine:
         for seg in segments:
             for det in await self._detect_one(seg.text, seg.kind, issued_aliases,
                                               deterministic_only=True):
-                # Shift spans back into the ORIGINAL text's coordinates so every
+                # 全後続処理が同じ座標系を使えるようspanを原文座標へ戻す。
                 # downstream consumer (replacement, leak scan) sees absolute offsets.
                 found.append(replace(det, start=det.start + seg.start,
                                      end=det.end + seg.start))
@@ -259,7 +258,7 @@ class MaskingEngine:
     async def _detect_fuzzy(
         self, segments: Sequence[Segment], issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
-        """Run the model-backed detectors once over the spans each may look at.
+        """各model-backed detectorを参照可能なspan全体へ一度だけ実行する。
 
         Whether a detector sees code-like spans is ITS setting, not this method's.
         Filtering code out here — before consulting `skip_code_contexts` — silently
@@ -270,7 +269,7 @@ class MaskingEngine:
         """
         fuzzy = [d for d in self._detectors if _is_fuzzy(d)]
         if not fuzzy:
-            # Nothing model-backed is enabled (the default). There is no work to
+            # model-backed detectorが無効な既定構成では処理不要。
             # bound, so max_fuzzy_chars must not reject the request either.
             return []
 
@@ -291,7 +290,7 @@ class MaskingEngine:
         detectors: Sequence[SensitiveDataDetector],
         issued_aliases: frozenset[str],
     ) -> list[DetectionResult]:
-        """Scan ``segments`` as one text, then map findings back to real offsets.
+        """``segments``を一textとしてscanし、findingを実offsetへ戻す。
 
         Joining with a blank line — a boundary no name or organisation crosses —
         lets the model read each span in the context of its neighbours, and keeps
@@ -312,7 +311,7 @@ class MaskingEngine:
         joined = _FUZZY_JOIN.join(joined_parts)
 
         if len(joined) > self._max_fuzzy_chars:
-            # Fail closed. Silently scanning a prefix is what the old budget did,
+            # prefixだけを黙ってscanせずfail-closedにする。
             # and it is indistinguishable from a clean result — the caller would
             # believe the text had been checked.
             raise DetectionError(
@@ -340,7 +339,7 @@ class MaskingEngine:
                 continue     # scanned once, request-wide, by _detect_fuzzy
             try:
                 if self._detector_timeout > 0:
-                    # Bound how long any one detector may take. This does NOT stop
+                    # detector単位の待ち時間を制限するが、実処理自体は停止しない。
                     # a runaway detector — neither `re` nor CPU-bound model code
                     # can be interrupted — it stops us WAITING, so the request
                     # fails closed instead of hanging. Runaway work is contained
@@ -412,7 +411,7 @@ class MaskingEngine:
         resolved: list[DetectionResult],
         request_id: str | None,
     ) -> None:
-        """Pre-send re-scan (§18 step 11): no masked original may remain.
+        """送信前の再scan（§18 step 11）：マスク対象の原文を残さない。
 
         Deduplicate the originals first so a value repeated thousands of times in a
         large input is checked once, keeping this linear in the input size (§32).
@@ -433,7 +432,7 @@ class MaskingEngine:
         session: MaskingSession | None = None,
         request_id: str | None = None,
     ) -> None:
-        """Final block-only leakage guard over the WHOLE masked payload (doc/06 P0-4).
+        """マスク済みpayload全体に対する最終block-only leakage guard（doc/06 P0-4）。
 
         The per-text ``_verify_no_leak`` only covers strings the protocol adapter
         routed through masking; it cannot see a registered secret smuggled into an
@@ -453,7 +452,7 @@ class MaskingEngine:
         session: MaskingSession | None = None,
         request_id: str | None = None,
     ) -> None:
-        """Block if a *registered* secret appears in non-auth headers (doc/06 P0-4).
+        """認証以外のheaderに登録済みsecretがあればblockする（doc/06 P0-4）。
 
         Deliberately narrower than the body guard: headers legitimately carry IPs
         and hostnames, so only registered dictionary/regex values and secret
@@ -471,7 +470,7 @@ class MaskingEngine:
     ) -> None:
         if not self._registered_literals and not scanners:
             return
-        # Our own replacements must not self-trigger the scanners (an email-shaped
+        # email形式aliasなど自前の置換値でscannerをself-triggerさせない。
         # alias, a doc-range IPv4, a digit-preserving numeric alias ...).
         issued = frozenset(session.mappings_by_alias) if session is not None else frozenset()
         for text in iter_strings(data):
@@ -494,7 +493,7 @@ class MaskingEngine:
                     if is_guarded(hit.detector) and inside_identifier(
                         spans, hit.start, hit.end
                     ):
-                        # Digits that happen to sit inside a UUID. This gate walks
+                        # UUID内部の数字など、構造的identifier内の偶然の一致を除く。
                         # EVERY string, including the client's own session and
                         # thread ids, so without this a request is refused whenever
                         # a random identifier happens to look like a phone number.
@@ -502,7 +501,7 @@ class MaskingEngine:
                     raise LeakageError(entity_type=hit.entity_type, request_id=request_id)
 
     def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
-        """Alias→original map for THIS session's ``literal`` aliases only (§19).
+        """このsessionの``literal`` aliasだけを対象にするalias→original map（§19）。
 
         ``env_reference`` aliases stay as ``${...}`` (real value never returned);
         ``redacted`` values are irreversible. Decrypts each mapping once.
@@ -517,15 +516,15 @@ class MaskingEngine:
         return out
 
     def make_restorer(self, session: MaskingSession) -> Callable[[str], str]:
-        """Return a sync ``str→str`` that restores this session's literal aliases."""
+        """このsessionのliteral aliasを復元する同期``str→str``を返す。"""
         restorations = self.literal_restorations(session)
         if not restorations:
             return lambda text: text
-        # Longest alias first so a shorter alias that prefixes a longer one can't
+        # 長いaliasから処理し、prefixとなる短いaliasの先取りを防ぐ。
         # partially match (collision-lengthened tokens, §7).
         rx = re.compile("|".join(re.escape(a) for a in sorted(restorations, key=len, reverse=True)))
         return lambda text: rx.sub(lambda m: restorations[m.group(0)], text)
 
     async def unmask_text(self, session: MaskingSession, text: str) -> str:
-        """Restore only aliases created in THIS session with ``literal`` policy (§19)."""
+        """このsessionが``literal`` policyで作成したaliasだけを復元する（§19）。"""
         return self.make_restorer(session)(text)

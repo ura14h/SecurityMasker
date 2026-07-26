@@ -1,4 +1,4 @@
-"""SecurityMasker CLI (argparse; ADR-0003).
+"""SecurityMasker CLI（argparse、ADR-0003）。
 
 Never prints original sensitive values by default (§12): ``entities test`` shows the
 MASKED text and per-entity counts, not the originals. Subcommands:
@@ -55,7 +55,7 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
 def cmd_entities_list(args: argparse.Namespace) -> int:
     config = _load(args.config)
     for e in config.entities:
-        # Show variant COUNT, never the values themselves (§12).
+        # 値自体ではなくvariant件数だけを表示する（§12）。
         print(f"{e.id}\t{e.type}\t{e.replacement_profile}\t{e.restore_policy}\tvariants={len(e.resolved_values())}")
     for p in config.patterns:
         print(f"{p.id}\t{p.type}\t{p.replacement_profile}\t{p.restore_policy}\t[regex]")
@@ -84,18 +84,18 @@ def cmd_entities_test(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Run every runtime check and exit non-zero if any FAILED (doc/06 P2-1)."""
+    """全runtime checkを実行し、一つでもFAILなら非0で終了する（doc/06 P2-1）。"""
     from securitymasker import doctor as checks
 
     gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
     config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
-    # An explicitly requested gateway means the operator expects one to be there,
+    # 明示指定したGatewayには到達できることをoperatorが期待している。
     # so its absence is a failure rather than a pre-flight note.
     require_ready = args.require_ready or args.gateway is not None
     results, built = checks.run_checks_with_engine(
         config_path=config_path, environ=dict(os.environ), gateway=gateway,
         require_ready=require_ready)
-    # Probing the store needs an event loop and a built runtime, so it runs here
+    # store probeにはevent loopと構築済みruntimeが必要なため、ここで実行する。
     # rather than inside the pure check sequence.
     if config_path:
         try:
@@ -103,12 +103,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
             # `--config` must drive the probe too, not just the pure checks.
             os.environ["SECURITYMASKER_CONFIG"] = config_path
-            # Hand over the engine/config the checks already built: constructing
+            # checkが構築済みのengine／configを渡し、二重buildを防ぐ。
             # them again would load the NER model a second time.
             runtime = GatewayRuntime.from_env(engine=built.engine, config=built.config)
             results.append(asyncio.run(checks.check_store_probe(runtime.store)))
         except (SecurityMaskerError, OSError) as exc:
-            # Any operator-facing failure (bad config, unreadable path, unreachable
+            # 不正config、読取不能path、到達不能serviceなどoperator向け失敗を安全に報告する。
             # store) must surface as a check result, never a traceback.
             detail = getattr(exc, "strerror", None) or str(exc)
             results.append(checks.CheckResult(
@@ -119,7 +119,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Launch a tool configured to route through the proxy, or launch nothing (§7).
+    """proxy経由に設定したtoolだけを起動し、設定不能なら何も起動しない（§7）。
 
     Fail-closed: if the gateway is not ready, or we cannot route this particular
     tool, the child process is never started — reporting success while the tool
@@ -161,7 +161,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(describe_manual_setup(gateway), file=sys.stderr)
         return 3
 
-    # Log the executable NAME, a fingerprint of the session id, and the route —
+    # executable名、session ID fingerprint、routeだけをlogへ記録する。
     # never the command line (it routinely carries tokens as flags), the raw
     # session id, or any credential (§25).
     digest = hashlib.sha256(session_id.encode()).hexdigest()[:12]
@@ -177,7 +177,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_models_fetch(args: argparse.Namespace) -> int:
-    """Download and digest-verify a pinned NER model (ADR-0009).
+    """固定したNER modelを取得してdigestを検証する（ADR-0009）。
 
     Deliberately a separate step from serving: the runtime loads models offline,
     so nothing a user types can ever trigger a download.
@@ -186,7 +186,7 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
 
     model, revision = args.model, args.revision
     if not model or not revision:
-        # Fall back to the configured pin so the operator does not retype it.
+        # operatorの再入力を避けるため設定済みpinへfallbackする。
         if not args.config:
             print("error: give --model/--revision, or --config to use its ner pin",
                   file=sys.stderr)
@@ -207,7 +207,7 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
 
 
 def cmd_gateway(args: argparse.Namespace) -> int:
-    """Launch the SecurityMasker proxy (ADR-0006). Uses SECURITYMASKER_CONFIG."""
+    """`SECURITYMASKER_CONFIG`を使ってSecurityMasker proxyを起動する（ADR-0006）。"""
     import uvicorn
 
     from securitymasker.gateway.app import create_app
@@ -224,7 +224,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
         from securitymasker.gateway.identity import isolates_callers
 
         acknowledged = os.environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
-        # Any caller-isolating mode counts; checking only the legacy name meant
+        # legacy名だけでなくcallerを分離する全modeを対象とする。
         # `tenant`/`tenant_user` deployments got the single-tenant warning.
         multitenant = isolates_callers(os.environ.get("SECURITYMASKER_MODE", "local"))
         if not acknowledged:
@@ -256,7 +256,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
 
 def cmd_sessions(args: argparse.Namespace) -> int:
-    # Honest non-zero exit: this command is not implemented (doc/06 P2-1). The
+    # 未実装commandなので正直に非0終了する（doc/06 P2-1）。
     # in-memory store lives inside the gateway process and is not reachable here;
     # a CLI that manages sessions requires the shared Redis store to be wired to
     # this process too. Do NOT exit 0 as if it succeeded.

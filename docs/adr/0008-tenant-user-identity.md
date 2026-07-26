@@ -1,118 +1,99 @@
-# ADR-0008 — Caller identity and the tenant/user isolation boundary
+# ADR-0008 — caller identityとtenant／user分離境界
 
-- Status: Accepted
-- Date: 2026-07-25
-- Relates to: ADR-0005 (per-session keys), ADR-0006 (purpose-built proxy), doc/06 P0-9
+- 状態：採用
+- 日付：2026-07-25
+- 関連：ADR-0005（sessionごとの鍵）、ADR-0006（専用proxy）、doc/06 P0-9
 
-## Context
+## 背景
 
-Alias tables are keyed by session. Whoever can name a session id can read and
-extend that session's mappings, so "who is asking" *is* the confidentiality
-boundary.
+alias table は session を key とします。session ID を指定できる主体は、その session の
+mapping を読み書きできるため、「誰が要求しているか」が機密性の境界です。
 
-Until now the proxy had two modes: `local` (one implicit tenant) and
-`multitenant`, where the tenant came from a header signed with a shared secret.
-An audit correctly found two problems:
+従来は `local`（暗黙の単一 tenant）と、共有 secret で署名した header から tenant を
+得る `multitenant` の二 mode でした。監査で次の問題が見つかりました。
 
-1. the name `multitenant` implied more isolation than it delivered — the HMAC
-   covered only the tenant id, so two users **inside** one tenant shared an alias
-   table and either could present the other's session id;
-2. signing a single field leaves the composition unbound. Once a user id is added,
-   signing tenant and user separately would let a caller pair tenant A's proof
-   with user B's.
+1. `multitenant` という名前が実際以上の分離を示していた。HMAC は tenant ID だけを
+   対象とし、同一 tenant 内の二 user は alias table を共有して互いの session ID を
+   提示できた。
+2. 一 field だけの署名では構成全体を拘束できない。tenant と user を別々に署名すると、
+   tenant A の proof と user B を組み合わせられる。
 
-## Decision
+## 決定
 
-**Three explicit modes**, named for exactly what they isolate:
+**分離対象を名前で明示する三mode**を設けます。
 
-| Mode | Isolates | Intended for |
+| mode | 分離対象 | 用途 |
 |---|---|---|
-| `local` | nothing (single implicit caller) | one workstation, one user |
-| `tenant` | tenant | one customer per tenant |
-| `tenant_user` | tenant **and** user | mutually distrusting users in one tenant |
+| `local` | なし（暗黙の単一caller） | 一台のworkstation、一人のuser |
+| `tenant` | tenant | tenantごとに一customer |
+| `tenant_user` | tenantとuser | 同一tenant内の相互に信頼しないuser |
 
-`multitenant` still resolves to `tenant`, so existing deployments keep working and
-keep exactly the isolation they had — no silent upgrade, no silent downgrade.
+`multitenant` は引き続き `tenant` として解決します。既存 deployment は従来どおりの
+分離で動き、黙った upgrade／downgrade は行いません。
 
-**A versioned, jointly-signed assertion.** The trusted authenticator computes
-`HMAC-SHA256(secret, canonical_payload)` where the payload is
+**version付きで複数fieldを一体署名したassertion**を使います。信頼済み
+authenticator は、次の payload に
+`HMAC-SHA256(secret, canonical_payload)` を計算します。
 
+```text
+"v2" ‖ tenant ‖ user ‖ timestamp        （各componentをlength-prefixし、␟で結合）
 ```
-"v2" ‖ tenant ‖ user ‖ timestamp        (each component length-prefixed, ␟-joined)
-```
 
-- **Joint** signing binds the fields: no field can be swapped or recombined.
-- **Length-prefixed** encoding removes delimiter ambiguity, so `("a", "b:c")` and
-  `("a:b", "c")` can never produce the same payload.
-- **Versioned**: a future format change cannot be replayed against this one.
-- Verified with `hmac.compare_digest` — a timing oracle would leak the expected
-  proof byte by byte.
-- A **mandatory** timestamp is checked against a configurable skew
-  (`SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS`, default 300s), bounding replay. It was
-  optional at first, which meant a captured proof stayed valid for the lifetime of
-  the secret — so it is now required, and omitting it takes an explicit downgrade
-  (`SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS=1`).
-- The timestamp must be **decimal integer seconds since the epoch**. Fixing the
-  form matters as much as checking the value: `float()` accepts `nan`, and every
-  comparison against NaN is False, so a naive `abs(now - ts) > skew` check
-  *passes* for `nan`. That hole was real and is now closed by validating the form
-  before the value. `1.7e9`, `0x64`, `12.5` and whitespace-padded values are
-  likewise refused rather than silently coerced.
+- 一体署名により、field の交換や再結合を防ぎます。
+- length-prefix encoding により delimiter の曖昧性をなくし、`("a", "b:c")` と
+  `("a:b", "c")` が同じ payload になることを防ぎます。
+- version を含め、将来の形式を現在の verifier に replay できないようにします。
+- `hmac.compare_digest` で検証し、timing oracle による byte 単位の漏えいを防ぎます。
+- replay 期間を制限するため timestamp は**必須**とし、許容差は
+  `SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS`（既定300秒）で設定します。省略を許すには
+  明示的な downgrade `SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS=1` が必要です。
+- timestamp は epoch からの秒を表す**10進整数**だけを受理します。`float()` が受理する
+  `nan` は比較をすり抜けるため、値の比較前に形式を検証します。`1.7e9`、`0x64`、
+  `12.5`、前後空白付きの値も coercion せず拒否します。
 
-**The boundary is enforced in depth**, not at one checkpoint:
+境界は一か所ではなく**多層で強制**します。
 
-- store keys use the length-prefixed identity namespace, so the same session id
-  under different identities is a different key;
-- response bindings (`previous_response_id` continuity) use the same namespace, so
-  one user cannot resume another's conversation;
-- both stores additionally verify the session's recorded `tenant_id`/`user_id` on
-  read and raise rather than return a mismatched session.
+- store key は length-prefix した identity namespace を使い、同じ session ID でも
+  identity が違えば別 key にする。
+- `previous_response_id` continuity の response binding も同じ namespace を使い、
+  別 user の conversation 再開を防ぐ。
+- 両 store は read 時に session 内の `tenant_id`／`user_id` を照合し、不一致なら
+  session を返さず例外にする。
 
-**Fail-closed everywhere.** A non-`local` mode without a configured secret fails at
-startup. A missing, forged, recombined, or expired assertion is a 403 with nothing
-forwarded. Identity errors never echo the proof, the claimed identity, or the
-secret; logs use a truncated SHA-256 fingerprint of the namespace.
+全経路で fail-closed とします。非 `local` mode で secret が未設定なら起動に失敗し、
+assertion の欠落・偽造・再結合・期限切れは何も転送せず403にします。identity error
+には proof、主張された identity、secret を含めません。log には namespace の
+truncated SHA-256 fingerprint だけを記録します。
 
-## Alternatives considered
+## 検討した代替案
 
-- **JWT (RS256/EdDSA).** Standard, supports key rotation and expiry natively, and
-  many authenticators already mint them. Rejected *for now* because it needs a JWT
-  library and a key-distribution story for a single header we fully control; the
-  canonical-payload HMAC gives the same binding with no new dependency. If a
-  deployment already issues JWTs, adding a verifier is the natural next step and
-  the `Identity` interface is where it plugs in.
-- **mTLS.** Strongest transport-level identity, and it authenticates the *channel*
-  rather than a header. Rejected as the baseline because it pushes certificate
-  issuance and rotation onto every client (Codex and Claude Code do not offer it
-  per-process), and the proxy would still need a header to distinguish users
-  behind one client certificate.
-- **Trusted reverse proxy asserting bare headers.** Simplest, and common in
-  practice. Rejected as the default because it is indistinguishable, from our
-  side, from a client setting the header itself: the security depends entirely on
-  a network invariant we cannot verify. The signed assertion makes the trust
-  explicit and detectable, and a reverse proxy can still be the thing that signs.
-- **Per-user secrets instead of one shared secret.** Better blast radius, but it
-  needs a secret-distribution mechanism we do not have. Recorded as a possible
-  evolution.
+- **JWT（RS256／EdDSA）**：標準化され、key rotation と expiry を持ち、多くの
+  authenticator が発行できます。ただし、完全に制御できる一 header のために JWT
+  library と key distribution を追加する必要があるため現時点では不採用。既存
+  deployment が JWT を発行する場合は `Identity` interface に verifier を追加できます。
+- **mTLS**：header ではなく channel を認証する強い方式です。一方、すべての client に
+  certificate 発行・rotation を要求し、Codex／Claude Code は process 単位で対応
+  しません。同じ client certificate 配下の user 識別には結局 header が必要です。
+- **信頼済みreverse proxyのbare header**：単純ですが、client 自身が設定した header と
+  SecurityMasker 側で区別できず、検証不能な network invariant に依存します。署名
+  assertion は信頼を明示・検出可能にし、reverse proxy を signer として使えます。
+- **userごとのsecret**：侵害範囲を狭めますが、未保有の secret distribution 機構が
+  必要です。将来案として残します。
 
-## Consequences
+## 影響
 
-- Deployments wanting user isolation must set `SECURITYMASKER_MODE=tenant_user`
-  and have their authenticator send `X-SecurityMasker-User-ID` plus an assertion
-  over both fields. There is no way to get user isolation implicitly — which is
-  the point.
-- The shared secret is a symmetric credential: anyone holding it can mint any
-  identity. It must live with the authenticator only, and rotating it invalidates
-  outstanding proofs immediately (acceptable: they are per-request).
-- Timestamps are required, so an authenticator that does not send one must be
-  updated (or run with the explicit `SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS=1`
-  downgrade, which doctor should flag). This is a deliberate compatibility break:
-  the alternative was leaving every deployment replayable by default.
+- user 分離を必要とする deployment は `SECURITYMASKER_MODE=tenant_user` を設定し、
+  authenticator が `X-SecurityMasker-User-ID` と両 field の assertion を送ります。
+  user 分離を暗黙には有効化しません。
+- 共有 secret は対称 credential であり、保持者は任意 identity を発行できます。
+  authenticator だけに保持し、rotation 時は outstanding proof を即時無効化します。
+- timestamp を送らない authenticator は更新が必要です。明示的 downgrade を選ぶ場合、
+  `doctor` が警告します。replay 可能な既定動作を残さないための意図的な互換性変更です。
 
-## Residual risk
+## 残存リスク
 
-- The proxy trusts whatever the authenticator asserts. A compromised
-  authenticator can impersonate any caller — unavoidable for any assertion-based
-  scheme, and the reason mTLS remains on the table for higher-assurance setups.
-- `tenant` mode remains *not* safe for mutually distrusting users in one tenant.
-  The mode name says so, the docs say so, and `tenant_user` exists for that case.
+- proxy は authenticator の assertion を信頼します。侵害された authenticator は任意
+  caller を詐称できます。assertion 方式の原理的限界であり、高保証環境では mTLS を
+  引き続き検討します。
+- `tenant` mode は同一 tenant 内の相互に信頼しない user には安全ではありません。
+  その用途には `tenant_user` を使います。

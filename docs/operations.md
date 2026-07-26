@@ -1,9 +1,9 @@
-# Operations
+# 運用
 
-The proxy is a purpose-built transparent masking gateway (Starlette+httpx, no
-LiteLLM — [ADR-0006](adr/0006-drop-litellm-purpose-built-proxy.md)).
+proxy は Starlette + httpx で実装した専用の透過マスキング Gateway です。LiteLLM は
+使用しません（[ADR-0006](adr/0006-drop-litellm-purpose-built-proxy.md)）。
 
-## Run locally (pip + venv)
+## ローカル実行（pip + venv）
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
@@ -12,149 +12,145 @@ export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
 securitymasker gateway --port 4000
 ```
 
-`SECURITYMASKER_CONFIG` points at your dictionary YAML and is **required** — the
-gateway fails to start without it (fail-closed, doc/06 P0-1). A masking-free
-development mode exists only behind the explicit `SECURITYMASKER_DEV_TRANSPARENT=1`
-flag and must never front a real provider. Upstreams are configurable:
-`SECURITYMASKER_OPENAI_UPSTREAM` (default `https://chatgpt.com/backend-api/codex`),
-`SECURITYMASKER_ANTHROPIC_UPSTREAM` (default `https://api.anthropic.com`).
+`SECURITYMASKER_CONFIG` は dictionary YAML を指す**必須**設定です。未設定なら Gateway
+は fail-closed で起動に失敗します（doc/06 P0-1）。マスクなしの開発 mode は
+`SECURITYMASKER_DEV_TRANSPARENT=1` を明示した場合だけ有効で、実 provider の前段では
+使用禁止です。upstream は `SECURITYMASKER_OPENAI_UPSTREAM`（既定値
+`https://chatgpt.com/backend-api/codex`）と `SECURITYMASKER_ANTHROPIC_UPSTREAM`
+（既定値 `https://api.anthropic.com`）で設定します。
 
-## Run with Docker (self-contained demo)
+## Docker実行（自己完結したdemo）
 
 ```bash
 docker compose up --build
-# then, in another shell (Responses API):
+# 別のshellから実行（Responses API）：
 curl http://127.0.0.1:4000/responses \
   -H 'Content-Type: application/json' -H 'X-SecurityMasker-Session-ID: demo' \
   -d '{"model":"m","input":"担当は山田太郎、株式会社極秘技研の件です"}'
 ```
 
-The compose stack routes the gateway to an in-compose mock upstream (no real keys).
+Compose stack は Gateway を Compose 内の mock upstream へ接続するため、実 key は
+不要です。
 
-To use the shared Redis session store you must start Redis **and** switch the
-gateway to it — starting the container alone leaves the gateway on its in-process
-store:
+共有 Redis session store を使うには Redis を起動するだけでなく、Gateway の store
+も切り替える必要があります。
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.redis.yml --profile redis up
 ```
 
-A shell prefix (`SECURITYMASKER_STORE=redis docker compose ...`) does **not** do
-this. Compose reads such a variable for substitution in the YAML, but it does not
-pass it into a container unless the file says so — so that form starts Redis and
-leaves the gateway on its in-process store, silently. The overlay is what sets
-both `SECURITYMASKER_STORE` and `SECURITYMASKER_REDIS_URL` on the service.
+shell prefix の `SECURITYMASKER_STORE=redis docker compose ...` では切り替わりません。
+Compose は YAML の変数展開には利用しますが、service 定義にない変数を container へ
+渡さないためです。その方法では Redis が起動しても Gateway は黙って in-process
+store のままです。overlay が `SECURITYMASKER_STORE` と
+`SECURITYMASKER_REDIS_URL` の両方を service に設定します。
 
-Compose supplies a demo `SECURITYMASKER_MASTER_KEY` (32 bytes, base64) so the
-stack starts; generate your own for anything real and inject it from a secret
-store — the gateway fails closed if it is missing or not 32 bytes:
+Compose には起動確認用の `SECURITYMASKER_MASTER_KEY`（base64 32 bytes）が含まれます。
+実運用では独自に生成して secret store から注入してください。欠落または32 bytes
+でない場合、Gateway は fail-closed で起動しません。
 
 ```bash
 openssl rand -base64 32
 ```
 
-## Codex / Claude Code
+## Codex／Claude Code
 
-- **Codex**: add a securitymasker provider to `~/.codex/config.toml` with
-  `base_url = "http://127.0.0.1:4000"` (no `/v1`), `wire_api = "responses"`,
-  `requires_openai_auth = true` (forwards the ChatGPT OAuth token — no API key),
-  and map `X-SecurityMasker-Session-ID` from `SECURITYMASKER_SESSION_ID`. Generate
-  the block: `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`.
-- **Claude Code**: `ANTHROPIC_BASE_URL=http://127.0.0.1:4000` + the session header.
-- Wrapper: `securitymasker run codex` / `securitymasker run claude` sets up the
-  proxy route or refuses to start the tool: it requires `/ready` to report
-  `ready: true`, sets `ANTHROPIC_BASE_URL` + session header for Claude Code and
-  per-process `-c` overrides for Codex (never editing `~/.codex/config.toml`), and
-  refuses outright if `ANTHROPIC_API_URL`/`OPENAI_BASE_URL`/`OPENAI_API_BASE` would
-  bypass it or if the tool is one it cannot route. It generates a session UUID and
-  launches the tool.
+- **Codex**：`~/.codex/config.toml` に SecurityMasker provider を追加します。
+  `base_url = "http://127.0.0.1:4000"`（`/v1` なし）、
+  `wire_api = "responses"`、`requires_openai_auth = true` とし、
+  `X-SecurityMasker-Session-ID` を `SECURITYMASKER_SESSION_ID` から設定します。
+  ChatGPT OAuth token は透過し、API key は保存しません。設定 block は次で生成できます。
+  `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`
+- **Claude Code**：`ANTHROPIC_BASE_URL=http://127.0.0.1:4000` と session header を
+  設定します。
+- **wrapper**：`securitymasker run codex`／`securitymasker run claude` は proxy
+  route を設定できなければ tool を起動しません。`/ready` の `ready: true` を要求し、
+  Claude Code には `ANTHROPIC_BASE_URL` と session header、Codex には process 単位の
+  `-c` override を設定します。`~/.codex/config.toml` は変更しません。
+  `ANTHROPIC_API_URL`／`OPENAI_BASE_URL`／`OPENAI_API_BASE` によって迂回される場合や、
+  routing 不能な tool は拒否します。session UUID は wrapper が生成します。
 
-  **Scope of that claim.** Unit tests cover the generated settings, the TOML
-  validity of the overrides, the fact that the user's real config is untouched,
-  and the refusal paths. On top of that, `tests/integration/test_real_cli_e2e.py`
-  launches the **real** `codex` and `claude` binaries through `run` against a mock
-  upstream and asserts that only aliases leave the process, that the session
-  header actually arrives, and that no `config.toml` is written into the tool's
-  home. It is opt-in because it spawns real processes:
+  **保証範囲**：unit test は生成設定、override の TOML 妥当性、利用者の実設定を
+  変更しないこと、拒否経路を検証します。さらに
+  `tests/integration/test_real_cli_e2e.py` は、**実際の** `codex`／`claude` binary を
+  `run` 経由で local mock upstream に接続し、process 外へ alias だけが出ること、
+  session header が到着すること、tool の home に `config.toml` を書かないことを
+  検証します。実 process を起動するため opt-in です。
 
 ```bash
 SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
 ```
 
-  It refuses to run without an egress boundary, and checks rather than asks.
-  Pointing a CLI at a local URL is a routing choice, not containment: both tools
-  make update, analytics and crash-reporting requests that never go through the
-  configured provider, so a routing mistake would reach the internet instead of
-  failing. Before anything starts, the suite opens a TCP connection to a routable
-  address; if that succeeds it skips, because this process — and therefore the
-  CLIs — can reach the internet.
+  この E2E は egress boundary を要求し、自己検査します。local URL を指定するだけでは
+  routing は決まっても隔離されません。両 CLI は provider 設定を通らない update、
+  analytics、crash reporting 通信を行うため、routing mistake が fail-closed にならず
+  internet へ到達し得ます。suite は開始前に routable address への TCP 接続を試し、
+  成功した場合は process と CLI が internet に到達可能として skip します。
 
-  To actually run it, put the whole stack in one network namespace (Linux):
+  実行時は stack 全体を同じ Linux network namespace に入れます。
 
 ```bash
 ./devtools/run_cli_e2e.sh
 ```
 
-  or a container with no network at all, using an image that has the CLIs
-  installed:
+  または CLI を導入した image を network なしで実行します。
 
 ```bash
 docker run --rm --network none -v "$PWD:/w" -w /w <image> devtools/run_cli_e2e.sh
 ```
 
-  Isolating only the CLI does not work: a namespace has its own loopback, so the
-  CLI could not reach the gateway. CI runs this and treats a skip as a failure.
+  CLI だけを隔離すると namespace 固有の loopback により Gateway へ到達できません。
+  CI はこの E2E を実行し、skip を失敗として扱います。
 
-  What remains uncovered is the provider itself: the E2E upstream is a local mock,
-  deliberately, so nothing here says how a real provider behaves.
-- The proxy passes the client's own credentials through and never stores/logs them (§25).
+  実 provider の挙動は保証範囲外です。E2E upstream は意図的に local mock とし、
+  実 provider へは送信しません。
+- proxy は client 自身の資格情報を透過し、保存もログ記録もしません（§25）。
 
 ## CLI
 
 ```bash
-securitymasker gateway --port 4000 --config <dict.yaml>   # run the proxy
+securitymasker gateway --port 4000 --config <dict.yaml>   # proxyを起動
 securitymasker config validate --config <dict.yaml>
-securitymasker entities list    --config <dict.yaml>   # counts only, no values
+securitymasker entities list    --config <dict.yaml>      # 件数だけを表示し、値は表示しない
 securitymasker entities test "<text>" --config <dict.yaml>
 securitymasker doctor --config <dict.yaml>
-securitymasker run codex                               # launch under a session
+securitymasker run codex                                    # session内で起動
 ```
 
-The CLI never prints original sensitive values (§12).
+CLI は元の機密値を表示しません（§12）。
 
-## Sessions
+## session
 
-Idle TTL (default 4h) and absolute TTL (default 24h) are configurable in the
-dictionary `defaults`. In-memory sessions live in the gateway process; for
-multi-worker deployments use the Redis store with `SECURITYMASKER_MASTER_KEY`
-(32 bytes, base64).
+idle TTL（既定4時間）と absolute TTL（既定24時間）は dictionary の `defaults` で
+設定します。in-memory session は Gateway process 内に存在します。multi-worker
+構成では `SECURITYMASKER_MASTER_KEY`（base64 32 bytes）を設定した Redis store を
+使用してください。
 
-## Observability
+## 可観測性
 
-Structured JSON logs and in-process counters (`securitymasker.metrics`) expose only
-safe fields (§25). The proxy never logs credentials or original values; keep
-external log sinks off unless verified.
+structured JSON log と process 内 counter（`securitymasker.metrics`）が公開するのは
+安全な field だけです（§25）。proxy は資格情報と元の値をログに残しません。安全性を
+検証できるまで外部 log sink を接続しないでください。
 
-## Tests / CI
+## test／CI
 
 ```bash
-pytest tests/unit tests/evaluation -q                       # fast
-SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q  # proxy + mock
-python -m tests.evaluation.benchmark                        # latency benchmark
+pytest tests/unit tests/evaluation -q                            # 高速test
+SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # proxy + mock
+python -m tests.evaluation.benchmark                             # latency benchmark
 ```
 
-CI (`.github/workflows/ci.yml`) runs ruff, mypy --strict, the test suites, and the
-live gateway integration test.
+CI（`.github/workflows/ci.yml`）は ruff、mypy `--strict`、test suite、live Gateway
+integration test を実行します。
 
+## 固定したbase imageの更新
 
-## Updating pinned base images
+base image は tag だけでなく**digest**で固定します。`python:3.12-slim` と
+`redis:7-alpine` は継続的に再公開されるため、tag だけでは同じ commit から異なる
+image が作られます。`tests/unit/test_supply_chain.py` は digest 固定が外れた場合に
+失敗します。
 
-Base images are pinned by **digest**, not only by tag: `python:3.12-slim` and
-`redis:7-alpine` are republished continuously, so a tag-only reference means two
-builds of the same commit can contain different bases. `tests/unit/test_supply_chain.py`
-fails if any image loses its digest, so this cannot silently regress.
-
-To refresh a pin (do this deliberately — for a CVE fix, or on a routine cadence):
+CVE 対応または定期更新として意図的に固定値を更新する場合：
 
 ```bash
 IMAGE=python TAG=3.12-slim
@@ -164,50 +160,45 @@ curl -sI -H "Authorization: Bearer $TOKEN" \
   "https://registry-1.docker.io/v2/library/$IMAGE/manifests/$TAG" | grep -i docker-content-digest
 ```
 
-Put the result in `Dockerfile` / `docker-compose.yml` as `tag@sha256:...`, keeping
-the tag for readability. Use the **index** digest shown above (not a
-per-architecture manifest digest) so the pin resolves on both arm64 and amd64.
-Then rebuild and re-run the suite.
+結果を `Dockerfile`／`docker-compose.yml` に `tag@sha256:...` として記載し、
+可読性のため tag も残します。arm64 と amd64 の両方で解決できるよう、architecture
+固有 manifest ではなく上記の **index digest** を使います。その後 image を再 build
+して test suite を実行します。
 
-**Vulnerability response.** A pinned digest does not become safe by being pinned —
-it freezes a known state, including known CVEs. Re-pin when the upstream image
-publishes a security update, and scan the built image (for example
-`docker scout cves` or `trivy image`) before promoting it. Pinning gives you
-reproducibility and a defined thing to scan; it is not a substitute for scanning.
+**脆弱性対応**：digest を固定しても安全になるわけではなく、既知 CVE を含む状態も
+固定します。upstream image の security update 時に再固定し、昇格前に
+`docker scout cves` や `trivy image` などで build 済み image を scan してください。
+固定は再現性と scan 対象を与えるものであり、scan の代替ではありません。
 
-### Supply-chain status, honestly
+### supply chainの現状
 
-| Control | State |
+| control | 状態 |
 |---|---|
-| Base image digest pinning | **done** (Dockerfile, compose, enforced by a test) |
-| Runtime dependency pinning | **done** (`requirements.lock`, installed with `--no-deps`) |
-| Dev/CI dependency pinning | **done** (`requirements-dev.lock`, a superset of runtime) |
-| Python package hash verification | **not implemented** — the locks pin versions, not hashes. `pip install --require-hashes` needs a hash-bearing lock; a follow-up. |
-| Image signing / provenance attestation | **not implemented** — no cosign signature or SLSA provenance is produced. |
-| SBOM generation | **not implemented** — no SBOM is emitted at build time. |
-| Vulnerability scanning in CI | **not implemented** — scanning is a manual step today. |
+| base image の digest 固定 | **完了**（Dockerfile、Compose、test で強制） |
+| runtime dependency の固定 | **完了**（`requirements.lock`、`--no-deps` で導入） |
+| dev／CI dependency の固定 | **完了**（runtime を包含する `requirements-dev.lock`） |
+| Python package の hash 検証 | **未実装** — lock は version だけを固定。`pip install --require-hashes` には hash 付き lock が必要 |
+| image signing／provenance attestation | **未実装** — cosign signature と SLSA provenance を生成していない |
+| SBOM 生成 | **未実装** — build 時に SBOM を出力していない |
+| CI の脆弱性 scan | **未実装** — 現在は手動 |
 
-The four "not implemented" rows are real residual risk, not oversights being
-papered over: a pinned digest tells you *what* you built, not that it is free of
-known vulnerabilities, and nothing here proves the image you run is the image this
-repository built.
+4件の「未実装」は実際の残存リスクです。digest は build 対象を特定するだけで、
+既知の脆弱性がないことも、実行中 image がこの repository の build 成果物であることも
+証明しません。
 
-
-## Diagnosing a deployment
+## deploymentの診断
 
 ```bash
-securitymasker doctor --config <dictionary.yaml>          # human-readable
-securitymasker doctor --config <dictionary.yaml> --json   # for monitoring
+securitymasker doctor --config <dictionary.yaml>          # 人間向け
+securitymasker doctor --config <dictionary.yaml> --json   # monitoring向け
 ```
 
-Exits non-zero if any check FAILED. Checks cover Python and dependency versions,
-config load + engine build, every `value_from_env`, the detector pipeline,
-Presidio/HF model availability, fail mode, session TTLs, store backend, Redis
-package/URL, master-key shape, an AES-GCM round-trip, a live store
-write/read/delete probe (with cleanup verified), identity mode and its secret,
-upstream scheme/host, dev-transparent mode, public bind, gateway readiness, and
-whether the local clients look routed.
+いずれかの check が `FAIL` なら非0で終了します。Python／dependency version、
+config load と engine build、全 `value_from_env`、detector pipeline、Presidio／HF
+model availability、fail mode、session TTL、store backend、Redis package／URL、
+master key の形式、AES-GCM round-trip、live store の write/read/delete probe と
+cleanup、identity mode と secret、upstream scheme／host、dev-transparent mode、
+public bind、Gateway readiness、local client の routing 状態を検査します。
 
-`doctor` never prints a secret — not the master key, not URL credentials, not
-dictionary values — and never contacts a provider: upstreams are validated
-syntactically only.
+`doctor` は master key、URL credential、dictionary value などの秘密を表示しません。
+provider へも接続せず、upstream は構文だけを検証します。

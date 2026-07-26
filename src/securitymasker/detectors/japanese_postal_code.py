@@ -1,4 +1,4 @@
-"""JP_POSTAL_CODE recognizer (§14.6).
+"""日本の郵便番号（JP_POSTAL_CODE）recognizer（§14.6）。
 
 ``NNN-NNNN`` collides with product/ticket numbers, so it is only confident with a
 ``〒`` marker, the word 郵便番号, or a following prefecture name (§14.6).

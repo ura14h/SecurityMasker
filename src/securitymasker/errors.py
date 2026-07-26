@@ -1,4 +1,4 @@
-"""Exception hierarchy. Default posture is fail-closed (§26, §40-4).
+"""例外階層。既定動作はfail-closed（§26、§40-4）。
 
 Any of these raised during request processing must prevent the original data from
 reaching the upstream LLM. Messages must never carry original secret values (§25);
@@ -9,23 +9,23 @@ from __future__ import annotations
 
 
 class SecurityMaskerError(Exception):
-    """Base class for all SecurityMasker errors."""
+    """すべてのSecurityMasker errorの基底class。"""
 
 
 class ConfigError(SecurityMaskerError):
-    """Invalid configuration or dictionary (detected at load/validation time)."""
+    """load／validation時に検出した不正な設定またはdictionary。"""
 
 
 class DetectionError(SecurityMaskerError):
-    """A detector failed. Fail-closed: do not forward the original request."""
+    """detectorの失敗。元のrequestを転送せずfail-closedにする。"""
 
 
 class MaskingError(SecurityMaskerError):
-    """A value could not be safely masked (e.g. no safe replacement form)."""
+    """安全にマスクできない値（安全な置換形式がない場合など）。"""
 
 
 class LeakageError(SecurityMaskerError):
-    """Pre-send re-scan found a registered secret still present (§18 step 11)."""
+    """送信前の再scanで登録済みsecretの残存を検出した（§18 step 11）。"""
 
     def __init__(self, entity_type: str, request_id: str | None = None) -> None:
         self.entity_type = entity_type
@@ -38,16 +38,16 @@ class LeakageError(SecurityMaskerError):
 
 
 class RestoreError(SecurityMaskerError):
-    """An alias could not be safely restored (e.g. mutated by the model, §24)."""
+    """modelによる変形などでaliasを安全に復元できない（§24）。"""
 
 
 class CryptoError(SecurityMaskerError):
-    """Encryption/decryption or authentication (AES-GCM tag) failure (§8)."""
+    """暗号化／復号または認証（AES-GCM tag）の失敗（§8）。"""
 
 
 class SessionError(SecurityMaskerError):
-    """Session store failure or missing/expired session."""
+    """session storeの失敗、またはsessionの欠落／期限切れ。"""
 
 
 class AliasCollisionError(SecurityMaskerError):
-    """Alias collision that could not be resolved by lengthening (§7)."""
+    """token延長でも解消できなかったalias collision（§7）。"""

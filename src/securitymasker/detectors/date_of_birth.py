@@ -1,4 +1,4 @@
-"""DATE_OF_BIRTH recognizer (§14.7).
+"""生年月日（DATE_OF_BIRTH）recognizer（§14.7）。
 
 Distinguishes a birth date from an ordinary date by context: a Japanese date is
 only promoted to ``DATE_OF_BIRTH`` when 生年月日/誕生日/生まれ/DOB/年齢 appears nearby

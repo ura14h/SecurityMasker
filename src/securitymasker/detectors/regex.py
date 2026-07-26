@@ -1,4 +1,4 @@
-"""User-defined and built-in regex detector (§11 step 3-4).
+"""ユーザー定義および組み込みregex detector（§11 step 3-4）。
 
 Matches on normalized text and maps spans back to the original. An entry may point
 at a capture group so only the sensitive sub-span is masked (e.g. the password in a
@@ -14,7 +14,7 @@ from securitymasker.detectors.base import DetectionContext
 from securitymasker.errors import DetectionError
 from securitymasker.models import DetectionResult
 
-# Bound the scan to avoid pathological regex cost on huge inputs (§32, §33).
+# 巨大入力での病的なregex costを防ぐscan上限（§32、§33）。
 _MAX_SCAN_CHARS = 2_000_000
 
 
@@ -38,7 +38,7 @@ class RegexDetector:
     async def detect(self, context: DetectionContext) -> list[DetectionResult]:
         text = context.norm.normalized
         if len(text) > _MAX_SCAN_CHARS:
-            # Fail-closed (doc/06 P0-5): refuse rather than silently truncate — a
+            # 黙ってtruncateせずfail-closedで拒否する（doc/06 P0-5）。
             # secret past the cutoff would otherwise pass unscanned. The gateway
             # caps whole-body size up front; this guards a single oversized field.
             raise DetectionError(

@@ -1,4 +1,4 @@
-"""Split a message body into typed spans (§17, doc/06 P1-7, ADR-0011).
+"""message bodyをtyped spanへ分割する（§17、doc/06 P1-7、ADR-0011）。
 
 A chat message is rarely one kind of text. It is prose *around* a fenced code
 block, a shell transcript, a pasted diff, a JSON blob. Treating the whole body as
@@ -34,12 +34,12 @@ from dataclasses import dataclass
 from securitymasker.errors import MaskingError
 from securitymasker.models import ContextKind
 
-# Upper bound on spans per body. Beyond this the caller stops segmenting and
+# bodyごとのspan上限。超過時はsegment化を止めてfail-closedにする。
 # treats the remainder as one prose span: pathological input must not translate
 # into unbounded detector work (ADR-0011). Generous for real documents.
 MAX_SEGMENTS = 512
 
-# Hard ceiling on structural claims found in one body. Capping alone keeps the work
+# 一bodyで検出するstructural claimのhard ceiling。
 # bounded, but an input engineered to produce tens of thousands of claims is not a
 # document anyone wrote — it is an attempt to make us do work. Past this we refuse
 # the request outright rather than silently degrade it, so the original never
@@ -62,16 +62,16 @@ _JSON_LANGS = frozenset({"json", "jsonc", "json5", "geojson"})
 _YAML_LANGS = frozenset({"yaml", "yml"})
 
 # --- unfenced block shapes -------------------------------------------------------
-# Recognised WITHOUT a fence, because people paste these raw. Each is anchored on a
+# rawで貼り付けられるためfenceなしでも認識し、特徴的なmarkerでanchorする。
 # structural marker rather than on content, so ordinary prose cannot match.
 
-# Unified diff: a git header, or ---/+++ followed by a hunk.
+# unified diff：Git header、またはhunkを伴う`---`／`+++`。
 _DIFF_BLOCK = re.compile(
     r"(?:^diff --git .*\n(?:^(?!diff --git ).*\n?)+)"
     r"|(?:^--- .*\n^\+\+\+ .*\n(?:^@@ .*\n(?:^[ +\-\\].*\n?)*)+)",
     re.MULTILINE,
 )
-# OpenAI apply_patch envelope.
+# OpenAI `apply_patch` envelope。
 _APPLY_PATCH = re.compile(
     r"^\*\*\* Begin Patch\s*\n.*?(?:^\*\*\* End Patch\s*$|\Z)",
     re.MULTILINE | re.DOTALL,
@@ -109,7 +109,7 @@ _YAML_BLOCK = re.compile(
     r"|(?:^[ \t]*[A-Za-z_][\w.-]*:(?:[ \t].*)?\n){2,}",
     re.MULTILINE,
 )
-# Source code: a run of lines with language keywords at line start.
+# source code：行頭にlanguage keywordが続く行群。
 _SOURCE_BLOCK = re.compile(
     r"(?:^[ \t]*(?:def |class |function |func |import |from \S+ import |"
     r"public |private |const |let |var |package |#include|SELECT |INSERT |UPDATE )"
@@ -125,12 +125,12 @@ _LIMIT_MESSAGE = (
 
 
 class SegmentationLimitError(MaskingError):
-    """Input exceeded the structural-span ceiling; the request must fail closed."""
+    """入力がstructural span上限を超えたため、requestをfail-closedにする。"""
 
 
 @dataclass(frozen=True)
 class Segment:
-    """One classified span of the original text."""
+    """原文を分類した一つのspan。"""
 
     start: int
     end: int
@@ -154,7 +154,7 @@ def _fence_kind(info: str) -> str:
     return ContextKind.MARKDOWN_CODE.value
 
 
-# Unfenced patterns in precedence order: the most structurally distinctive first,
+# unfenced patternを構造上の識別力が高い順に並べる。
 # so a diff inside what also looks like source code is classified as a diff.
 _UNFENCED: tuple[tuple[re.Pattern[str], str], ...] = (
     (_APPLY_PATCH, ContextKind.PATCH.value),
@@ -163,7 +163,7 @@ _UNFENCED: tuple[tuple[re.Pattern[str], str], ...] = (
     (_YAML_BLOCK, ContextKind.YAML_SCALAR.value),
     (_SHELL_BLOCK, ContextKind.SHELL.value),
     (_SOURCE_BLOCK, ContextKind.SOURCE_CODE.value),
-    # Single-line forms last: a multi-line block that already matched above keeps
+    # single-line形式は最後に判定し、先に一致したmulti-line blockを優先する。
     # its (more specific) classification.
     (_SQL_STATEMENT, ContextKind.SOURCE_CODE.value),
     (_CODE_STATEMENT, ContextKind.SOURCE_CODE.value),
@@ -172,7 +172,7 @@ _UNFENCED: tuple[tuple[re.Pattern[str], str], ...] = (
 
 
 def _resolve_claims(claims: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
-    """Keep non-overlapping claims by a single sorted sweep (linear, not all-pairs).
+    """sort済みの一回の走査で、重ならないclaimだけを残す（全組合せではなく線形）。
 
     Claims are added in precedence order, so a stable sort on (start, index) lets
     the earlier-added claim win any overlap.
@@ -194,7 +194,7 @@ def segment(
     default_kind: str = ContextKind.PROSE.value,
     max_segments: int = MAX_SEGMENTS,
 ) -> list[Segment]:
-    """Split ``text`` into non-overlapping, gap-free typed segments.
+    """``text``を重複も隙間もないtyped segmentへ分割する。
 
     Adjacent prose runs are emitted as ONE segment, and the total is capped at
     ``max_segments``; past the cap the remaining text becomes a single trailing
@@ -209,7 +209,7 @@ def segment(
         claims.append((match.start(), match.end(), _fence_kind(match.group("info"))))
     fenced = _resolve_claims(list(claims))
 
-    # Binary search over the sorted fence starts. A scan-from-the-front is O(n·m)
+    # sort済みfence開始位置をbinary searchし、先頭からのO(n·m) scanを避ける。
     # once there are many fences AND many candidates — the "linear" claim only
     # holds with an actual O(log n) lookup.
     fence_starts = [f_start for f_start, _, _ in fenced]
@@ -222,7 +222,7 @@ def segment(
         return not (nxt < len(fenced) and fenced[nxt][0] < end)   # overlaps the next
 
     def _over_ceiling() -> bool:
-        # Checked DURING collection: finishing the scan first would do exactly the
+        # 全scan後では遅いためclaim収集中に上限を検査する。
         # work the ceiling exists to avoid.
         return len(claims) > MAX_CLAIMS
 
@@ -244,7 +244,7 @@ def segment(
     out: list[Segment] = []
     cursor = 0
     for start, end, kind in kept:
-        # Each iteration can emit up to TWO segments (a preceding prose gap and the
+        # 各iterationは前方prose gapとclaimの最大2 segmentを出力する。
         # claim itself), so reserve room for both plus the trailing prose span.
         if len(out) + 2 > max_segments - 1:
             break
@@ -258,7 +258,7 @@ def segment(
 
 
 def coalesce_for_detection(segments: list[Segment]) -> list[Segment]:
-    """Merge CONTIGUOUS same-kind segments.
+    """同種で連続するsegmentを結合する。
 
     Note the limit, because it used to be overstated: this only merges spans that
     actually touch. In prose/code/prose/code alternation nothing is contiguous, so
@@ -279,7 +279,7 @@ def coalesce_for_detection(segments: list[Segment]) -> list[Segment]:
 
 
 def is_code_like(kind: str) -> bool:
-    """True for contexts where fuzzy NER is unreliable (§17, doc/06 P1-7)."""
+    """fuzzy NERを信頼できないcontextならTrue（§17、doc/06 P1-7）。"""
     return kind in _CODE_LIKE_KINDS
 
 

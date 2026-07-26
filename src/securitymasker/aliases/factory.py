@@ -1,4 +1,4 @@
-"""Alias factory — deterministic, idempotent, collision-safe alias assignment (§7).
+"""alias factory — 決定論的・冪等でcollision-safeなalias割り当て（§7）。
 
 Operates on a single ``MaskingSession`` (its keys + mapping dicts). Callers must
 serialize concurrent ``get_or_create_alias`` for the *same* session (the session
@@ -15,18 +15,18 @@ from securitymasker.errors import AliasCollisionError, MaskingError
 from securitymasker.models import AliasMapping, MaskingSession
 from securitymasker.sessions.crypto import encrypt, fingerprint
 
-# Alias token length in hex chars. 12 hex = 48 bits: with 10k mappings per session
+# alias token長はhex 12文字（48 bit）。session内10,000 mappingでも十分な空間を持つ。
 # the birthday collision probability is ~1.8e-10, and guessing a specific alias is
 # infeasible. The old 6-hex (24-bit) default collided at ~1-in-3000 for a 1k-entry
 # session and was cheap to enumerate — see docs/adr/0007-alias-token-length.md.
-# Collisions still lengthen the token, so this is the FLOOR, not a cap.
+# collision時はさらに延長するため、これは上限ではなく下限。
 _MIN_TOKEN_HEX = 12
 _MAX_TOKEN_HEX = 32
 _TOKEN_STEP = 2
 
-# Upper bound on distinct secrets per session (doc/06 P1-5): a bounded resource so a
+# sessionごとの異なるsecret数に上限を設ける（doc/06 P1-5）。
 # hostile or runaway input can't grow a session's mapping table without limit.
-# Reached only by thousands of *distinct* secrets in one session; fail closed.
+# 一sessionで数千の異なるsecretに達した場合だけfail-closedになる。
 MAX_MAPPINGS_PER_SESSION = 10_000
 
 
@@ -43,7 +43,7 @@ def get_or_create_alias(
     replacement_profile: str,
     restore_policy: str,
 ) -> AliasMapping:
-    """Return the stable alias mapping for a value, creating it on first sight.
+    """値に対応する安定したalias mappingを返し、初出時は作成する。
 
     ``fingerprint_value`` is what identity is keyed on: the surface form when
     surface forms are kept distinct, or the normalized form when they are merged
@@ -58,7 +58,7 @@ def get_or_create_alias(
         return existing
 
     if len(session.mappings_by_fingerprint) >= MAX_MAPPINGS_PER_SESSION:
-        # Fail closed rather than grow unbounded (doc/06 P1-5). The message names
+        # 無制限に増やさずfail-closedにし、messageには値を含めない（doc/06 P1-5）。
         # no value; the caller turns this into a request block.
         raise MaskingError(
             f"session mapping limit ({MAX_MAPPINGS_PER_SESSION}) reached; "
@@ -90,7 +90,7 @@ def _allocate_alias(
     replacement_profile: str,
     original_value: str,
 ) -> str:
-    """Pick the shortest non-colliding alias; lengthen the token on collision (§7)."""
+    """衝突しない最短aliasを選び、衝突時はtokenを延長する（§7）。"""
     for length in range(_MIN_TOKEN_HEX, _MAX_TOKEN_HEX + 1, _TOKEN_STEP):
         token = fp[:length]
         alias = alias_for(replacement_profile, entity_type, token, original_value)

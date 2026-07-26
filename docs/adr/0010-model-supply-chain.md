@@ -1,81 +1,69 @@
-# ADR-0010 — Model supply chain: pinning, verification, and refused formats
+# ADR-0010 — model supply chainの固定・検証・拒否形式
 
-- Status: Accepted
-- Date: 2026-07-26
-- Relates to: ADR-0009 (Japanese NER backend), doc/06 §P2-3
+- 状態：採用
+- 日付：2026-07-26
+- 関連：ADR-0009（日本語NER backend）、doc/06 §P2-3
 
-## Context
+## 背景
 
-Adopting a Hugging Face NER model (ADR-0009) means a third-party binary artifact
-becomes part of a security boundary. Two risks follow, and they are different:
+Hugging Face NER model（ADR-0009）の採用により、third-party binary artifact が
+security boundary の一部になります。これには性質の異なる二つの risk があります。
 
-1. **The wrong artifact loads.** A revision pin says which commit we asked for.
-   It does not say the bytes on disk are that commit: a partial download, a
-   corrupted cache, a cache poisoned between runs, or a manually "fixed" file all
-   leave a directory that looks perfectly normal.
-2. **Loading the artifact executes code.** `.bin`/`.pt`/`.pth`/`.ckpt`/`.pkl` are
-   pickle formats. Loading one runs arbitrary code, in our process, with our
-   credentials and our plaintext.
+1. **誤ったartifactをloadする。** revision 固定は要求した commit を表すだけで、
+   disk 上の byte が同一とは保証しません。部分 download、破損 cache、実行間の
+   cache poisoning、手動変更後の file も正常な directory に見えます。
+2. **artifactのloadでcodeを実行する。** `.bin`／`.pt`／`.pth`／`.ckpt`／`.pkl` は
+   pickle 形式であり、load により資格情報と平文を保持する process 内で任意 code を
+   実行できます。
 
-The masking proxy is exactly the wrong place to be relaxed about either.
+masking proxy では、どちらも許容できません。
 
-## Decision
+## 決定
 
-**Pin a complete manifest, not just a revision.** Every artifact the loader reads
-is listed with its SHA-256 and its size. "Complete" means every file, not just
-the weights — `config.json` carries `id2label`, so an unpinned config lets the
-label schema be swapped, which changes *what gets detected* while every digest
-check still passes. Tokenizer files decide how text is split, so they matter for
-the same reason.
+**revisionだけでなく完全なmanifestを固定します。** loader が読む全 artifact の
+SHA-256 と size を記録します。weight だけでなく全 file が対象です。`config.json` の
+`id2label` を差し替えると検出対象が変わり、tokenizer file の差し替えも text 分割を
+変えるため、いずれも固定します。
 
-**Verify against the manifest, not against the directory.** Verification iterates
-the manifest and reports a listed-but-absent artifact as missing. Walking the
-directory instead only inspects files that happen to exist, so an incomplete
-download passes.
+**directoryではなくmanifestを基準に検証します。** manifest を走査し、記載済みで
+存在しない artifact を missing とします。directory を走査するだけでは、存在する
+file しか検証せず不完全な download が通ります。
 
-**Digest the file, not a transformation of it.** Digests are of the distributed
-bytes exactly, trailing newline included.
+**変換後ではなく配布されたfile byteをdigest化します。** 末尾 newline も含めます。
 
-**Refuse pickle formats by name, and force `use_safetensors=True`.** Rejecting
-only when safetensors are absent still lets transformers pick a pickle file that
-is present; the presence of one is itself disqualifying.
+**pickle形式をfile名で拒否し、`use_safetensors=True`を強制します。** safetensors が
+ない場合だけ拒否する方式では、同居する pickle を transformers が選ぶ可能性があるため、
+存在自体を不適格とします。
 
-**Refuse unknown models by default.** A model with no manifest cannot be
-verified. Accepting one is possible but must be explicit
-(`ner.allow_unverified_model=true`), and the result reports that nothing was
-verified.
+**未知modelは既定で拒否します。** manifest のない model は検証できません。受理には
+`ner.allow_unverified_model=true` の明示が必要で、結果にも未検証と記録します。
 
-**Verify at load, not only at fetch.** A cache can change between the fetch and
-the next process start, so the runtime re-checks before trusting it. Combined
-with `local_files_only=True`, no user input can trigger a download at request
-time.
+**fetch時だけでなくload時にも検証します。** fetch 後の cache 変更を検出するため、
+runtime は信頼前に再検査します。`local_files_only=True` と組み合わせ、user input を
+契機とした download を防ぎます。
 
-**Never `trust_remote_code=True`.**
+**`trust_remote_code=True`は使用しません。**
 
-## Consequences
+## 影響
 
-Adding or moving a model is deliberate work: fetch it, record six digests, write
-them down. That is the intended cost.
+model の追加・移動では、fetch、6 digest の取得、manifest 記録が必要です。これは意図した
+cost です。
 
-A manifest can be wrong in two directions, and the second one bit us. Rejecting a
-tampered model is what the tests were written for; **accepting the real one** was
-never tested, because every test built its fixture by hashing files it had just
-written. A manifest whose digests were taken after stripping the trailing newline
-therefore rejected the genuine model, and passed the entire suite — fetching and
-NER-enabled startup were both broken. `tests/unit/test_model_supply_chain.py` now
-also verifies the pinned manifest against the real cached snapshot, skipping
-(never passing) when the model is absent.
+manifest の誤りには、不正 model を受理する方向と正規 model を拒否する方向があります。
+後者を実際に経験しました。旧 test は直前に書いた fixture をその場で hash しており、
+拒否対象しか検証していませんでした。末尾 newline を除いて取得した digest は正規 model
+を拒否しましたが、suite はすべて通り、fetch と NER 有効起動が壊れていました。
+`tests/unit/test_model_supply_chain.py` は現在、固定 manifest を実 cache snapshot と
+照合します。model 不在時は pass ではなく skip します。
 
-The generalisation: a check that only ever sees inputs it should reject is not
-known to accept anything.
+一般則として、拒否すべき入力だけを見た check は、何かを正しく受理できるとは限りません。
 
-## Alternatives considered
+## 検討した代替案
 
-- **Revision pin alone.** Cheapest, and the industry default. Rejected: it does
-  not detect a modified cache, which is the realistic local threat.
-- **Vendoring the weights into the repository.** 1.1 GB of binary in git, against
-  an explicit instruction not to commit models.
-- **Signature/provenance verification (sigstore, model signing).** Stronger than
-  digests and the right eventual answer. Not implemented: it needs infrastructure
-  the project does not yet have. Recorded as an open supply-chain gap in
-  `docs/operations.md` rather than quietly skipped.
+- **revision固定だけ**：低 cost で一般的ですが、現実的な local threat である cache
+  改変を検出できないため不採用。
+- **weightをrepositoryへvendorする**：1.1 GBの binary を Git に入れることになり、
+  model を commit しない明示指示に反するため不採用。
+- **signature／provenance検証（sigstore、model signing）**：digest より強く、将来
+  採用すべき方式です。必要 infrastructure がないため未実装とし、
+  `docs/operations.md` に supply chain gap として明記します。

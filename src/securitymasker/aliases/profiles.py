@@ -1,4 +1,4 @@
-"""Replacement profiles — shape an alias so it keeps the entity's syntax (§9).
+"""置換profile — entityの構文を保つ形にaliasを整える（§9）。
 
 Each profile turns a short opaque ``token`` (hex derived from the fingerprint) into
 an alias string that stays syntactically valid in the entity's context, so that
@@ -16,13 +16,13 @@ from securitymasker.models import EntityType, ReplacementProfile
 
 ALIAS_PREFIX = "SM_"
 INVALID_DOMAIN = "example.invalid"
-# All three RFC 5737 documentation ranges: 3 x 254 aliases instead of 254 (ADR-0007).
+# RFC 5737の三documentation rangeを使い、254ではなく3×254 aliasを得る（ADR-0007）。
 _DOC_IPV4_NETS = ("192.0.2", "198.51.100", "203.0.113")
 _DOC_IPV4_NET = _DOC_IPV4_NETS[1]  # kept for existing references/tests
 _DOC_IPV6_PREFIX = "2001:db8"  # RFC 3849 documentation range
 ENV_SECRET_PREFIX = "SECURITYMASKER_SECRET_"
 
-# Short, identifier-safe tag per entity type for prose aliases (SM_<TAG>_<HEX>).
+# prose alias用のentity type別で短くidentifier-safeなtag（SM_<TAG>_<HEX>）。
 _ENTITY_TAG: dict[str, str] = {
     EntityType.PERSON.value: "PERSON",
     EntityType.ORGANIZATION.value: "ORG",
@@ -40,7 +40,7 @@ def _tag(entity_type: str) -> str:
 
 
 def _digits_from(token: str, length: int) -> str:
-    """Deterministically expand ``token`` into ``length`` decimal digits."""
+    """``token``を決定論的に``length``桁の10進数へ展開する。"""
     out: list[str] = []
     seed = token.encode("utf-8")
     counter = 0
@@ -57,7 +57,7 @@ def alias_for(
     token: str,
     original: str,
 ) -> str:
-    """Build an alias for ``original`` given a ``profile`` and opaque ``token`` (hex)."""
+    """``profile``と不透明なhex ``token``から``original``用aliasを作る。"""
     p = ReplacementProfile(profile)
     hexlow = token.lower()
     hexup = token.upper()
@@ -72,9 +72,9 @@ def alias_for(
         return f"sm-user-{hexlow}@{INVALID_DOMAIN}"
 
     if p is ReplacementProfile.IPV4:
-        # Shape preservation caps the space: a valid IPv4 alias must stay inside
+        # 形状保持により空間は有限。IPv4 aliasはdocumentation range内に限定する。
         # the documentation ranges, so there are 3 x 254 = 762 of them per session.
-        # That is a deliberate trade-off (ADR-0007). Exhausting it is NOT silently
+        # これは意図したtrade-offで、枯渇を黙って許容しない（ADR-0007）。
         # tolerated: the factory keeps lengthening the token, finds every candidate
         # taken, and raises AliasCollisionError -> the request fails closed.
         n = int(token, 16)
@@ -96,7 +96,7 @@ def alias_for(
     if p is ReplacementProfile.ENVIRONMENT_REFERENCE:
         return f"${{{ENV_SECRET_PREFIX}{hexup}}}"
 
-    # URL / FILE_PATH are rebuilt component-by-component so the alias stays a
+    # URL／FILE_PATHは有効な構文を保つためcomponent単位で再構築する。
     # parseable URL or a resolvable-looking path (invariant 3, doc/06 P1-6).
     # A value that cannot be rebuilt safely raises MaskingError -> request blocked.
     if p is ReplacementProfile.URL:

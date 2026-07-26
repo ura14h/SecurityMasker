@@ -1,4 +1,4 @@
-"""Japanese official and business identifiers (doc/06 §5.7).
+"""日本の公的・業務identifier（doc/06 §5.7）。
 
 These numbers share a problem: their raw formats collide with ordinary numbers
 (an order id, a build number, a customer reference). Detecting them on shape alone
@@ -42,7 +42,7 @@ _RESIDENCE_WEIGHTS = (7, 6, 5, 4, 3, 2, 7, 6)
 
 
 def residence_check_digit(seven_digits: str) -> int:
-    """Check digit for the first 7 digits of a residence card number."""
+    """在留card番号の先頭7桁に対するcheck digitを返す。"""
     total = sum(int(d) * w for d, w in zip(seven_digits, _RESIDENCE_WEIGHTS, strict=False))
     return total % 11
 
@@ -97,7 +97,7 @@ _SPECS: list[tuple[str, re.Pattern[str], tuple[str, ...], str, float]] = [
 
 
 class JapaneseIdentifierDetector:
-    """Context-gated recognizers for Japanese official/business numbers (§5.7)."""
+    """context gate付きの日本の公的・業務番号recognizer（§5.7）。"""
 
     name = "jp_identifiers"
 

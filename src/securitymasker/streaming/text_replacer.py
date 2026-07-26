@@ -1,4 +1,4 @@
-"""Carry-buffer streaming alias→original replacer (§20).
+"""carry-bufferを使うstreaming alias→original置換（§20）。
 
 Aliases can be split across SSE chunks (``"…sm-host-7f" | "3a91.example.invalid…"``),
 so a naive per-chunk ``replace()`` would miss them. This holds back only the
@@ -28,7 +28,7 @@ class StreamingRestorer:
         self._rx = re.compile("|".join(re.escape(a) for a in aliases)) if aliases else None
 
     def feed(self, chunk: str) -> str:
-        """Consume a chunk; return the text that is now safe to emit."""
+        """chunkを取り込み、現時点で安全に出力できるtextを返す。"""
         if self._rx is None:
             return chunk  # empty vocabulary: pure pass-through
         if not chunk:
@@ -40,7 +40,7 @@ class StreamingRestorer:
         return self._rx.sub(self._sub, safe)
 
     def flush(self) -> str:
-        """Emit any remaining buffered text at end-of-stream."""
+        """stream終了時にbuffer内の残りtextを出力する。"""
         if self._rx is None:
             out, self._buffer = self._buffer, ""
             return out
@@ -52,7 +52,7 @@ class StreamingRestorer:
         return self._replacements[match.group(0)]
 
     def _suffix_prefix_len(self, text: str) -> int:
-        """Length of the longest suffix of ``text`` that is a prefix of some alias.
+        """いずれかのaliasのprefixとなる``text``の最長suffix長。
 
         That suffix might grow into a full alias with the next chunk, so it must be
         held back. Bounded by ``max_alias_len - 1``.

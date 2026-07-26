@@ -1,4 +1,4 @@
-"""User-defined exact-match dictionary detector (§11 step 2, §12).
+"""ユーザー定義の完全一致dictionary detector（§11 step 2、§12）。
 
 Highest-trust detector. Each entry may list several surface forms (spacing/width
 variants). Matching runs on normalized text; overlap/longest-match resolution is
@@ -20,7 +20,7 @@ from securitymasker.normalization import NormForm, normalize_value
 
 
 def _is_cjk(text: str) -> bool:
-    """True if every character is CJK/kana — where intra-name spacing is common."""
+    """全characterがCJK／kanaならTrue。氏名内の空白が一般的な文字種を表す。"""
     return all(
         "぀" <= ch <= "ヿ" or "一" <= ch <= "鿿" or "ｦ" <= ch <= "ﾟ"
         for ch in text
@@ -50,7 +50,7 @@ class DictionaryDetector:
     ) -> None:
         self._normalization = normalization
         self._flexible_spacing = flexible_spacing
-        # Pre-normalize each surface form once. Sort longest-first per entry so a
+        # 各表層形を一度だけ事前正規化し、entry内では長い順にする。
         # single value's longer variants are found before shorter substrings.
         self._terms: list[tuple[str, DictionaryEntry]] = []
         for entry in entries:
@@ -59,7 +59,7 @@ class DictionaryDetector:
                 if norm:
                     self._terms.append((norm, entry))
         self._terms.sort(key=lambda t: len(t[0]), reverse=True)
-        # Japanese names and organisations are routinely written with a space
+        # 日本語の氏名・組織名では文字間に空白が入る表記が一般的。
         # between the surname and given name — 山田太郎 / 山田 太郎 / 山田　太郎 —
         # and NFKC folds the ideographic space to an ASCII one. Rather than making
         # operators enumerate every spacing variant (and silently missing the ones
@@ -70,7 +70,7 @@ class DictionaryDetector:
             for term, entry in self._terms:
                 if " " in term or len(term) < 2 or not _is_cjk(term):
                     continue
-                # Space only — never a newline, which would match across lines.
+                # 行をまたがないようnewlineではなくspaceだけを許す。
                 pattern = " ?".join(re.escape(ch) for ch in term)
                 flags = 0 if entry.case_sensitive else re.IGNORECASE
                 self._spaced.append((re.compile(pattern, flags), entry))
@@ -103,7 +103,7 @@ class DictionaryDetector:
                 )
                 start = target.find(needle, start + 1)
 
-        # Spacing variants (山田 太郎 for a registered 山田太郎). Overlaps with the
+        # 登録値「山田太郎」に対する「山田 太郎」などのspacing variant。
         # exact hits above are resolved centrally in ``policy`` (§11).
         for pattern, entry in self._spaced:
             for m in pattern.finditer(haystack):

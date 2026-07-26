@@ -1,4 +1,4 @@
-"""Shared helpers for protocol adapters.
+"""protocol adapterが共有するhelper。
 
 Adapters mutate the request/response dicts in place, touching only text-bearing
 value fields and never structural keys (§16). The transform used for masking is the
@@ -12,17 +12,17 @@ from typing import Protocol
 
 
 class MaskTransform(Protocol):
-    """Async masking transform; ``kind`` selects the detection context (§17)."""
+    """非同期masking変換。``kind``で検出contextを選ぶ（§17）。"""
 
     async def __call__(self, text: str, kind: str = ...) -> str: ...
 
 
 RestoreTransform = Callable[[str], str]
 
-# Content-part keys that carry user text in OpenAI/Anthropic message structures.
+# OpenAI／Anthropic message構造でuser textを保持するcontent-part key。
 TEXT_KEYS = frozenset({"text", "input_text", "output_text"})
 
-# Injected (optionally) so the model preserves placeholders verbatim, improving
+# modelがplaceholderをverbatimに保持するよう任意で注入する指示。
 # restoration fidelity (doc/06 P1-2 inject_alias_instruction). Contains no secrets.
 ALIAS_INSTRUCTION = (
     "Note: tokens such as SM_PERSON_XXXXXX, sm-host-xxxxxx.example.invalid, and "

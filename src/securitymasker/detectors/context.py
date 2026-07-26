@@ -1,4 +1,4 @@
-"""Shared context-word scoring for Japanese recognizers (§14).
+"""日本語recognizerが共有するcontext word score処理（§14）。
 
 Japanese PII (phone, postal code, My Number, DOB) collides with ordinary numbers,
 so a raw pattern match is only promoted to a confident detection when nearby text
@@ -19,7 +19,7 @@ def has_context(
     *,
     window: int = _DEFAULT_WINDOW,
 ) -> bool:
-    """True if any keyword appears within ``window`` chars around ``[start, end)``."""
+    """``[start, end)``周辺の``window``文字以内にkeywordがあればTrue。"""
     lo = max(0, start - window)
     hi = min(len(text), end + window)
     around = text[lo:hi]

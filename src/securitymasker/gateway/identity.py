@@ -1,4 +1,4 @@
-"""Caller identity: who a request is masked *for* (§7, §8, doc/06 P0-9).
+"""caller identity：誰のためにrequestをマスクするかを示す（§7、§8、doc/06 P0-9）。
 
 Three modes, chosen explicitly at startup so nobody gets multi-user isolation by
 accident or believes they have it when they do not:
@@ -37,7 +37,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 
-# Header names. The proof is produced by the authenticator, never by the client.
+# header名。proofはclientではなくauthenticatorが生成する。
 TENANT_HEADER = "x-securitymasker-tenant-id"
 USER_HEADER = "x-securitymasker-user-id"
 AUTH_HEADER = "x-securitymasker-tenant-auth"
@@ -46,7 +46,7 @@ TIMESTAMP_HEADER = "x-securitymasker-auth-timestamp"
 LOCAL_TENANT = "local"
 LOCAL_USER = "local"
 
-# Bump when the signed payload's shape changes; old proofs then stop verifying
+# 署名payloadの形状変更時にversionを上げ、旧proofを検証不能にする。
 # instead of being reinterpreted under new rules.
 ASSERTION_VERSION = "v2"
 
@@ -55,13 +55,13 @@ MODE_TENANT = "tenant"
 MODE_TENANT_USER = "tenant_user"
 VALID_MODES = frozenset({MODE_LOCAL, MODE_TENANT, MODE_TENANT_USER})
 
-# How far a proof's timestamp may be from our clock. Generous enough for ordinary
+# proofのtimestampに許すclock差。通常のclock skewには十分な値とする。
 # skew, short enough that a captured proof is not replayable indefinitely.
 DEFAULT_MAX_SKEW_SECONDS = 300
 
 
 class IdentityError(Exception):
-    """Identity could not be established. Callers MUST fail closed (§26).
+    """identityを確立できない。callerは必ずfail-closedにする（§26）。
 
     The message is deliberately coarse — it never echoes the presented proof,
     the claimed identity, or the secret (§25).
@@ -70,21 +70,21 @@ class IdentityError(Exception):
 
 @dataclass(frozen=True)
 class Identity:
-    """A verified caller. ``user`` is ``LOCAL_USER`` when the mode has no users."""
+    """検証済みcaller。userを持たないmodeでは``user``を``LOCAL_USER``とする。"""
 
     tenant: str
     user: str
 
     @property
     def namespace(self) -> str:
-        """Store-key prefix. Length-prefixed so components cannot run together."""
+        """store key prefix。component結合を防ぐためlength-prefix形式にする。"""
         return f"{len(self.tenant)}:{self.tenant}\x1f{len(self.user)}:{self.user}"
 
 
 def canonical_payload(
     tenant: str, user: str, timestamp: str = "", *, version: str = ASSERTION_VERSION
 ) -> bytes:
-    """The exact bytes an authenticator signs.
+    """authenticatorが署名する正確なbyte列。
 
     Length-prefixed and version-tagged: unambiguous under any tenant/user values,
     and a future format change cannot be replayed against this one.
@@ -94,7 +94,7 @@ def canonical_payload(
 
 
 def sign(secret: str, tenant: str, user: str, timestamp: str = "") -> str:
-    """Produce the proof an authenticator sends (also used by tests/tooling)."""
+    """authenticatorが送るproofを生成する。test／toolingでも使用する。"""
     return hmac.new(secret.encode(), canonical_payload(tenant, user, timestamp),
                     sha256).hexdigest()
 
@@ -116,7 +116,7 @@ def resolve_identity(
     require_timestamp: bool = True,
     tenant_header: str = TENANT_HEADER,
 ) -> Identity:
-    """Verify the caller's identity, or raise ``IdentityError``.
+    """caller identityを検証し、失敗時は``IdentityError``を送出する。
 
     ``local`` needs no headers. The other modes require a proof that verifies over
     the *joint* canonical payload, so neither field can be swapped independently.
@@ -126,7 +126,7 @@ def resolve_identity(
     if mode not in VALID_MODES:
         raise IdentityError(f"unknown identity mode {mode!r}")
     if not auth_secret:
-        # Refusing here rather than trusting the header is the whole point.
+        # headerを信頼せず、ここで拒否すること自体がこの検証の目的。
         raise IdentityError("identity mode requires a configured authentication secret")
 
     lower = {k.lower(): v for k, v in headers.items()}
@@ -135,7 +135,7 @@ def resolve_identity(
     timestamp = lower.get(TIMESTAMP_HEADER, "").strip()
     if not timestamp:
         if require_timestamp:
-            # Without a timestamp a captured proof is replayable for as long as the
+            # timestampがなければ取得済みproofをsecretの有効期間中replayできる。
             # secret lives. Accepting one is a deliberate, argued-for downgrade.
             raise IdentityError(
                 f"{TIMESTAMP_HEADER} is required; a proof with no timestamp can be "
@@ -146,14 +146,14 @@ def resolve_identity(
 
     presented = lower.get(AUTH_HEADER, "").strip()
     expected = sign(auth_secret, tenant, user, timestamp)
-    # Constant-time: a timing oracle here would leak the expected proof byte by byte.
+    # constant-time比較により、timing oracleから期待proofがbyte単位で漏れるのを防ぐ。
     if not presented or not hmac.compare_digest(presented, expected):
         raise IdentityError("authentication proof is missing or invalid")
 
     return Identity(tenant, user)
 
 
-# Canonical timestamp form: a decimal integer of seconds since the epoch. Fixing
+# canonical timestampはepochからの秒を表す10進整数。形式も固定する。
 # the FORM matters as much as checking the value — "1.7e9", "0x1234" and " 42 "
 # all parse as numbers to float(), but none of them is what an authenticator is
 # supposed to send, and accepting them widens what an attacker can experiment with.
@@ -161,7 +161,7 @@ _EPOCH_RE = re.compile(r"^[0-9]{1,12}$")
 
 
 def _check_freshness(timestamp: str, max_skew_seconds: int, now: float | None) -> None:
-    """Reject a timestamp that is malformed, non-finite, or outside the window.
+    """形式不正、非有限、許容範囲外のtimestampを拒否する。
 
     ``float()`` accepts ``nan`` and ``inf``, and every comparison against NaN is
     False — so an ``abs(now - nan) > skew`` check silently PASSES. That is how a
@@ -184,16 +184,15 @@ def _check_freshness(timestamp: str, max_skew_seconds: int, now: float | None) -
 
 
 def normalize_mode(mode: str) -> str:
-    """Canonical mode name. Single definition, so the gateway, the CLI's public-bind
-    check and doctor can never disagree about what mode is in force."""
+    """canonical mode名。Gateway、CLIのpublic-bind check、doctorで定義を共有する。"""
     return MODE_TENANT if mode == "multitenant" else mode
 
 
 def isolates_callers(mode: str) -> bool:
-    """True when the mode distinguishes callers at all (i.e. is not ``local``)."""
+    """callerを区別するmode、すなわち``local``以外ならTrue。"""
     return normalize_mode(mode) != MODE_LOCAL
 
 
 def fingerprint(identity: Identity) -> str:
-    """A short, non-reversible label safe to log or put in metrics (§25)."""
+    """log／metricへ安全に記録できる短く不可逆なlabel（§25）。"""
     return sha256(identity.namespace.encode()).hexdigest()[:12]

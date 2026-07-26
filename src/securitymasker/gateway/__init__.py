@@ -1,4 +1,4 @@
-"""Purpose-built transparent masking proxy for Codex / Claude Code (ADR-0006).
+"""Codex／Claude Code専用の透過masking proxy（ADR-0006）。
 
 Replaces the LiteLLM integration. The proxy terminates the client request, masks
 it, forwards it transparently upstream (the client's own credentials are passed

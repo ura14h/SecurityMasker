@@ -1,4 +1,4 @@
-"""Claude Code integration helper (§7, §23).
+"""Claude Code integration helper（§7、§23）。
 
 Claude Code talks to the gateway via the Anthropic Messages API. Point
 ``ANTHROPIC_BASE_URL`` at the gateway and propagate the session header; provider
@@ -13,7 +13,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:4000"
 
 
 def claude_code_env(base_url: str = DEFAULT_BASE_URL) -> dict[str, str]:
-    """Return the environment variables to launch Claude Code against the gateway."""
+    """Claude CodeをGatewayへ接続して起動するための環境変数を返す。"""
     return {
         "ANTHROPIC_BASE_URL": base_url,
         # Claude Code forwards custom headers; the wrapper sets the session id.

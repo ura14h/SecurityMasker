@@ -1,4 +1,4 @@
-"""Single-process in-memory session store (§8, Phase 1).
+"""単一process用in-memory session store（§8、Phase 1）。
 
 Not shared across worker processes — ``RedisSessionStore`` implements the same
 ``SessionStore`` Protocol for that. Enforces idle + absolute TTL and serializes
@@ -52,7 +52,7 @@ class InMemorySessionStore:
         if is_expired(session, self._idle_ttl):
             await self.delete(session_id)
             return None
-        # Defence in depth: the key is already identity-namespaced, but a stored
+        # keyはidentity namespace済みだが、保存sessionも照合するdefence-in-depth。
         # session whose recorded identity disagrees must never be handed back —
         # that would be a cross-boundary read (§8, doc/06 P0-9).
         if tenant_id is not None and session.tenant_id != tenant_id:
@@ -96,12 +96,12 @@ class InMemorySessionStore:
             )
 
     async def save(self, session: MaskingSession) -> None:
-        # In-memory sessions are mutated in place; save just refreshes idle time.
+        # in-memory sessionはin-place更新されるためsaveはidle timeだけ更新する。
         session.last_used_at = _now()
         self._sessions[session.session_id] = session
 
     async def delete(self, session_id: str) -> None:
-        # Delete the SESSION only. The lock has an independent lifetime: dropping
+        # sessionだけを削除し、独立したlifetimeを持つlockは残す。
         # it here (e.g. when an expired session is reaped from inside get()) would
         # let a concurrent request build a second lock for the same id and enter
         # the critical section in parallel (doc/06 P1-9).
@@ -137,7 +137,7 @@ class InMemorySessionStore:
         if lock is None:
             lock = asyncio.Lock()
             self._locks[session_id] = lock
-        # Reference-count holders AND waiters so the entry can be reclaimed safely:
+        # 安全に回収できるようholderとwaiterの両方をreference countする。
         # dropping it while anyone still references it would let a newcomer build a
         # second lock for the same id and enter concurrently, while never dropping
         # it leaks one lock per session id forever — a memory DoS for ephemeral or
@@ -148,14 +148,14 @@ class InMemorySessionStore:
         async def _held() -> AsyncIterator[LockHandle]:
             try:
                 async with lock:
-                    # In-process asyncio locks cannot expire or be taken over, so
+                    # in-process asyncio lockは失効・takeoverしない。
                     # the handle never reports loss — unlike the Redis one.
                     yield LockHandle()
             finally:
                 remaining = self._lock_refs.get(session_id, 1) - 1
                 if remaining <= 0:
                     self._lock_refs.pop(session_id, None)
-                    # Only reclaim when nobody holds/awaits it and the session is
+                    # holder／waiterがなくsessionも存在しない場合だけ回収する。
                     # gone; a live session keeps its lock for the next request.
                     if session_id not in self._sessions:
                         self._locks.pop(session_id, None)

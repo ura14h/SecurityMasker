@@ -1,4 +1,4 @@
-"""Tool-argument restoration trust policy (§ threat-model, doc/06 P0-8).
+"""tool argument復元のtrust policy（threat-model、doc/06 P0-8）。
 
 Response *text* is restored for display to the user, which is safe. Tool
 *arguments*, by contrast, are handed to a tool for execution — if that tool is an
@@ -19,5 +19,5 @@ class ToolTrustPolicy:
     trusted_local_tools: frozenset[str] = frozenset()
 
     def restores_arguments(self, tool_name: str | None) -> bool:
-        """True only for an explicitly allowlisted local tool (else fail safe)."""
+        """明示的にallowlist登録したlocal toolだけTrue。それ以外は安全側に倒す。"""
         return bool(tool_name) and tool_name in self.trusted_local_tools

@@ -1,4 +1,4 @@
-"""Presidio Analyzer adapter — Presidio as a *detector only* (§13).
+"""Presidio Analyzer adapter — Presidioをdetectorとしてだけ使う（§13）。
 
 In-process (ADR-0004), import-guarded: if ``presidio-analyzer`` or the configured
 spaCy model is not installed, this detector cleanly no-ops so the rest of the

@@ -1,4 +1,4 @@
-"""Proxy-path guarantee for ``securitymasker run`` (§7, doc/06 P2-1).
+"""``securitymasker run``のproxy path保証（§7、doc/06 P2-1）。
 
 ``run`` used to generate a session id and exec the tool. That gave the user no
 assurance whatsoever that Codex or Claude Code actually went through
@@ -43,12 +43,12 @@ _DIRECT_PROVIDER_ENV = (
 
 
 class LaunchRefused(Exception):
-    """The proxy route could not be set up, so the tool was not started."""
+    """proxy routeを設定できずtoolを起動しなかったことを示す。"""
 
 
 @dataclass(frozen=True)
 class LaunchPlan:
-    """A fully-resolved, ready-to-exec launch that is known to go via the proxy."""
+    """proxy経由と確認済みで、解決済み・実行可能な起動設定。"""
 
     argv: list[str]
     env: dict[str, str]
@@ -59,12 +59,12 @@ class LaunchPlan:
 
 
 def new_session_id() -> str:
-    """A fresh session id from a CSPRNG (never a predictable/derived value, §7)."""
+    """CSPRNGから新しいsession IDを生成する。予測値や導出値は使わない（§7）。"""
     return secrets.token_urlsafe(24)
 
 
 def tool_kind(executable: str) -> str:
-    """Classify the wrapped executable by basename, tolerating platform suffixes.
+    """platform suffixを許容し、対象executableをbasenameで分類する。
 
     Splits on BOTH separators: a Windows path handed to a POSIX interpreter (or
     vice versa) must still resolve to the same tool, since misclassifying it would
@@ -82,7 +82,7 @@ def tool_kind(executable: str) -> str:
 
 
 def _merge_anthropic_headers(existing: str | None, session_id: str) -> str:
-    """Add our session header to ``ANTHROPIC_CUSTOM_HEADERS`` without losing any.
+    """既存値を失わず``ANTHROPIC_CUSTOM_HEADERS``へsession headerを追加する。
 
     Claude Code reads this as newline-separated ``Name: value`` lines. We keep the
     user's headers verbatim, drop only a previous session header of ours, and
@@ -95,7 +95,7 @@ def _merge_anthropic_headers(existing: str | None, session_id: str) -> str:
 
 
 def _codex_overrides(gateway: str, session_id: str) -> list[str]:
-    """Per-process Codex config overrides pointing it at the gateway.
+    """CodexをGatewayへ向けるprocess単位のconfig override。
 
     Codex's ``-c key=value`` flags layer over ``~/.codex/config.toml`` for THIS
     invocation only, so the user's real configuration is never modified (a hard
@@ -127,7 +127,7 @@ def build_plan(
     environ: dict[str, str] | None = None,
     allow_unknown_tool: bool = False,
 ) -> LaunchPlan:
-    """Resolve ``argv`` into a launch configured to traverse the proxy.
+    """``argv``をproxy経由の起動設定へ解決する。
 
     The plan either routes the tool through the gateway or refuses. It cannot
     attest to what the child process does afterwards — see ``cmd_run`` for the
@@ -196,7 +196,7 @@ def build_plan(
 
 
 def describe_manual_setup(gateway: str) -> str:
-    """Secret-free instructions shown when we refuse to launch (§25).
+    """起動拒否時に表示するsecret-freeな案内（§25）。
 
     Delegates to the per-tool helpers so the provider keys are defined in exactly
     one place: a second copy of this snippet would drift from the overrides

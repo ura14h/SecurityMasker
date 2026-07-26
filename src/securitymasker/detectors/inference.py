@@ -1,4 +1,4 @@
-"""Bounded execution for synchronous model inference (ADR-0011).
+"""同期model inferenceを上限付きで実行する（ADR-0011）。
 
 The honest constraint first: **a timeout cannot stop CPU-bound Python inference.**
 ``asyncio.wait_for`` cancels the *await*, not the worker; ``concurrent.futures``
@@ -35,19 +35,19 @@ from securitymasker.errors import DetectionError
 
 T = TypeVar("T")
 
-# Concurrent inferences. Small on purpose: these are CPU-bound, so more threads
+# 同時inference数。CPU-boundなのでthreadを増やしてもthroughputは改善しにくい。
 # than cores buys nothing and multiplies the damage a stuck one can do.
 DEFAULT_MAX_WORKERS = 2
-# Queued + running jobs admitted at once. Past this we reject rather than queue.
+# queue中と実行中を合わせたadmission上限。超過時はqueueせず拒否する。
 DEFAULT_MAX_INFLIGHT = 8
 
 
 class InferenceOverloaded(DetectionError):
-    """Too many inferences in flight; the request is refused (fail-closed)."""
+    """実行中inferenceが多すぎるためrequestをfail-closedで拒否する。"""
 
 
 class BoundedInferenceRunner:
-    """Runs blocking callables on a fixed pool with an admission limit."""
+    """blocking callableをadmission limit付き固定poolで実行する。"""
 
     def __init__(
         self,
@@ -59,12 +59,12 @@ class BoundedInferenceRunner:
         self._max_workers = max_workers
         self._max_inflight = max_inflight
         self._prefix = thread_name_prefix
-        # Exposed so a test can count exactly ITS OWN threads: the shared
+        # testが自身のthreadだけを正確に数えられるよう公開する。
         # process-wide runner uses the same default prefix.
         self.thread_name_prefix = thread_name_prefix
         self._executor: ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
-        # Counts jobs SUBMITTED and not yet finished — including ones whose caller
+        # callerがtimeout済みでも、submit後に未完了のjobを数える。
         # already timed out and walked away. That is the number that matters: it is
         # the abandoned work we must not let accumulate.
         self._inflight = 0
@@ -81,7 +81,7 @@ class BoundedInferenceRunner:
                 )
             return self._executor
 
-    # ASYNC109: ruff suggests an outer `asyncio.timeout()` instead of a timeout
+    # ASYNC109：ruffは外側の`asyncio.timeout()`を提案するがAPIとしてtimeoutを受ける。
     # parameter. That does not apply here — the value is the caller's WAIT budget,
     # not a cancellation scope, because the worker thread cannot be cancelled at
     # all. Expressing it as a cancellation scope would restate the exact untruth
@@ -89,7 +89,7 @@ class BoundedInferenceRunner:
     async def run(
         self, func: Any, *args: Any, timeout: float | None = None  # noqa: ASYNC109
     ) -> Any:
-        """Run ``func(*args)`` on the pool, waiting at most ``timeout`` seconds.
+        """``func(*args)``をpoolで実行し、最大``timeout``秒待機する。
 
         Raises ``InferenceOverloaded`` if admission is refused, or ``TimeoutError``
         if the wait elapses. In the timeout case the worker keeps running — it
@@ -111,7 +111,7 @@ class BoundedInferenceRunner:
             with self._lock:
                 self._inflight -= 1
 
-        # Decrement when the WORK finishes, not when the await returns: an
+        # await終了時ではなくwork完了時にcountを減らす。
         # abandoned job must keep occupying a slot until it actually completes.
         future.add_done_callback(_release)
 
@@ -119,7 +119,7 @@ class BoundedInferenceRunner:
             return await asyncio.wait_for(asyncio.wrap_future(future, loop=loop),
                                           timeout=timeout)
         except TimeoutError:
-            # Deliberately NOT cancelling: a running thread cannot be cancelled,
+            # 実行中threadはcancel不能なので意図的にcancelしない。
             # and pretending otherwise is what made the previous version wrong.
             raise
 
@@ -130,7 +130,7 @@ class BoundedInferenceRunner:
             executor.shutdown(wait=False, cancel_futures=True)
 
 
-# One shared runner: a per-detector pool would multiply the thread ceiling by the
+# detectorごとのpoolでthread上限が倍増しないようrunnerを一つだけ共有する。
 # number of detectors and defeat the bound.
 _SHARED = BoundedInferenceRunner()
 

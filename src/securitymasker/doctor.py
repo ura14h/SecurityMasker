@@ -1,4 +1,4 @@
-"""Enumerated runtime diagnostics (doc/06 P2-1).
+"""列挙可能なruntime診断（doc/06 P2-1）。
 
 `doctor` used to check the config and stop there, which meant it could report a
 healthy system while Redis was unreachable, the master key was malformed, or the
@@ -92,7 +92,7 @@ def check_runtime_dependencies() -> CheckResult:
 
 
 def check_config(path: str | None) -> tuple[CheckResult, Any, Any]:
-    """Load AND build, so the same validation the gateway performs runs here.
+    """loadとbuildの両方を行い、Gatewayと同じvalidationを実行する。
 
     Returns the built engine as well, so later checks can inspect the pipeline
     rather than constructing a second one — with NER enabled that would load the
@@ -125,7 +125,7 @@ def check_config(path: str | None) -> tuple[CheckResult, Any, Any]:
 
 
 def check_env_references(config: Any) -> CheckResult:
-    """Each ``value_from_env`` must resolve; report NAMES only, never values."""
+    """各``value_from_env``を解決し、値ではなく名前だけを報告する。"""
     if config is None:
         return _skip("config.env", "no config loaded")
     import os
@@ -142,8 +142,7 @@ def check_env_references(config: Any) -> CheckResult:
 
 
 def check_detectors(config: Any, detectors: Any = None) -> CheckResult:
-    """Report the active pipeline. ``detectors`` is the ALREADY-built list when the
-    caller has one: rebuilding here would load the NER model a second time."""
+    """有効なpipelineを報告する。構築済み``detectors``があれば再buildせず利用する。"""
     if config is None:
         return _skip("detectors", "no config loaded")
     if detectors is None:
@@ -158,7 +157,7 @@ def check_detectors(config: Any, detectors: Any = None) -> CheckResult:
 
 
 def check_ner_models(config: Any, detectors: Any = None) -> CheckResult:
-    """Report NER availability from the ALREADY-built pipeline.
+    """構築済みpipelineからNER availabilityを報告する。
 
     Constructing fresh detectors here would load spaCy/HF a second (and, with the
     engine, a third) time — minutes of startup and a duplicated ~800MB for a
@@ -230,7 +229,7 @@ def check_store_backend(environ: dict[str, str]) -> CheckResult:
 
 
 def check_master_key(environ: dict[str, str]) -> CheckResult:
-    """Validate the key's SHAPE. The key itself is never printed or logged."""
+    """keyの形状だけを検証し、key自体は表示もログ記録もしない。"""
     backend = environ.get("SECURITYMASKER_STORE", "memory").lower()
     raw = environ.get("SECURITYMASKER_MASTER_KEY")
     if backend != "redis":
@@ -249,7 +248,7 @@ def check_master_key(environ: dict[str, str]) -> CheckResult:
 
 
 def check_session_crypto() -> CheckResult:
-    """Round-trip a synthetic value through the session AEAD (§8)."""
+    """合成値をsession AEADでround-tripする（§8）。"""
     from securitymasker.errors import CryptoError
     from securitymasker.sessions.crypto import decrypt, encrypt, generate_session_keys
 
@@ -265,7 +264,7 @@ def check_session_crypto() -> CheckResult:
 
 
 async def check_store_probe(store: Any) -> CheckResult:
-    """Create/read/delete a synthetic session, then confirm the cleanup."""
+    """合成sessionを作成・読取・削除し、cleanupを確認する。"""
     import secrets
 
     probe_id = f"__doctor_probe_{secrets.token_hex(8)}"   # random, non-sensitive
@@ -316,7 +315,7 @@ def check_identity_mode(environ: dict[str, str]) -> CheckResult:
 
 
 def check_upstreams(environ: dict[str, str]) -> CheckResult:
-    """Syntactic validation only — doctor never contacts a provider."""
+    """構文だけを検証し、doctorからproviderへは接続しない。"""
     from securitymasker.gateway.runtime import (
         DEFAULT_ANTHROPIC_UPSTREAM,
         DEFAULT_OPENAI_UPSTREAM,
@@ -362,7 +361,7 @@ def check_public_bind(environ: dict[str, str]) -> CheckResult:
 
 
 def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:
-    """Probe the gateway. ``required`` turns unreachable into a FAIL.
+    """Gatewayをprobeする。``required``なら到達不能をFAILにする。
 
     Default WARN, because doctor is commonly run BEFORE the gateway starts —
     a static pre-flight check. Monitoring wants the opposite, so `--require-ready`
@@ -377,7 +376,7 @@ def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:
 
 
 def check_client_proxy_config(environ: dict[str, str]) -> CheckResult:
-    """Report whether the local clients look routed. Advisory, never fatal."""
+    """local clientがrouting済みに見えるか報告する。助言情報でありfatalにしない。"""
     notes = []
     base = environ.get("ANTHROPIC_BASE_URL")
     notes.append(f"claude: ANTHROPIC_BASE_URL={'set' if base else 'unset'}")
@@ -397,7 +396,7 @@ def run_checks(
     *, config_path: str | None, environ: dict[str, str], gateway: str,
     require_ready: bool = False,
 ) -> Iterator[CheckResult]:
-    """Yield every check in a stable order. Pure except for the store probe."""
+    """全checkを安定した順序で返す。store probe以外はpure。"""
     yield from _run_checks(config_path=config_path, environ=environ, gateway=gateway,
                            require_ready=require_ready, captured=None)
 
@@ -446,7 +445,7 @@ def render(results: list[CheckResult]) -> str:
 
 
 def render_json(results: list[CheckResult]) -> str:
-    """Machine-readable form. Contains only names, statuses and safe details."""
+    """機械可読形式。name、status、安全なdetailだけを含む。"""
     import json
 
     return json.dumps(
@@ -462,7 +461,7 @@ ProbeRunner = Callable[[], Any]
 
 @dataclass(frozen=True)
 class BuiltArtifacts:
-    """What ``run_checks`` constructed, so callers can reuse it (ADR-0011)."""
+    """callerが再利用できるよう``run_checks``の構築物を保持する（ADR-0011）。"""
 
     config: Any = None
     engine: Any = None
@@ -472,7 +471,7 @@ def run_checks_with_engine(
     *, config_path: str | None, environ: dict[str, str], gateway: str,
     require_ready: bool = False,
 ) -> tuple[list[CheckResult], BuiltArtifacts]:
-    """``run_checks`` plus the artefacts it built, so nothing is built twice."""
+    """``run_checks``と構築済みartifactを返し、二重buildを防ぐ。"""
     captured: dict[str, Any] = {}
     results = list(_run_checks(config_path=config_path, environ=environ,
                                gateway=gateway, require_ready=require_ready,

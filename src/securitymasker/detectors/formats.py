@@ -1,4 +1,4 @@
-"""Built-in format recognizers: email, IPv4, credit card (§11 step 6).
+"""組み込みformat recognizer：email、IPv4、credit card（§11 step 6）。
 
 High-precision, deterministic. Credit cards require a valid Luhn checksum and
 default to ``block`` (§10). IPv4 octets are range-validated. These run on the
@@ -12,11 +12,11 @@ import re
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
-# EAI / internationalized addresses (RFC 6531): local part and domain may both be
+# EAI／国際化address（RFC 6531）：local partとdomainの両方がnon-ASCIIになり得る。
 # non-ASCII, e.g. 山田＠例え.jp. NFKC upstream folds the full-width ＠ and digits,
 # so only the character classes need to admit non-ASCII letters (doc/06 §5.4).
 #
-# Japanese has no word spaces, so an unbounded local part swallows the preceding
+# 日本語にはword spaceがないため、無制限local partは直前のproseを飲み込む。
 # prose: 「連絡先は山田＠example.co.jp」 would match from 連. Two patterns solve it
 # without losing recall:
 #   1. STRICT — the local part excludes hiragana, which is what glues Japanese
@@ -24,7 +24,7 @@ from securitymasker.models import DetectionResult, EntityType, ReplacementProfil
 #   2. BOUNDED — hiragana IS allowed, but only when the address starts at a real
 #      delimiter (line start, space, or an opening bracket/colon), so a hiragana
 #      local part like たろう@example.jp is still found when it stands alone.
-# Results from both are merged and de-duplicated by span.
+# 両patternの結果をmergeしspanで重複除去する。
 _PUNCT = r"\s@,;:<>()\[\]\\\"'、。，．！？「」『』（）"
 _HIRAGANA = r"぀-ゟ"
 _DOMAIN = rf"[^{_PUNCT}]+\.(?:[A-Za-z]{{2,}}|[^{_PUNCT}.]{{2,}})"
@@ -51,7 +51,7 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
-# RFC 5737 documentation ranges are reserved for examples and are, by definition,
+# RFC 5737 documentation rangeは例示用に予約され、定義上real endpointではない。
 # not anyone's real address — and they are exactly what we mint IPv4 aliases from
 # (ADR-0007). Masking them adds no protection while burning alias space, so they
 # are excluded from detection.
@@ -82,7 +82,7 @@ class FormatsDetector:
         text = context.norm.normalized
         out: list[DetectionResult] = []
 
-        # Prefer the STRICT match: it is the tighter, more precise extent. The
+        # より狭く正確なSTRICT matchを優先する。
         # bounded pattern only fills in addresses the strict one cannot see at all
         # (a hiragana-only local part), identified by ending at the same place.
         spans: list[tuple[int, int]] = [(m.start(), m.end()) for m in _EMAIL_STRICT.finditer(text)]

@@ -1,4 +1,4 @@
-"""Structured logging helpers (§25).
+"""structured loggingの補助処理（§25）。
 
 Only safe fields may be logged (entity types, counts, timings, irreversible
 fingerprints). Original secret values, decrypted mappings, keys, and full prompts
@@ -33,7 +33,7 @@ def get_logger(**initial: Any) -> Any:
 
 
 def safe_fingerprint(value: str) -> str:
-    """Short, irreversible tag for correlating logs without revealing the value (§25).
+    """値を開示せずlogを相関するための短い不可逆tag（§25）。
 
     Non-reversible and unsalted-per-process is acceptable here because it only ever
     labels aliases/session-ids in logs, never the original secret.

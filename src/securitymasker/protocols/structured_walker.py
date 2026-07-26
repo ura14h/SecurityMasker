@@ -1,4 +1,4 @@
-"""Structure-preserving JSON walkers (§16).
+"""構造を保持するJSON walker（§16）。
 
 Never stringify a whole payload and blanket-replace. Instead walk the structure and
 transform only *string values*, never dict keys, ids, or type/role tags. Two tools:
@@ -23,7 +23,7 @@ Transform = Callable[[str], Awaitable[str]]
 
 
 async def transform_all_string_values(node: Any, transform: Transform) -> Any:
-    """Recursively transform every string *value*; leave dict keys and non-str alone."""
+    """全string valueを再帰変換し、dict keyとstring以外は変更しない。"""
     if isinstance(node, str):
         return await transform(node)
     if isinstance(node, list):
@@ -34,7 +34,7 @@ async def transform_all_string_values(node: Any, transform: Transform) -> Any:
 
 
 def transform_all_string_values_sync(node: Any, transform: Callable[[str], str]) -> Any:
-    """Sync variant of ``transform_all_string_values`` (for tool-argument restore)."""
+    """tool argument復元用の``transform_all_string_values``同期版。"""
     if isinstance(node, str):
         return transform(node)
     if isinstance(node, list):
@@ -45,13 +45,13 @@ def transform_all_string_values_sync(node: Any, transform: Callable[[str], str])
 
 
 async def transform_field(obj: Any, key: str, transform: Transform) -> None:
-    """In-place: if ``obj[key]`` is a string, replace it with its transform."""
+    """``obj[key]``が文字列なら変換結果へin-placeで置換する。"""
     if isinstance(obj, dict) and isinstance(obj.get(key), str):
         obj[key] = await transform(obj[key])
 
 
 async def transform_text_fields(obj: Any, keys: frozenset[str], transform: Transform) -> None:
-    """In-place: transform each string value stored under any key in ``keys``."""
+    """``keys``のいずれかに格納された文字列値をin-placeで変換する。"""
     if isinstance(obj, dict):
         for key in keys:
             await transform_field(obj, key, transform)

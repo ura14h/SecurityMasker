@@ -1,178 +1,182 @@
-# Configuration
+# 設定
 
-The proxy (ADR-0006) is configured by the **SecurityMasker dictionary**
-(`SECURITYMASKER_CONFIG`) plus a few environment variables. Example dictionary in
-[`config/securitymasker.example.yaml`](../config/securitymasker.example.yaml).
+proxy（ADR-0006）は、**SecurityMasker dictionary**（`SECURITYMASKER_CONFIG`）と
+少数の環境変数で設定します。dictionary の例は
+[`config/securitymasker.example.yaml`](../config/securitymasker.example.yaml) にあります。
 
-## Running the proxy
+## proxy の起動
 
 ```bash
 export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
 securitymasker gateway --port 4000
 ```
 
-Environment:
+環境変数：
 
-- `SECURITYMASKER_CONFIG` — dictionary/policy YAML (below). **Required**: if unset the
-  gateway fails to start (fail-closed, doc/06 P0-1). To run without masking for
-  development only, set `SECURITYMASKER_DEV_TRANSPARENT=1` explicitly — never point that
-  mode at a real provider.
-- `SECURITYMASKER_OPENAI_UPSTREAM` — default `https://chatgpt.com/backend-api/codex`
-  (Codex ChatGPT auth). For API-key OpenAI: `https://api.openai.com/v1`.
-- `SECURITYMASKER_ANTHROPIC_UPSTREAM` — default `https://api.anthropic.com`.
-- `SECURITYMASKER_MODE` — `local` (default), `tenant`, or `tenant_user` (ADR-0008).
-  `local` isolates nothing (one caller). `tenant` isolates tenants but users WITHIN a
-  tenant share an alias table. `tenant_user` isolates both. `multitenant` is accepted
-  as a legacy alias for `tenant`. Non-local modes require
-  `SECURITYMASKER_TENANT_AUTH_SECRET`, with which the trusted authenticator signs a
-  versioned canonical payload over tenant+user(+timestamp); a bare header is never
-  trusted, and a missing/forged/expired assertion fails closed.
-- `SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS` — accepted age of a timestamped identity
-  assertion (default 300).
-- `SECURITYMASKER_GATEWAY_URL` — where `run` and `doctor` look for the gateway
-  (default `http://127.0.0.1:4000`).
-- `SECURITYMASKER_STORE` — `memory` (default) or `redis`; `redis` also needs
-  `SECURITYMASKER_REDIS_URL` and fails closed if the package/URL is missing (doc/06 P1-9).
-- `SECURITYMASKER_MASTER_KEY` — 32 bytes base64, required by the Redis session store (§8).
+- `SECURITYMASKER_CONFIG` — dictionary／policy YAML。**必須**で、未設定なら Gateway
+  は fail-closed で起動に失敗します（doc/06 P0-1）。開発時だけマスクを無効にする
+  には `SECURITYMASKER_DEV_TRANSPARENT=1` を明示します。この mode を実 provider に
+  向けてはなりません。
+- `SECURITYMASKER_OPENAI_UPSTREAM` — 既定値は
+  `https://chatgpt.com/backend-api/codex`（Codex ChatGPT auth）。API key を使う
+  OpenAI の場合は `https://api.openai.com/v1`。
+- `SECURITYMASKER_ANTHROPIC_UPSTREAM` — 既定値は `https://api.anthropic.com`。
+- `SECURITYMASKER_MODE` — `local`（既定）、`tenant`、`tenant_user`（ADR-0008）。
+  `local` は単一 caller で分離なし、`tenant` は tenant 間を分離するものの同一
+  tenant 内の user は alias table を共有し、`tenant_user` は両方を分離します。
+  `multitenant` は `tenant` の legacy alias として受理します。非 local mode では
+  `SECURITYMASKER_TENANT_AUTH_SECRET` が必要です。信頼済み authenticator はこれを
+  用いて tenant+user（+timestamp）の version 付き canonical payload を署名します。
+  bare header は信頼せず、assertion の欠落・偽造・期限切れは fail-closed で拒否します。
+- `SECURITYMASKER_MAX_CLOCK_SKEW_SECONDS` — timestamp 付き identity assertion の
+  許容経過時間。既定値は300秒。
+- `SECURITYMASKER_GATEWAY_URL` — `run` と `doctor` が参照する Gateway。既定値は
+  `http://127.0.0.1:4000`。
+- `SECURITYMASKER_STORE` — `memory`（既定）または `redis`。`redis` では
+  `SECURITYMASKER_REDIS_URL` も必要で、package／URL がなければ fail-closed
+  （doc/06 P1-9）。
+- `SECURITYMASKER_MASTER_KEY` — Redis session store に必須の、base64 で表した
+  32 bytes（§8）。
 
-Clients: Codex uses a `requires_openai_auth = true` provider pointing at the proxy
-(the ChatGPT OAuth token is passed through — no API key); Claude Code sets
-`ANTHROPIC_BASE_URL`. See [operations.md](operations.md).
+Codex は proxy を指す `requires_openai_auth = true` provider を使い、ChatGPT OAuth
+token を透過します。API key は保存しません。Claude Code は
+`ANTHROPIC_BASE_URL` を設定します。詳細は [operations.md](operations.md) を
+参照してください。
 
-## Dictionary (SECURITYMASKER_CONFIG)
+## dictionary（SECURITYMASKER_CONFIG）
 
 ```yaml
 version: 1
 defaults:
-  fail_mode: closed            # fail-closed on error (§26)
-  normalization: nfkc          # detection normalization; restore keeps original form
-  merge_surface_forms: false   # per-surface-form aliases
+  fail_mode: closed            # エラー時は fail-closed（§26）
+  normalization: nfkc          # 検出時に正規化し、復元時は元の表記を維持
+  merge_surface_forms: false   # 表層形ごとに alias を生成
   session_idle_ttl: 4h
   session_absolute_ttl: 24h
 
-entities:                      # highest-trust, exact match (§12)
+entities:                      # 最も信頼する完全一致（§12）
   - id: employee
     type: PERSON
-    values: ["山田太郎", "山田 太郎"]     # multiple surface forms
-    # value_from_env: EMPLOYEE_NAME       # or pull from env (no plaintext secrets!)
+    values: ["山田太郎", "山田 太郎"]     # 複数の表層形
+    # value_from_env: EMPLOYEE_NAME       # または環境変数から取得（平文の秘密を置かない）
     replacement_profile: prose_identifier
     restore_policy: literal               # literal | env_reference | redacted | block
     priority: 100
 
-patterns:                      # user regexes
+patterns:                      # ユーザー定義 regex
   - id: ticket
     pattern: 'INC-[0-9]{6}'
     type: CUSTOMER_ID
     replacement_profile: numeric
 
-enable_secret_detector: true   # API keys / JWT / PEM / DB URLs -> env_reference
-enable_format_detectors: true  # email / IPv4 / credit card (Luhn -> block)
+enable_secret_detector: true   # API key／JWT／PEM／DB URL → env_reference
+enable_format_detectors: true  # email／IPv4／credit card（Luhn）→ block
 
 japanese_pii:
   enabled: true
   my_number_restore_policy: block
 
-presidio:                      # optional, in-process; no-op if not installed
+presidio:                      # 任意、in-process。未導入なら無効
   enabled: false
   language: ja
-ner:                           # optional Japanese NER; model never hardcoded (§14.1)
-  model: null                  # e.g. a HF token-classification model id
+ner:                           # 任意の日本語 NER。model を hardcode しない（§14.1）
+  model: null                  # 例：HF token-classification model ID
 ```
 
-## Replacement profiles (§9)
+## 置換 profile（§9）
 
-`prose_identifier` (`SM_PERSON_2B891C`), `hostname` (`sm-host-….example.invalid`),
-`email` (`sm-user-…@example.invalid`), `ipv4`/`ipv6` (documentation ranges), `uuid`,
-`numeric` (digit-count preserving), `file_path`, `url`, `environment_reference`
-(`${SECURITYMASKER_SECRET_…}`).
+`prose_identifier`（`SM_PERSON_2B891C`）、`hostname`
+（`sm-host-….example.invalid`）、`email`（`sm-user-…@example.invalid`）、
+`ipv4`／`ipv6`（documentation range）、`uuid`、`numeric`（桁数保持）、
+`file_path`、`url`、`environment_reference`
+（`${SECURITYMASKER_SECRET_…}`）があります。
 
-## Restore policies (§10)
+## 復元 policy（§10）
 
-`literal` (restore before returning), `env_reference` (keep `${…}`, never restore
-the real value), `redacted` (irreversible `[REDACTED]`), `block` (reject the
-request). Defaults: names/addresses/hosts/paths → literal; API keys/passwords/keys →
-env_reference; My Number → block; credit card → block.
+- `literal` — client へ返す前に復元する。
+- `env_reference` — `${…}` のまま保持し、実値へ戻さない。
+- `redacted` — 不可逆な `[REDACTED]` にする。
+- `block` — request を拒否する。
 
-## Environment variables
+既定では、氏名・住所・host・path は `literal`、API key・password・key は
+`env_reference`、My Number と credit card は `block` です。
 
-- `SECURITYMASKER_CONFIG` — path to the dictionary YAML (required to mask).
-- `SECURITYMASKER_SESSION_ID` — session id the wrapper/headers propagate.
-- `SECURITYMASKER_MASTER_KEY` — 32 bytes base64, required by the Redis store (§8).
-- Values referenced by `value_from_env` in the dictionary.
+## 環境変数
 
-Config is validated at load; invalid enums / regex / duplicate ids fail startup (§12).
+- `SECURITYMASKER_CONFIG` — dictionary YAML の path。マスクを行うには必須。
+- `SECURITYMASKER_SESSION_ID` — wrapper／header が伝播する session ID。
+- `SECURITYMASKER_MASTER_KEY` — Redis store に必須の base64 32 bytes（§8）。
+- dictionary の `value_from_env` が参照する値。
 
+設定は load 時に検証します。不正な enum／regex、重複 ID があれば起動に失敗します
+（§12）。
 
-## Context classification
+## context 分類
 
-Message bodies are segmented into typed spans before detection (§17): prose,
-fenced and inline Markdown code, shell, JSON, YAML, diff. Only detectors that
-declare `skip_code_contexts` (Presidio, the HF NER) opt out of code-like spans;
-the dictionary and every deterministic detector run everywhere, because a real
-secret pasted into a code fence is still a secret. Text that cannot be confidently
-classified stays `prose`, the context with the fewest detectors disabled.
+検出前に message body を prose、fenced／inline Markdown code、shell、JSON、YAML、
+diff の typed span へ分割します（§17）。code-like span を除外するのは
+`skip_code_contexts` を宣言する detector（Presidio と HF NER）だけです。
+dictionary と全 deterministic detector はすべての context で動かします。code fence
+に貼られた秘密も秘密だからです。確実に分類できない text は、無効になる detector が
+最も少ない `prose` として扱います。
 
-## Detector limits
+## detector の上限
 
 ```yaml
 defaults:
-  detector_timeout_seconds: 10.0   # 0 disables; a timeout BLOCKS the request
-  max_fuzzy_chars: 200000          # over this, the request is REFUSED
+  detector_timeout_seconds: 10.0   # 0で無効。timeout時はrequestを拒否
+  max_fuzzy_chars: 200000          # 超過時はrequestを拒否
 ```
 
-User regexes are linted at load and known catastrophic-backtracking shapes
-(`(a+)+`, `(a|a)*`, huge bounded repeats) are refused.
+ユーザー定義 regex は load 時に lint し、既知の catastrophic backtracking
+（`(a+)+`、`(a|a)*`、巨大な bounded repeat）を拒否します。
 
-**A timeout does not stop a runaway detector.** Neither `re` nor CPU-bound model
-code can be interrupted in Python: the timeout bounds how long the REQUEST waits,
-and the worker keeps running. Runaway work is contained separately — dangerous
-regexes are refused at load, and model inference runs on a fixed-size pool with an
-admission limit, so abandoned inferences keep their slot until they finish and
-further requests are REFUSED rather than queued behind them (ADR-0011). Refusal is
-a `DetectionError`, so the request fails closed.
+**timeout になっても暴走 detector 自体は停止しません。** Python の `re` と
+CPU-bound model は割り込み不能です。timeout が制限するのは request の待ち時間で、
+worker は動き続けます。危険な regex は load 時に拒否し、model inference は固定長
+pool と admission limit の下で実行します。放棄された inference は終了まで slot を
+占有し、その間の追加 request は queue に積まず拒否します（ADR-0011）。
+拒否は `DetectionError` となり、request は fail-closed になります。
 
-**How much text the model detectors see is not capped by segmentation.** They run
-once per request over the fuzzy-eligible spans joined together, so the cost tracks
-how much prose a request contains, not how finely it happens to be split. An
-earlier design capped the number of detector passes instead; that let a request
-padded with inline-code spans push later text past the cap and out of NER's reach
-entirely, which is why the bound is now on volume (ADR-0011).
+**model detector が見る text 量を segmentation で制限しません。** fuzzy 対象 span を
+結合し、request ごとに一度だけ実行するため、cost は segment 数ではなく prose 量に
+比例します。旧設計は detector pass 数を制限しており、inline code を詰めた request
+によって末尾 text を NER の対象外へ押し出せたため、現在は量を制限します
+（ADR-0011）。
 
-Past `max_fuzzy_chars` the request is **refused**, not truncated. Scanning part of
-a request and returning success is indistinguishable from a clean result, so it is
-the one thing this limit must never do. Raise it only with inference cost in mind.
+`max_fuzzy_chars` を超えた request は truncate せず**拒否**します。一部だけ検査して
+成功を返すことは clean result と区別できません。上限を増やす場合は inference cost
+を考慮してください。
 
-## Optional Japanese NER (ADR-0009)
+## 任意の日本語 NER（ADR-0009）
 
-Off by default. The dictionary and deterministic detectors are the trusted layer;
-NER only widens recall for unregistered names and is never the reason something is
-called safe.
+既定は無効です。dictionary と deterministic detector が信頼層であり、NER は未登録名
+の recall を広げるだけです。NER の結果を安全判定の根拠にはしません。
 
 ```yaml
 ner:
   model: tsmatz/xlm-roberta-ner-japanese
-  revision: aba094e118d5ffc622e9b25e07edc49f9dd85feb   # REQUIRED when model is set
-  min_score: 0.7          # measured optimum; see ADR-0009
-  local_files_only: true  # never fetches at request time
+  revision: aba094e118d5ffc622e9b25e07edc49f9dd85feb   # model指定時は必須
+  min_score: 0.7          # 実測上の最適値。ADR-0009参照
+  local_files_only: true  # request処理中にはfetchしない
   skip_code_contexts: true
 ```
 
 ```bash
 pip install -e '.[ner]'
-securitymasker models fetch --config <dictionary.yaml>   # explicit, digest-verified
+securitymasker models fetch --config <dictionary.yaml>   # 明示的に取得しdigest検証
 ```
 
-The model's label schema and its tokenizer's offset support are validated at
-startup: a model whose labels we cannot map, or which cannot report character
-spans, is refused rather than silently producing nothing.
+model の label schema と tokenizer の offset 対応は起動時に検証します。label を
+mapping できない model や文字 span を報告できない model は、黙って検出ゼロにせず
+拒否します。
 
-## Tool-argument trust
+## tool arguments の信頼設定
 
 ```yaml
 tool_trust:
-  trusted_local_tools: []   # default: NO tool gets real values
+  trusted_local_tools: []   # 既定では実値を受け取るtoolはない
 ```
 
-Response text is restored for display. Tool arguments are executed, so real values
-are restored only for tools on this allowlist; everything else — including every
-external MCP tool — receives aliases.
+表示用の response text は復元します。tool arguments は実行されるため、この allowlist
+にある tool だけ実値へ復元します。外部 MCP tool を含むそれ以外には alias を渡します。

@@ -1,4 +1,4 @@
-"""Composite JP_ADDRESS recognizer (§14.2).
+"""複合的な日本語住所（JP_ADDRESS）recognizer（§14.2）。
 
 A Japanese address is not reliably found by one signal, so this combines an
 optional postal code, a prefecture, a locality run, and a 丁目/番地/号 tail (plus an

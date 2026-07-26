@@ -1,4 +1,4 @@
-"""Minimal SSE parser/serializer (§20, §22, §23).
+"""最小限のSSE parser／serializer（§20、§22、§23）。
 
 Preserves event structure exactly: ``event:``/``id:``/``retry:``/comment (``:``)
 lines and multi-line ``data:`` payloads. Unknown fields and events pass through
@@ -22,7 +22,7 @@ class SSEEvent:
 
     @property
     def data_text(self) -> str:
-        """Concatenated data payload (SSE joins multiple ``data:`` lines with \\n)."""
+        """結合済みdata payload。SSEは複数の``data:``行を``\\n``で結合する。"""
         return "\n".join(self.data)
 
     def is_empty(self) -> bool:

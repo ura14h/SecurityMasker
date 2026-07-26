@@ -1,4 +1,4 @@
-"""Codex integration helper (§7, §22, ADR-0006).
+"""Codex integration helper（§7、§22、ADR-0006）。
 
 Codex points at the SecurityMasker proxy as a custom OpenAI Responses provider.
 With ``requires_openai_auth = true`` Codex forwards its own ChatGPT OAuth token to
@@ -16,7 +16,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:4000"
 def codex_config_toml(
     base_url: str = DEFAULT_BASE_URL, model: str = "gpt-5.6-sol"
 ) -> str:
-    """Return a Codex ``config.toml`` snippet for the SecurityMasker proxy."""
+    """SecurityMasker proxy用のCodex ``config.toml`` snippetを返す。"""
     return f"""\
 model = "{model}"
 model_provider = "securitymasker"

@@ -1,4 +1,4 @@
-"""Tool-call argument reassembly for restoration (§21).
+"""復元のためのtool-call argument再構築（§21）。
 
 Function/tool argument JSON arrives split across deltas. Restoring aliases by naive
 string replacement can corrupt JSON when an original value contains ``"``/``\\``/
@@ -21,7 +21,7 @@ from securitymasker.protocols.structured_walker import transform_all_string_valu
 
 
 class ToolArgumentReassembler:
-    """Accumulates argument deltas per tool-call id and restores on completion."""
+    """tool-call IDごとにargument deltaを蓄積し、完了時に復元する。"""
 
     def __init__(self, restore: Callable[[str], str]) -> None:
         self._restore = restore
@@ -34,14 +34,14 @@ class ToolArgumentReassembler:
         return tool_call_id in self._buffers
 
     def complete(self, tool_call_id: str) -> str:
-        """Return the fully-restored, re-serialized argument JSON for one tool call."""
+        """一つのtool callについて完全復元・再serializeしたargument JSONを返す。"""
         parts = self._buffers.pop(tool_call_id, None)
         if parts is None:
             raise RestoreError(f"no buffered arguments for tool call {tool_call_id}")
         return self.restore_arguments("".join(parts))
 
     def restore_arguments(self, raw: str) -> str:
-        """Restore a complete argument JSON string (parse → restore values → dump)."""
+        """完全なargument JSON文字列をparse → value復元 → dumpの順で処理する。"""
         text = raw.strip()
         if text == "":
             return raw  # nothing to restore (e.g. no-arg tool call)

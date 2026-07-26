@@ -1,11 +1,11 @@
 # ADR-0006: LiteLLM 依存を撤廃し、Codex/Claude Code 専用の自作透過プロキシへ
 
-- Status: Accepted
-- Date: 2026-07-25
+- 状態：採用
+- 日付：2026-07-25
 - 関連: [ADR-0001](0001-litellm-guardrail-integration.md)（撤回）/ `doc/00-First-Order.md` §3-4, §40 /
   [compatibility.md](../compatibility.md)（Codex 実 E2E 知見）
 
-## Context
+## 背景
 
 `doc/00-First-Order.md` は**初期命令（ブリーフ・方針）**であり、変更不能な制約宣言ではない（冒頭が
 「安全側の前提を置き ADR に明記せよ」と工学判断を招いている）。その二層を区別する:
@@ -26,7 +26,7 @@
 
 **セキュリティ製品にとって、挙動を完全制御できない巨大依存はむしろ負債**である。
 
-## Decision
+## 決定
 
 **LiteLLM 依存を撤廃**し、Codex（OpenAI Responses）と Claude Code（Anthropic Messages）だけを
 対象とする**自作の薄い透過マスキングプロキシ**を構築する。**LiteLLM 非依存の masking core は温存**
@@ -40,7 +40,7 @@ policy/normalization/protocols/streaming はそのまま再利用可）。
   するだけでよい（保存・復号・ログなし＝§25 準拠）。
 - **マスクは実バックエンドで実証済み**: chatgpt.com への実送信ボディに登録機密 0 件（[compatibility.md]）。
 
-## Alternatives
+## 検討した代替案
 
 - **B. LiteLLM 上流対応を待つ/貢献**: ネイティブ可逆マスキングは WS のみ実装中で HTTP は未対応・時期不明。
   設計思想（Presidio ベース）が SecurityMasker（per-session HMAC alias・テナント分離・env_reference）と
@@ -48,7 +48,7 @@ policy/normalization/protocols/streaming はそのまま再利用可）。
 - **C. サポート範囲を Responses 非stream 等に限定**: 主用途 Codex のストリーム表示を諦める。却下。
 - **D. in-process タップ相関**: litellm のヘッダ転送挙動依存で脆い。却下。
 
-## Consequences
+## 影響
 
 - 受け入れ基準のうち **§38-16/17/18（LiteLLM 固有）は適用対象外**になる。**不変条件（§40-1..4, §25, §30）は
   引き続き拘束**する。§38 のうち「最終送信に機密なし」「alias 復元」「SSE 分割復元」「tool 引数 JSON」

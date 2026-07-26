@@ -1,4 +1,4 @@
-"""Per-session cryptography (§7, §8, ADR-0005).
+"""session単位の暗号処理（§7、§8、ADR-0005）。
 
 - Session keys come from a CSPRNG (``secrets.token_bytes``), never derived from
   the session id.
@@ -27,7 +27,7 @@ _NONCE_BYTES = 12
 
 
 def generate_session_keys() -> tuple[bytes, bytes]:
-    """Return ``(session_index_key, aead_key)`` — independent 256-bit CSPRNG keys."""
+    """独立した256 bit CSPRNG鍵``(session_index_key, aead_key)``を返す。"""
     return secrets.token_bytes(_KEY_BYTES), secrets.token_bytes(_KEY_BYTES)
 
 
@@ -37,7 +37,7 @@ def fingerprint(
     entity_type: str,
     replacement_profile: str,
 ) -> str:
-    """Deterministic per-session fingerprint of a (surface or normalized) value.
+    """表層形または正規化値のsession単位で決定論的なfingerprint。
 
     Domain-separated by entity type and profile so the same string under two
     entity types maps to two aliases (§7). Returns a hex digest.
@@ -49,7 +49,7 @@ def fingerprint(
 
 
 def encrypt(aead_key: bytes, plaintext: str, aad: bytes = b"") -> bytes:
-    """AES-256-GCM seal. Output is ``nonce(12) || ciphertext||tag``."""
+    """AES-256-GCMでsealする。出力は``nonce(12) || ciphertext||tag``。"""
     try:
         nonce = secrets.token_bytes(_NONCE_BYTES)
         ct = AESGCM(aead_key).encrypt(nonce, plaintext.encode("utf-8"), aad)
@@ -59,7 +59,7 @@ def encrypt(aead_key: bytes, plaintext: str, aad: bytes = b"") -> bytes:
 
 
 def decrypt(aead_key: bytes, blob: bytes, aad: bytes = b"") -> str:
-    """AES-256-GCM open. Raises ``CryptoError`` on tampering or wrong key/AAD."""
+    """AES-256-GCMでopenする。改竄またはkey／AAD不一致時は``CryptoError``。"""
     if len(blob) < _NONCE_BYTES + 16:
         raise CryptoError("ciphertext too short")
     nonce, ct = blob[:_NONCE_BYTES], blob[_NONCE_BYTES:]

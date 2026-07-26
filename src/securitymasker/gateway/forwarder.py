@@ -1,4 +1,4 @@
-"""Transparent upstream forwarding via httpx (§5, §25).
+"""httpxによるupstreamへの透過転送（§5、§25）。
 
 Forwards the client's request (masked body) to the upstream, passing the client's
 own auth and unknown headers through verbatim — the proxy never stores, decrypts,
@@ -43,7 +43,7 @@ async def forward_streaming(
     processor: StreamProcessor | None = None,
     on_complete: Callable[[StreamProcessor], Awaitable[None]] | None = None,
 ) -> StreamingResponse:
-    """Forward and stream the response back, optionally restored via ``processor``.
+    """requestを転送し、必要なら``processor``で復元しながらresponseをstreamで返す。
 
     ``on_complete`` runs once the upstream stream ends, giving the caller an async
     point to persist what the processor observed (e.g. binding the response id to
@@ -80,7 +80,7 @@ async def forward_streaming(
 async def forward_buffered(
     method: str, url: str, headers: Mapping[str, str], body: bytes
 ) -> tuple[int, dict[str, str], bytes]:
-    """Forward and return the full (non-streaming) response for dict restoration."""
+    """転送後、dict復元用に非streamingのresponse全文を返す。"""
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.request(method, url, headers=_fwd_req_headers(headers), content=body)
         return resp.status_code, _resp_headers(resp.headers), resp.content
@@ -95,6 +95,6 @@ def upstream_url(base: str, path: str) -> str:
 
 
 def redacted_headers(headers: Mapping[str, str]) -> dict[str, Any]:
-    """Header summary safe to log (§25): auth/cookie values are never included."""
+    """安全にログ記録できるheader概要。auth／cookie値は含めない（§25）。"""
     redact = {"authorization", "cookie", "x-api-key", "proxy-authorization"}
     return {k: ("<redacted>" if k.lower() in redact else v) for k, v in headers.items()}

@@ -1,4 +1,4 @@
-"""OpenAI Responses SSE restorer (§19, §20, §21).
+"""OpenAI Responses SSE復元（§19、§20、§21）。
 
 The proxy owns the response stream, so — unlike the LiteLLM callback path — this
 restoration actually reaches the client. Decodes SSE bytes (UTF-8 safe across
@@ -213,7 +213,7 @@ class ResponsesStreamProcessor:
         return [emit_delta, _reserialize(ev, payload)]
 
     def _safe_args(self, raw: str, *, restore: bool) -> str | None:
-        """Validated tool arguments, or ``None`` if they are not valid JSON.
+        """検証済みtool arguments。不正なJSONなら``None``。
 
         ``restore=True`` (trusted local tool) substitutes real values;
         ``restore=False`` re-serializes the parsed JSON with its aliases intact.
@@ -250,7 +250,7 @@ def _text_delta_event(output_index: int, content_index: int, text: str) -> SSEEv
 
 
 def _error_event(message: str) -> SSEEvent:
-    """Provider-compatible error event (doc/06 P1-10).
+    """provider互換error event（doc/06 P1-10）。
 
     Once an SSE stream has begun the HTTP status can no longer change, so a
     fail-closed outcome mid-stream is reported as an ``error`` event. The message

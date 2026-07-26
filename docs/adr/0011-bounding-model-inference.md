@@ -1,86 +1,71 @@
-# ADR-0011 — Bounding model inference without hiding text from it
+# ADR-0011 — textを検出対象外にしないmodel inferenceの上限制御
 
-- Status: Accepted
-- Date: 2026-07-26
-- Supersedes: the per-request "detector pass budget" introduced 2026-07-25
-- Relates to: ADR-0009, ADR-0010, doc/06 §P1-5, §P1-7
+- 状態：採用
+- 日付：2026-07-26
+- 置換対象：2026-07-25に導入したrequest単位の「detector pass budget」
+- 関連：ADR-0009、ADR-0010、doc/06 §P1-5、§P1-7
 
-## Context
+## 背景
 
-Model-backed detection is expensive in a way the deterministic detectors are not.
-Two independent pressures follow from that, and conflating them caused a
-vulnerability.
+model-backed detection は deterministic detector より高 cost です。ここから独立した
+二つの圧力が生じ、両者を混同したことで脆弱性が発生しました。
 
-**Pressure 1 — a request must not consume unbounded CPU.** Inference is
-synchronous CPU-bound Python. It cannot be interrupted: `asyncio.wait_for` around
-it ends *our wait*, not the work. A cancelled request leaves the worker running.
+**圧力1 — 一requestに無制限のCPUを消費させない。** inference は同期的で CPU-bound な
+Python 処理であり、割り込み不能です。`asyncio.wait_for` は待機を終えるだけで処理を
+停止せず、cancel された request の worker も動き続けます。
 
-**Pressure 2 — mixed prose/code input is segmented.** Context segmentation
-(§17) splits a body into typed spans so a fuzzy detector can skip code, where a
-model that has learned "capitalised token = name" fires on identifiers. Running
-every detector on every span means the number of model calls scales with how
-finely the input happens to be chopped — and the input is attacker-controlled.
+**圧力2 — prose／code混在入力をsegment化する。** context segmentation（§17）は body
+を typed span に分割し、「capitalised token = name」のように学習した fuzzy detector
+を code identifier に適用しないために使います。全 detector を各 span に実行すると、
+model 呼び出し回数が攻撃者の制御する segment 数に比例します。
 
-The first answer to pressure 2 was a per-request budget: full detector set for
-the first N spans, deterministic detectors only after that. That is a leak. Text
-past the budget is never seen by NER, and the result is indistinguishable from a
-clean scan. Padding a request with inline-code spans and placing an unregistered
-name after them defeated Japanese NER deterministically. Reproduced with 40
-inline-code spans: zero model detections on the trailing name.
+最初の対策は request ごとの budget とし、先頭 N span だけ全 detector、それ以降は
+deterministic detector だけを実行しました。しかし budget より後の text は NER に
+一度も渡らず、clean scan と区別できません。inline code span を40個並べて末尾に
+未登録名を置くと、日本語 NER の検出を確実にゼロにできました。
 
-## Decision
+## 決定
 
-**Bound the work by how much text there is, not by how it is divided.**
+**分割数ではなくtext量で処理を制限します。**
 
-Deterministic detectors run on every span, individually, uncapped. They are
-cheap, and a secret is a secret wherever it appears (invariant 8).
+deterministic detector は安価で、秘密はどの context にあっても秘密であるため、全 span
+へ個別・無制限に実行します（不変条件8）。
 
-Model-backed detectors run **once per request**, over the fuzzy-eligible spans
-joined together, with findings mapped back to absolute offsets. Code-like spans
-are still excluded — that policy is unchanged. Cost is now a function of the
-prose volume in the request, which no rearrangement of the same text can lower,
-and which no rearrangement can use to hide anything.
+model-backed detector は fuzzy 対象 span を結合した text に対して**requestごとに一度**
+実行し、検出位置を absolute offset へ戻します。code-like span の除外方針は変えません。
+cost は prose 量の関数となり、同じ text の並べ替えや細分化で検出対象を隠せません。
 
-A detector is selected for this pass by an explicit `fuzzy` marker, not by
-`skip_code_contexts`. The latter is user-configurable and answers a different
-question; reading it as "is a model" meant that turning it off silently changed
-how the detector was scheduled.
+この pass の選択には明示的な `fuzzy` marker を使い、`skip_code_contexts` を model
+判定に流用しません。後者は user 設定可能で別の問いに答えるため、流用すると設定変更が
+detector scheduling を黙って変えます。
 
-**Window the input to what the model can actually read.** A transformer has a
-hard input length (512 tokens). Exceeding it does not raise: the tokenizer warns
-and the pipeline classifies the prefix, returning nothing for the rest. Text is
-therefore cut into overlapping token-bounded windows and each is inferred
-separately; the overlap prevents a name landing on a cut from being missed by
-both halves, and duplicates are removed afterwards.
+**modelが実際に読める範囲へwindow化します。** transformer には512 token などの入力
+上限があります。超過時に例外にならず tokenizer が警告して prefix だけを分類するため、
+text を overlap 付き token-bounded window に分割します。境界上の氏名を両側で
+見落とさないよう overlap を設け、後で重複を除きます。
 
-**Over the ceiling, refuse.** Past `defaults.max_fuzzy_chars` the request fails
-closed. This is the one place a bound is allowed to change behaviour, and it must
-be visible: scanning part of the text and reporting success is the failure this
-ADR exists to remove.
+**上限超過時は拒否します。** `defaults.max_fuzzy_chars` を超えた request は
+fail-closed にします。一部だけ検査して成功を報告する挙動を防ぐため、上限による変化は
+明示的な拒否でなければなりません。
 
-**Bound concurrency, not duration.** Inference runs on a fixed thread pool with
-an admission limit. Over the limit, requests are refused rather than queued
-behind work nobody is waiting for. Abandoned work keeps its slot until it
-finishes, because nothing can reclaim it.
+**時間ではなくconcurrencyを制限します。** inference は固定 thread pool と admission
+limit の下で実行し、上限超過時は待ち手のいない処理の後ろに queue せず request を
+拒否します。放棄された処理も終了までは slot を占有します。
 
-## Consequences
+## 影響
 
-- Model detections now see each span in the context of the surrounding prose
-  rather than in isolation, which is closer to how the model was trained.
-- A detection that straddles a join boundary is clipped to each span it covers
-  and emitted once per span. Clipping can only mask more than the model asked
-  for, never less.
-- Very large prompts are refused rather than partially scanned. This is a real
-  behaviour change and is documented as such.
-- The per-request pass budget is gone. It bounded the wrong quantity.
+- model は各 span を孤立してではなく周囲の prose とともに見るため、training 時の入力に
+  近づきます。
+- join boundary をまたぐ detection は、重なる各 span へ clip して span ごとに一度
+  出力します。clip により model の要求より広くマスクすることはあっても狭くはしません。
+- 非常に大きな prompt は部分検査せず拒否します。これは実際の挙動変更として文書化します。
+- 誤った量を制限していた request 単位の pass budget は撤廃します。
 
-## Alternatives considered
+## 検討した代替案
 
-- **Keep the budget, fail closed past it.** Honest, and it was the auditor's
-  minimum bar. Rejected as the primary answer because it makes a routine
-  code-heavy prompt unusable while the joined pass handles it correctly for the
-  same cost.
-- **Run the model per span with no cap.** No blind spot, but cost scales with
-  span count, which is attacker-controlled.
-- **A timeout around inference.** Does not bound anything: the work continues
-  after the wait ends.
+- **budgetを残し超過時にfail-closed**：正直な挙動で監査の最低条件を満たしますが、
+  joined pass なら同じ cost で処理できる通常の code-heavy prompt まで拒否するため
+  主案にはしません。
+- **上限なしでspanごとにmodel実行**：blind spot はありませんが、攻撃者が制御する
+  span 数に cost が比例します。
+- **inferenceをtimeoutで囲む**：待機終了後も処理が続くため、処理量を制限しません。

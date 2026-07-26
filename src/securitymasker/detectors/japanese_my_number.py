@@ -1,4 +1,4 @@
-"""JP_MY_NUMBER (マイナンバー / 個人番号) recognizer (§14.5).
+"""マイナンバー／個人番号（JP_MY_NUMBER）recognizer（§14.5）。
 
 12 digits with an official check digit. We normalize full-width digits (done
 upstream by NFKC), allow space/hyphen grouping, verify the check digit, and only
@@ -28,7 +28,7 @@ _CONTEXT = (
 
 
 def is_valid_my_number(digits: str) -> bool:
-    """Validate the 12-digit My Number check digit (official algorithm)."""
+    """12桁のMy Number check digitを公式algorithmで検証する。"""
     if len(digits) != 12 or not digits.isdigit():
         return False
     d = [int(c) for c in digits]
@@ -45,7 +45,7 @@ def is_valid_my_number(digits: str) -> bool:
 
 
 def check_digit(body11: str) -> int:
-    """Compute the check digit for an 11-digit body (helper for synthetic test data)."""
+    """11桁bodyのcheck digitを計算する。合成test data用helper。"""
     d = [int(c) for c in body11]
     total = sum(((n + 1) if n <= 6 else (n - 5)) * d[11 - n] for n in range(1, 12))
     r = total % 11

@@ -1,4 +1,4 @@
-"""Unicode normalization with an offset map back to the original text (§12, §14.4).
+"""原文へ戻るoffset mapを伴うUnicode正規化（§12、§14.4）。
 
 Detection runs on the normalized text (default NFKC) so that full-width/half-width
 and compatibility variants match a dictionary/regex; but replacement happens on the
@@ -35,7 +35,7 @@ class NormalizedText:
     _end: tuple[int, ...]
 
     def to_original_span(self, n_start: int, n_end: int) -> tuple[int, int]:
-        """Map a ``[n_start, n_end)`` span in ``normalized`` to a span in ``original``."""
+        """``normalized``の``[n_start, n_end)`` spanを``original``のspanへ戻す。"""
         if n_end <= n_start:
             at = self._src[n_start] if n_start < len(self._src) else len(self.original)
             return (at, at)
@@ -71,5 +71,5 @@ def normalize(text: str, form: NormForm = "nfkc") -> NormalizedText:
 
 
 def normalize_value(text: str, form: NormForm = "nfkc") -> str:
-    """Normalize a standalone value (no offset map needed), e.g. a dictionary term."""
+    """dictionary termなど単独値をoffset mapなしで正規化する。"""
     return unicodedata.normalize(_FORMS[form], text)

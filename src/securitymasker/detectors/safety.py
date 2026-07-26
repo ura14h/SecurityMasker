@@ -1,4 +1,4 @@
-"""Regex safety linting for user-supplied patterns (§32, doc/06 P1-5).
+"""ユーザー指定patternに対するregex safety lint（§32、doc/06 P1-5）。
 
 Python's ``re`` is a backtracking engine, so a pattern like ``(a+)+$`` degrades
 exponentially: a few dozen characters of input can occupy a core for minutes. The
@@ -44,11 +44,11 @@ _LARGE_BOUNDED = re.compile(r"\{\s*(\d{3,})\s*(?:,\s*(\d{3,})?\s*)?\}")
 
 
 class UnsafeRegexError(ValueError):
-    """A user pattern matched a known catastrophic-backtracking shape."""
+    """ユーザーpatternが既知のcatastrophic backtracking形式に一致した。"""
 
 
 def check_regex_safety(pattern: str, *, rule_id: str) -> None:
-    """Raise ``UnsafeRegexError`` if ``pattern`` has a known blow-up shape.
+    """``pattern``が既知の計算量爆発形式なら``UnsafeRegexError``を送出する。
 
     The message names only the rule id and the reason — never the pattern, which
     routinely embeds the very secret it matches (§25).

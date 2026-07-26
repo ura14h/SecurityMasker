@@ -1,4 +1,4 @@
-"""Redis-backed session store (§8, Phase 5).
+"""Redis-backed session store（§8、Phase 5）。
 
 Multi-worker sharing behind the same ``SessionStore`` Protocol. Security rules (§8):
 
@@ -41,12 +41,12 @@ from securitymasker.sessions.store import (
 
 MASTER_KEY_ENV = "SECURITYMASKER_MASTER_KEY"
 
-# Atomic compare-and-delete so a worker only releases a lock it still owns (P1-9).
+# workerが保持中のlockだけを解放するatomic compare-and-delete（P1-9）。
 _UNLOCK_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
     "return redis.call('del', KEYS[1]) else return 0 end"
 )
-# Extend the TTL only while we are still the owner (compare-and-expire).
+# ownerである間だけTTLを延長するcompare-and-expire。
 _RENEW_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
     "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
@@ -54,7 +54,7 @@ _RENEW_LUA = (
 _LOCK_TTL_SECONDS = 30
 _LOCK_WAIT_SECONDS = 10.0
 _LOCK_POLL_SECONDS = 0.05
-# Renew well inside the TTL so a slow request (large input, slow detector) cannot
+# slow requestでもlock失効しないようTTLに十分余裕を持ってrenewする。
 # outlive its own lock and let a second worker fork the session (doc/06 P1-9).
 _LOCK_RENEW_SECONDS = 10.0
 
@@ -158,7 +158,7 @@ class RedisSessionStore:
         self._ns = namespace
 
     def _key(self, session_id: str, tenant_id: str | None) -> str:
-        # Tenant-separated key space (§8). Session id is opaque already.
+        # tenant分離済みkey空間（§8）。session ID自体もopaque。
         return f"{self._ns}:{tenant_id or '_'}:sess:{session_id}"
 
     def _aad(self, session_id: str, tenant_id: str | None) -> bytes:
@@ -179,7 +179,7 @@ class RedisSessionStore:
         if is_expired(session, self._idle_ttl):
             await self.delete(session_id, tenant_id)
             return None
-        # Same defence in depth as the in-memory store: never return a session
+        # in-memory storeと同じdefence-in-depthでidentity不一致sessionを返さない。
         # whose recorded identity disagrees with the caller's (§8, doc/06 P0-9).
         if tenant_id is not None and session.tenant_id != tenant_id:
             raise SessionError("session does not belong to the requesting tenant")
@@ -243,7 +243,7 @@ class RedisSessionStore:
         return out
 
     async def bind_response(self, response_id: str, session_key: str) -> None:
-        """Bind a response id to the session that produced it (doc/06 P1-1)."""
+        """response IDを生成元sessionへbindingする（doc/06 P1-1）。"""
         await self._redis.set(
             f"{self._ns}:resp:{response_id}", session_key.encode(),
             ex=int(self._idle_ttl.total_seconds()),
@@ -259,7 +259,7 @@ class RedisSessionStore:
     async def lock(
         self, session_id: str, tenant_id: str | None = None
     ) -> AsyncIterator[LockHandle]:
-        """Cross-worker lock via SET NX with a unique owner token (§8, P1-9).
+        """固有owner tokenとSET NXによるworker間lock（§8、P1-9）。
 
         Waits (bounded) for the lock and fails closed if it cannot be acquired, so
         the caller never runs the critical section unlocked; releases atomically so
@@ -282,15 +282,14 @@ class RedisSessionStore:
                 "refusing to proceed unlocked"
             )
 
-        # Set when the watchdog finds we no longer own the lock. The holder MUST
+        # watchdogがlock ownership喪失を検出した場合に設定する。
         # check this before acting on the protected state (P1-9): a renewal that
         # returns 0 means another owner has taken over, and continuing would let
         # two workers mutate the same session.
         lost = asyncio.Event()
 
         async def _renew() -> None:
-            """Extend the TTL while we still hold it, so the lock cannot expire
-            mid-request and let another worker fork the same session (P1-9)."""
+            """lock保持中にTTLを延長し、request途中の失効と別workerによるsession分岐を防ぐ（P1-9）。"""
             while True:
                 await asyncio.sleep(_LOCK_RENEW_SECONDS)
                 try:
@@ -300,13 +299,13 @@ class RedisSessionStore:
                 except Exception:  # noqa: BLE001 - Redis unreachable: assume lost
                     lost.set()
                     return
-                # Lua returns 0 when the key is gone or owned by someone else.
+                # key消失または他ownerの場合Luaは0を返す。
                 if not ok:
                     lost.set()
                     return
 
         async def _still_mine() -> bool:
-            """Re-read ownership so the holder can check right before writing."""
+            """書き込み直前にholderが確認できるようownershipを再読する。"""
             try:
                 current = await self._redis.get(lock_key)
             except Exception:  # noqa: BLE001 - Redis unreachable: assume lost
@@ -321,6 +320,6 @@ class RedisSessionStore:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watchdog
-            # Best-effort atomic release; if it fails, the TTL reclaims the lock.
+            # best-effortでatomic releaseし、失敗時はTTLがlockを回収する。
             with contextlib.suppress(Exception):
                 await self._redis.eval(_UNLOCK_LUA, 1, lock_key, token)

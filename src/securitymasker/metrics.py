@@ -1,4 +1,4 @@
-"""In-process metrics + audit events (§25).
+"""process内metricとaudit event（§25）。
 
 Only safe fields are ever recorded (entity types, counts, timings, fail-open/closed
 outcomes, irreversible fingerprints). Original secret values, decrypted mappings,
@@ -60,7 +60,7 @@ METRICS = Metrics()
 
 
 def audit(event: str, *, session_id: str | None = None, **safe_fields: Any) -> None:
-    """Emit a structured audit event with only safe fields (§25).
+    """安全なfieldだけを含むstructured audit eventを出力する（§25）。
 
     ``session_id`` is logged as an irreversible fingerprint, never in the clear.
     Callers must not pass original secrets; this does no scrubbing of its own.

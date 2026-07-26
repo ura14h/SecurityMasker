@@ -41,12 +41,20 @@ export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
 securitymasker entities test "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
 ```
 
+出力例（alias は session 鍵に基づくため実行ごとに異なります）：
+
 ```text
-入力:   株式会社極秘技研の山田太郎です。 key=sk-...
-マスク: SM_ORG_2121B2のSM_PERSON_81FEB6です。 key=${SECURITYMASKER_SECRET_5F7B78}
-復元:   このセッションで生成した alias のみをローカルで復元（SM_ORG_→株式会社極秘技研 等）。
-        API キー/秘密鍵は実値へ戻さず ${SECURITYMASKER_SECRET_...} のまま（§10, §27）。
+masked:
+  SM_ORG_2121B255C21BのSM_PERSON_81FEB612A4D0です。 key=${SECURITYMASKER_SECRET_5F7B783CB629}
+detected (type: count):
+  API_KEY: 1
+  ORGANIZATION: 1
+  PERSON: 1
 ```
+
+CLI は元の入力を再表示せず、この command では復元も行いません。応答経路では、この
+session が生成した `literal` alias だけをローカルで復元します。API key／private key は
+実値へ戻さず `${SECURITYMASKER_SECRET_...}` のまま保持します（§10、§27）。
 
 - 同一セッションでは同じ機密値が常に同じ alias、別セッションでは別 alias（§6）。
 

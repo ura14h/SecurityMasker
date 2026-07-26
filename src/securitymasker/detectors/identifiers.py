@@ -1,4 +1,4 @@
-"""Suppress PII matches that fall INSIDE a structural identifier.
+"""構造的identifierの内部だけにあるPII matchを抑止する。
 
 A UUID is 32 hexadecimal digits, and roughly a third of them are decimal. Any
 digit-shaped pattern will therefore eventually match part of one by chance —
@@ -65,17 +65,17 @@ GUARDED_DETECTORS = frozenset({
 
 
 def is_guarded(detector: str) -> bool:
-    """Whether ``detector``'s findings may be suppressed inside an identifier."""
+    """identifier内で``detector``のfindingを抑止してよいかを返す。"""
     return detector in GUARDED_DETECTORS
 
 
 def identifier_spans(text: str) -> list[tuple[int, int]]:
-    """Character ranges of the structural identifiers in ``text``."""
+    """``text``内にある構造的identifierのcharacter rangeを返す。"""
     return [(m.start(), m.end()) for m in _UUID.finditer(text)]
 
 
 def inside_identifier(spans: list[tuple[int, int]], start: int, end: int) -> bool:
-    """Whether ``[start, end)`` is a PROPER substring of one of ``spans``.
+    """``[start, end)``が``spans``いずれかの真部分文字列かを返す。
 
     Equal-or-covering ranges return False, so a rule that matches the identifier
     itself still fires.

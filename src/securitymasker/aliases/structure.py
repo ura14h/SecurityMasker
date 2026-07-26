@@ -1,4 +1,4 @@
-"""Structure-preserving aliases for URLs and file paths (§9.7, §9.8, doc/06 P1-6).
+"""URLとfile pathの構造保持alias（§9.7、§9.8、doc/06 P1-6）。
 
 Invariant 3 says masking must not break syntax. Replacing a whole URL or path with
 an opaque ``SM_VALUE_ABC123`` token satisfies confidentiality but destroys it: the
@@ -47,17 +47,17 @@ _PW_PREFIX = "sm-pw-"
 _HOST_PREFIX = "sm-host-"
 _SUB_TOKEN_LEN = 8
 
-# Schemes whose "path" is not a hierarchical path we can safely re-segment.
+# `path`を安全に再segment化できる階層pathとして扱えないscheme。
 _OPAQUE_SCHEMES = frozenset({"mailto", "data", "javascript", "tel", "urn"})
 
 
 def _sub(token: str, label: str) -> str:
-    """A short, deterministic sub-token for one component of the value."""
+    """値の一componentに対応する短い決定論的sub-tokenを返す。"""
     return hashlib.sha256(f"{token}\x1f{label}".encode()).hexdigest()[:_SUB_TOKEN_LEN]
 
 
 def _split_extension(segment: str) -> tuple[str, str]:
-    """Split a trailing extension, keeping multi-dot suffixes like ``.tar.gz``."""
+    """``.tar.gz``のような複数dot suffixを保って末尾extensionを分離する。"""
     if segment.startswith(".") and segment.count(".") == 1:
         return segment, ""  # dotfile: the whole name is the identity
     root, dot, ext = segment.partition(".")
@@ -67,7 +67,7 @@ def _split_extension(segment: str) -> tuple[str, str]:
 
 
 def _alias_segment(token: str, index: int, segment: str) -> str:
-    """Alias one path segment, preserving its extension."""
+    """extensionを保ったままpath segmentをalias化する。"""
     if segment in ("", ".", ".."):
         return segment  # structural, carries no identity
     _, ext = _split_extension(segment)
@@ -75,7 +75,7 @@ def _alias_segment(token: str, index: int, segment: str) -> str:
 
 
 def url_alias(token: str, original: str) -> str:
-    """Rebuild ``original`` as a syntactically valid, non-identifying URL."""
+    """``original``を構文的に有効で個人を特定しないURLとして再構築する。"""
     try:
         parts = urlsplit(original.strip())
     except ValueError:  # malformed IPv6 literal, bad port, ...
@@ -128,13 +128,13 @@ def url_alias(token: str, original: str) -> str:
                 for i, (k, _) in enumerate(pairs)
             )
         else:
-            # Not key=value form (e.g. `?flag`): keep it opaque but valid.
+            # `?flag`などkey=value形式でない値は不透明かつ有効な形で保つ。
             query = f"{_VAL_PREFIX}{_sub(token, 'q')}"
 
     fragment = f"{_FRAG_PREFIX}{_sub(token, 'frag')}" if parts.fragment else ""
 
     rebuilt = urlunsplit((parts.scheme, netloc, path, query, fragment))
-    # Defensive: the alias must itself parse, and must not have kept the host.
+    # defence-in-depthとしてalias自体をparseし、元hostが残っていないことを確認する。
     check = urlsplit(rebuilt)
     if check.scheme != parts.scheme:
         raise MaskingError("rebuilt URL did not round-trip; refusing to send it")
@@ -142,7 +142,7 @@ def url_alias(token: str, original: str) -> str:
 
 
 def file_path_alias(token: str, original: str) -> str:
-    """Rebuild ``original`` as a path with the same shape but no identity.
+    """``original``を同じ形状で個人を特定しないpathとして再構築する。
 
     Preserves POSIX vs Windows vs UNC form, absoluteness, drive letter, depth,
     trailing separator, and the final extension.
@@ -179,7 +179,7 @@ def file_path_alias(token: str, original: str) -> str:
 
 
 def is_structurally_valid_url(value: str) -> bool:
-    """True if ``value`` parses as a URL with a scheme (used by tests/§30.5)."""
+    """``value``がscheme付きURLとしてparseできる場合にTrue（test／§30.5用）。"""
     try:
         parts = urlsplit(value)
     except ValueError:
@@ -188,5 +188,5 @@ def is_structurally_valid_url(value: str) -> bool:
 
 
 def path_depth(value: str) -> int:
-    """Number of components in a POSIX path (used by tests/§30.5)."""
+    """POSIX pathのcomponent数を返す（test／§30.5用）。"""
     return len(posixpath.normpath(value).split("/"))

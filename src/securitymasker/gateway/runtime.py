@@ -1,4 +1,4 @@
-"""Gateway runtime: masking engine + session store + upstream endpoints.
+"""Gateway runtime：masking engine、session store、upstream endpoint。
 
 Built from ``SECURITYMASKER_CONFIG`` (the dictionary/policy YAML). If unset, the
 engine is ``None`` and the proxy forwards transparently (no masking). Upstream
@@ -24,7 +24,7 @@ from securitymasker.gateway.identity import (
 from securitymasker.sessions.memory import InMemorySessionStore
 from securitymasker.sessions.store import SessionStore
 
-# Codex (ChatGPT auth) backend; the client's OAuth bearer is passed through (§25).
+# Codex（ChatGPT auth）backend。clientのOAuth bearerを透過する（§25）。
 DEFAULT_OPENAI_UPSTREAM = "https://chatgpt.com/backend-api/codex"
 DEFAULT_ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
 
@@ -34,12 +34,12 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 def _is_loopback(url: str) -> bool:
     host = (urlsplit(url).hostname or "").lower()
-    # In-compose/demo service names are not loopback; only real loopback counts.
+    # Compose／demoのservice名はloopbackとせず、実loopbackだけを認める。
     return host in LOOPBACK_HOSTS
 
 
 def _build_store(*, idle_ttl: Any, absolute_ttl: Any) -> SessionStore:
-    """Select the session store from ``SECURITYMASKER_STORE`` (P1-9).
+    """``SECURITYMASKER_STORE``からsession storeを選択する（P1-9）。
 
     Default ``memory`` is single-process. ``redis`` shares state across workers and
     is required for multi-worker deployments; if selected but unavailable, fail
@@ -84,27 +84,27 @@ class GatewayRuntime:
         self.store = store
         self.openai_upstream = openai_upstream.rstrip("/")
         self.anthropic_upstream = anthropic_upstream.rstrip("/")
-        # Tenant isolation mode (doc/06 P0-9): "local" = one implicit tenant;
+        # tenant分離mode（doc/06 P0-9）。`local`は暗黙の単一tenant。
         # "multitenant" = tenant id proven by an HMAC the authenticator computes
         # with ``tenant_auth_secret`` (a bare header is never trusted).
         self.mode = mode
         self.tenant_header = tenant_header
         self.tenant_auth_secret = tenant_auth_secret
         self.max_clock_skew_seconds = max_clock_skew_seconds
-        # Timestamps are required by default: without one a captured proof is
+        # 取得済みproofの無期限replayを防ぐためtimestampを既定で必須にする。
         # replayable for the lifetime of the secret (ADR-0008).
         self.require_assertion_timestamp = require_assertion_timestamp
 
     @classmethod
     def from_env(cls, *, engine: MaskingEngine | None = None,
                  config: Any = None) -> GatewayRuntime:
-        """Build the runtime from the environment.
+        """環境変数からruntimeを構築する。
 
         ``engine``/``config`` let a caller that has ALREADY built them (doctor)
         hand them over instead of paying for a second construction — with NER
         enabled that is a second ~1GB model load for one diagnosis.
         """
-        # Fail-closed startup (§26, doc/06 P0-1): a masking config is REQUIRED. The
+        # fail-closed起動（§26、doc/06 P0-1）。masking configは必須。
         # engine-less transparent mode exists only as an explicit, dev-only opt-in.
         config_path = os.environ.get("SECURITYMASKER_CONFIG")
         dev_transparent = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
@@ -143,7 +143,7 @@ class GatewayRuntime:
         )
 
         if engine is None:
-            # Dev transparent mode forwards raw bodies, so it must never sit in
+            # raw bodyを転送するdev transparent modeは実provider経路に置かない。
             # front of a real provider (doc/06 P0-1). Loopback upstreams only.
             for name, url in (("OPENAI", openai_upstream), ("ANTHROPIC", anthropic_upstream)):
                 if not _is_loopback(url):
@@ -155,7 +155,7 @@ class GatewayRuntime:
 
         tenant_auth_secret = os.environ.get("SECURITYMASKER_TENANT_AUTH_SECRET")
         if mode != MODE_LOCAL and not tenant_auth_secret:
-            # Without a secret the tenant header is unverifiable and any client
+            # secretなしではtenant headerを検証できず任意clientが詐称できる。
             # could claim any tenant (doc/06 P0-9).
             raise ConfigError(
                 f"SECURITYMASKER_MODE={mode} requires SECURITYMASKER_TENANT_AUTH_SECRET; "

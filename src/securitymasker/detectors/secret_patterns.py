@@ -1,4 +1,4 @@
-"""Built-in developer-secret patterns (§15).
+"""組み込みのdeveloper secret pattern（§15）。
 
 Secrets default to the ``environment_reference`` profile + ``env_reference`` restore
 policy, so their real value is never returned to the client — generated code uses

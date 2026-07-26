@@ -1,4 +1,4 @@
-"""JP phone number recognizer (§14.3).
+"""日本の電話番号（JP phone number）recognizer（§14.3）。
 
 Matches common Japanese formats (landline, mobile, freedial, +81, parenthesized,
 extension) on the NFKC-normalized text. Context words (電話/TEL/携帯/連絡先/内線…)

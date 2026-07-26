@@ -1,4 +1,4 @@
-"""Japanese NER via a pinned Hugging Face token-classification model (§14.1, ADR-0009).
+"""固定したHugging Face token-classification modelによる日本語NER（§14.1、ADR-0009）。
 
 Optional and OFF by default. The dictionary and the deterministic recognizers are
 the trusted layer; this exists only to catch what is not registered — an
@@ -38,11 +38,11 @@ from securitymasker.detectors.inference import InferenceOverloaded, shared_runne
 from securitymasker.errors import ConfigError, DetectionError
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
-# Coarse labels across the schemas we support. Kept explicit rather than fuzzy
+# 対応schema間の粗いlabel mapping。fuzzy matchingにせず明示する。
 # matched: guessing what an unknown label means is how a model silently mislabels
 # a person as a product (ADR-0009).
 _LABEL_MAP: dict[str, str] = {
-    # English/ISO style (tsmatz/xlm-roberta-ner-japanese and most CoNLL models)
+    # English／ISO形式（tsmatz/xlm-roberta-ner-japaneseと多くのCoNLL model）
     "PER": EntityType.PERSON.value,
     "PERSON": EntityType.PERSON.value,
     "ORG": EntityType.ORGANIZATION.value,
@@ -53,7 +53,7 @@ _LABEL_MAP: dict[str, str] = {
     "LOC": EntityType.LOCATION.value,
     "LOCATION": EntityType.LOCATION.value,
     "GPE": EntityType.LOCATION.value,
-    # Japanese label sets (LUKE-style 拡張固有表現)
+    # 日本語label集合（LUKE形式の拡張固有表現）
     "人名": EntityType.PERSON.value,
     "法人名": EntityType.ORGANIZATION.value,
     "政治的組織名": EntityType.ORGANIZATION.value,
@@ -62,7 +62,7 @@ _LABEL_MAP: dict[str, str] = {
     "地名": EntityType.LOCATION.value,
 }
 
-# Labels we deliberately do NOT treat as personal data: an event, a product, or a
+# event、product、その他の分類など、意図的に個人情報として扱わないlabel。
 # generic "outside" tag. Listed so they count as *known* and do not trip the
 # "unmappable schema" guard.
 _IGNORED_LABELS = frozenset({"O", "EVT", "PRD", "イベント名", "製品名", "その他"})
@@ -73,7 +73,7 @@ _PERSON_CONTEXT = (
 
 
 def _coarse(label: str) -> str:
-    """Strip a BIO prefix and normalise case for lookup."""
+    """BIO prefixを除き、lookup用に大文字小文字を正規化する。"""
     text = label.strip()
     if len(text) > 2 and text[1] == "-" and text[0] in "BILUES":
         text = text[2:]
@@ -81,12 +81,12 @@ def _coarse(label: str) -> str:
 
 
 class UnsupportedLabelSchemaError(ConfigError):
-    """The model's labels cannot be mapped, so its output would be meaningless."""
+    """model labelをmappingできず、出力が無意味になることを示す。"""
 
 
 class JapaneseNerDetector:
     name = "jp_ner"
-    # Model-backed: the engine schedules this differently from the deterministic
+    # model-backedなのでengineはdeterministic detectorと異なるscheduleを行う。
     # detectors (one bounded request-wide pass, not one call per span). This is an
     # explicit marker rather than an inference from `skip_code_contexts`, which is
     # user-configurable and means something else.
@@ -105,15 +105,15 @@ class JapaneseNerDetector:
         inference_timeout: float | None = None,
     ) -> None:
         self._inference_timeout = inference_timeout
-        # Kept below the model's 512-token limit with room for the special tokens
+        # special tokenとoverlapの余裕を残して512-token上限未満にする。
         # the pipeline adds; the overlap is generous enough to contain any Japanese
         # personal or organisation name that lands on a window boundary.
         self._window_tokens = 448
         self._window_overlap = 64
-        # Used only when no offset-capable tokenizer is available (see _windows).
+        # offset対応tokenizerがない場合だけ使う（`_windows`参照）。
         self._window_chars = 400
         self._window_overlap_chars = 64
-        # Fuzzy NER opts out of code-like spans (§17); the dictionary and the
+        # fuzzy NERはcode-like spanを対象外にする（§17）。
         # deterministic detectors keep running there.
         self.skip_code_contexts = skip_code_contexts
         self._min_score = min_score
@@ -137,12 +137,12 @@ class JapaneseNerDetector:
                 ) from exc
             return
 
-        # Re-verify the cached artifacts BEFORE loading them. Fetch-time
+        # fetch後のcache改変を検出するためload前にartifactを再検証する。
         # verification says what was downloaded once; a cache can be altered
         # afterwards, so the gate has to be here too (ADR-0010).
         #
         # `source` is what we hand to transformers. In offline mode it is the
-        # VERIFIED SNAPSHOT DIRECTORY, not the model id: passing the id makes
+        # model IDではなく検証済みsnapshot directoryを渡し、再解決を防ぐ。
         # transformers 4.57 contact the Hub even with local_files_only=True
         # (measured: one outbound connection per load), which breaks an air-gapped
         # deployment and quietly reintroduces a network dependency into the
@@ -170,17 +170,17 @@ class JapaneseNerDetector:
             source = str(directory)
 
         try:
-            # Load the weights and tokenizer EXPLICITLY rather than letting
+            # pipelineに暗黙選択させずweightとtokenizerを明示loadする。
             # `pipeline()` resolve them: this is where `revision` pins the exact
             # commit and `local_files_only` guarantees no network access at request
             # time. `pipeline()` itself does not accept local_files_only.
             load_kwargs: dict[str, Any] = {
                 "local_files_only": local_files_only,
-                # Never execute model-supplied code (§ supply chain).
+                # model提供codeは絶対に実行しない（supply chain）。
                 "trust_remote_code": False,
             }
             if source == model:
-                # Online mode only. A `revision` alongside a local PATH is
+                # online modeだけでrevisionを渡し、local pathでは使わない。
                 # meaningless to transformers; offline the pin is enforced more
                 # strongly than a kwarg could — cache_directory() resolves the
                 # snapshot for exactly this revision and require_verified() has
@@ -215,7 +215,7 @@ class JapaneseNerDetector:
         self.available = self._pipeline is not None
 
     def _validate_label_schema(self, model: str, required: bool) -> None:
-        """Refuse a model whose labels we cannot interpret (ADR-0009).
+        """解釈不能なlabelを持つmodelを拒否する（ADR-0009）。
 
         A model with an unknown schema returns detections we drop on the floor,
         which looks exactly like a clean run. For a masking proxy that is a leak
@@ -239,7 +239,7 @@ class JapaneseNerDetector:
                 raise UnsupportedLabelSchemaError(message)
 
     def _validate_offsets(self, model: str, required: bool) -> None:
-        """Refuse a model whose tokenizer cannot report character offsets.
+        """tokenizerがcharacter offsetを報告できないmodelを拒否する。
 
         Masking needs a span, not just a label: without ``start``/``end`` we cannot
         say WHICH characters to replace. Some tokenizers (LUKE's, for one) return
@@ -268,7 +268,7 @@ class JapaneseNerDetector:
             raise UnsupportedLabelSchemaError(message)
 
     def _windows(self, text: str) -> list[tuple[int, str]]:
-        """Split ``text`` into (offset, chunk) pairs the model can actually read.
+        """``text``をmodelが実際に読める``(offset, chunk)`` pairへ分割する。
 
         A transformer has a hard input length (512 tokens here). Handing it more
         does NOT raise — the tokenizer warns to stderr and the pipeline silently
@@ -285,7 +285,7 @@ class JapaneseNerDetector:
         """
         offsets = self._token_offsets(text)
         if offsets is None:
-            # No usable tokenizer (a stub, or one without offset mapping). Fall
+            # 利用可能tokenizerがなければcharacter windowへfallbackする。
             # back to character windows: cruder, but it still cannot truncate,
             # and truncation is the failure that matters. Japanese runs close to
             # one token per character, so the character budget stays under the
@@ -296,7 +296,7 @@ class JapaneseNerDetector:
                       start_of=lambda i: offsets[i][0], end_of=lambda i: offsets[i][1])
 
     def _token_offsets(self, text: str) -> list[tuple[int, int]] | None:
-        """Character offsets per token, or None when the tokenizer cannot say."""
+        """tokenごとのcharacter offset。tokenizerが報告不能ならNone。"""
         tokenizer = getattr(self._pipeline, "tokenizer", None)
         if tokenizer is None:
             return None
@@ -316,7 +316,7 @@ class JapaneseNerDetector:
 
     async def _infer(self, text: str) -> list[dict[str, Any]]:
         try:
-            # Synchronous, CPU-bound inference on a BOUNDED pool. A timeout cannot
+            # 同期CPU-bound inferenceをbounded poolで実行する。
             # stop the worker (nothing can interrupt CPU-bound Python), so the
             # protection is the admission limit: abandoned work keeps its slot
             # until it finishes, and further requests are refused rather than
@@ -360,7 +360,7 @@ class JapaneseNerDetector:
             if etype is None or score < self._min_score:
                 continue
             start, end = int(ent["start"]), int(ent["end"])
-            # Ambiguous given names (さくら/葵/ひかり) need context to be credible.
+            # 曖昧なgiven name（さくら／葵／ひかり）は信頼に足るcontextを要求する。
             if etype == EntityType.PERSON.value and not has_context(
                 text, start, end, _PERSON_CONTEXT
             ):
@@ -380,7 +380,7 @@ class JapaneseNerDetector:
                     restore_policy=RestorePolicy.LITERAL.value,
                     original_value=context.norm.original[o_start:o_end],
                     normalized_value=text[start:end],
-                    # Least-trusted signal: the dictionary and deterministic
+                    # 最低信頼signalとし、dictionary／deterministic detectorを優先する。
                     # detectors win every overlap (§40-10, invariant 8).
                     metadata={"priority": 90, "ner_label": label},
                 )
@@ -397,7 +397,7 @@ def _slice(
     start_of: Any,
     end_of: Any,
 ) -> list[tuple[int, str]]:
-    """Windows of at most ``size`` units, overlapping by ``overlap``.
+    """最大``size`` unit、``overlap``分重複するwindowを作る。
 
     ``start_of(i)`` is the first character of unit ``i``; ``end_of(i)`` is the
     exclusive last character of unit ``i``. The same walk then serves both the
@@ -418,7 +418,7 @@ def _slice(
 
 
 def _dedupe(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop entities the overlap between windows reported twice.
+    """window間overlapで二重報告されたentityを除く。
 
     Two windows share ``_window_overlap`` tokens, so anything inside that region
     is found by both. Same span and same label is the same finding; the higher
@@ -436,7 +436,7 @@ def _dedupe(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _is_code_like(kind: str) -> bool:
-    # Imported lazily to keep the detector free of a package-level cycle.
+    # package levelの循環参照を防ぐためlazy importする。
     from securitymasker.context import is_code_like
 
     return is_code_like(kind)

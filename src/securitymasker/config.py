@@ -1,4 +1,4 @@
-"""Configuration + user dictionary loading (§12).
+"""設定とユーザーdictionaryの読み込み（§12）。
 
 The dictionary YAML declares entities (with one or more surface forms) and optional
 user regexes. Plaintext secrets must NOT be committed to YAML — such values come
@@ -46,7 +46,7 @@ _DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
 
 
 def parse_duration(value: str) -> timedelta:
-    """Parse a ``\\d+[smhd]`` duration (e.g. ``4h``, ``30m``) to a ``timedelta``."""
+    """``\\d+[smhd]``形式（例：``4h``、``30m``）を``timedelta``へ変換する。"""
     match = _DURATION_RE.match(value)
     if not match:
         raise ValueError(f"invalid duration {value!r} (expected e.g. '4h', '30m', '90s', '1d')")
@@ -66,9 +66,9 @@ class Defaults(BaseModel):
     session_idle_ttl: str = "4h"
     session_absolute_ttl: str = "24h"
     inject_alias_instruction: bool = True
-    # Per-detector wall-clock budget (doc/06 P1-5). 0 disables the bound.
+    # detectorごとのwall-clock budget（doc/06 P1-5）。0で無効。
     detector_timeout_seconds: float = Field(default=10.0, ge=0.0, le=300.0)
-    # Ceiling on how much text one request may put through the model-backed
+    # 一requestがmodel-backed detectorへ渡せるtext量の上限。
     # detectors. Over it the request is REFUSED, because the alternative —
     # scanning a prefix and reporting success — is a silent blind spot
     # (ADR-0011). Sized for a very large prompt; raise it only with the
@@ -119,12 +119,12 @@ class EntityConfig(BaseModel):
     def _has_values(self) -> EntityConfig:
         if not self.values and not self.value_from_env:
             raise ValueError(f"entity {self.id!r} needs 'values' or 'value_from_env'")
-        # An empty/whitespace value would match everywhere (or nothing) and is
+        # 空またはwhitespaceだけの値は全位置に一致し得るため拒否する。
         # always a config mistake; duplicates silently double the work. Both are
         # rejected at load rather than tolerated (doc/06 P1-2).
-        # Never name the offending VALUE: these are the registered secrets, and a
+        # 問題のVALUEは登録済みsecretなのでerrorに含めない。
         # validation error surfaces in startup logs, the CLI and tracebacks (§25).
-        # Report the position only — enough to fix the config, safe to log.
+        # 修正に十分でlogにも安全な位置だけを報告する。
         for index, value in enumerate(self.values):
             if not value.strip():
                 raise ValueError(f"entity {self.id!r}: values[{index}] is empty")
@@ -173,7 +173,7 @@ class RegexConfig(BaseModel):
 
     @model_validator(mode="after")
     def _compiles(self) -> RegexConfig:
-        # Never echo the PATTERN: a user regex routinely contains the literal
+        # user regexにはsecret literalが含まれ得るためPATTERNを再表示しない。
         # secret it is meant to match, and this message reaches startup logs and
         # tracebacks (§25). The rule id is enough to locate it.
         try:
@@ -188,7 +188,7 @@ class RegexConfig(BaseModel):
                 f"pattern {self.id!r}: capture group {self.group} is out of range "
                 f"(the expression has {compiled.groups} group(s))"
             )
-        # Refuse known catastrophic-backtracking shapes at load: `re` cannot be
+        # `re`は実行中に割り込めないため既知のcatastrophic-backtracking形式をload時に拒否する。
         # interrupted mid-match, so a bad user pattern is a DoS (doc/06 P1-5).
         check_regex_safety(self.pattern, rule_id=self.id)
         return self
@@ -199,7 +199,7 @@ class JapanesePiiConfig(BaseModel):
 
     enabled: bool = True
     my_number_restore_policy: str = RestorePolicy.BLOCK.value
-    # Confidence gate for My Number (§5.6). 0.0 = catch any valid checksum
+    # My Numberのconfidence gate（§5.6）。0.0なら有効checksumをすべて対象にする。
     # (fail-closed); ~0.6 = require My Number context words, avoiding false blocks
     # of unrelated checksum-valid 12-digit business ids.
     my_number_min_score: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -225,19 +225,19 @@ class PresidioConfig(BaseModel):
 
 
 class NerConfig(BaseModel):
-    """Optional HF Japanese NER (ADR-0009). Disabled unless ``model`` is set."""
+    """任意のHF日本語NER設定。``model``未指定時は無効（ADR-0009）。"""
 
     model_config = ConfigDict(extra="forbid")
 
     model: str | None = None  # HF token-classification model id; None disables (§14.1)
-    # Commit revision of that model. Required whenever a model is set: an unpinned
+    # modelのcommit revision。未固定modelの変化を防ぐためmodel指定時は必須。
     # id silently follows `main`, so the weights doing the detecting could change
     # under us between deploys (ADR-0009).
     revision: str | None = None
     # 0.7 is the measured optimum for the adopted model on tests/evaluation:
     # below it prose false positives appear, above it PERSON recall falls off.
     min_score: float = Field(default=0.7, ge=0.0, le=1.0)
-    # Request-time loading must never reach the network; the model is fetched by
+    # request処理中のloadではnetworkへ到達させず、modelは明示stepで取得する。
     # an explicit preparation step or baked into the image.
     local_files_only: bool = True
     skip_code_contexts: bool = True
@@ -258,7 +258,7 @@ class NerConfig(BaseModel):
 class ToolTrustConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Default empty => no tool's arguments are restored to real values (P0-8).
+    # 既定は空で、どのtool argumentも実値へ復元しない（P0-8）。
     trusted_local_tools: list[str] = Field(default_factory=list)
 
 
@@ -296,7 +296,7 @@ class SecurityMaskerConfig(BaseModel):
 
 
 def _safe_validation_message(exc: ValidationError) -> str:
-    """Render a ValidationError WITHOUT the offending input (§25, doc/06 P0-4).
+    """問題の入力値を含めずにValidationErrorを表示する（§25、doc/06 P0-4）。
 
     Pydantic's default rendering embeds the rejected value, and in this config the
     rejected value is often a registered secret. We emit only the field LOCATION
@@ -319,7 +319,7 @@ def load_config(path: str | Path) -> SecurityMaskerConfig:
     try:
         raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
-        # PyYAML's error text quotes the offending LINE, which in this file is a
+        # PyYAML errorはsecretを含み得る問題行を引用するため、そのまま返さない。
         # dictionary entry — i.e. a registered secret. Report the position only.
         mark = getattr(exc, "problem_mark", None)
         where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
@@ -331,14 +331,14 @@ def load_config(path: str | Path) -> SecurityMaskerConfig:
     try:
         return SecurityMaskerConfig.model_validate(raw)
     except ValidationError as exc:
-        # No `from exc`: the chained traceback would re-expose the input values.
+        # chained tracebackで入力値を再露出させないため`from exc`を使わない。
         raise ConfigError(
             f"invalid config {Path(path).name}: {_safe_validation_message(exc)}"
         ) from None
 
 
 def _require_env_values(config: SecurityMaskerConfig) -> None:
-    """Fail startup if any ``value_from_env`` is unset/empty (doc/06 P0-6).
+    """``value_from_env``が未設定または空なら起動を失敗させる（doc/06 P0-6）。
 
     A declared env-backed secret that resolves to nothing would otherwise silently
     disable that entity's masking — a leak. The error names only the env var and
@@ -356,7 +356,7 @@ def _require_env_values(config: SecurityMaskerConfig) -> None:
 
 
 def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
-    """Assemble the detector pipeline in priority order (§11)."""
+    """priority順にdetector pipelineを構築する（§11）。"""
     _require_env_values(config)
     norm = config.defaults.normalization
     dict_entries = [
@@ -410,7 +410,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
     if config.presidio.enabled:
         from securitymasker.detectors.presidio import PresidioDetector
 
-        # Enabled in config => required: a failed load must fail startup, not
+        # configで有効なら必須とし、load失敗時は黙ってskipせず起動を失敗させる。
         # silently no-op (doc/06 P0-6).
         detectors.append(
             PresidioDetector(
@@ -438,7 +438,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
     return detectors
 
 
-# Fuzzy, model-backed detectors are excluded from the final block-only guard: they
+# fuzzyなmodel-backed detectorは誤検出で全requestをblockし得るため最終guardから除く。
 # scan structural/unknown fields too, where an NER false positive would block a
 # legitimate request. Every DETERMINISTIC detector is included (doc/06 P0-4).
 _FUZZY_DETECTOR_NAMES = frozenset({"presidio", "jp_ner", "existing_alias"})
@@ -448,7 +448,7 @@ def build_leak_scanners(
     config: SecurityMaskerConfig,
     detectors: list[SensitiveDataDetector] | None = None,
 ) -> list[SensitiveDataDetector]:
-    """Deterministic detectors for the final-payload block-only guard (doc/06 P0-4).
+    """最終payloadのblock-only guardで使うdeterministic detector（doc/06 P0-4）。
 
     Invariant 1 (never send original secrets) outranks "unknown fields pass
     through": anything a deterministic detector would have masked in text must not
@@ -473,7 +473,7 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
     registered_literals = tuple(
         value for entity in config.entities for value in entity.resolved_values()
     )
-    # Build the pipeline ONCE and share it with the leak scanners: a second
+    # pipelineは一度だけbuildしてleak scannerと共有し、modelの二重loadを防ぐ。
     # build_detectors() would load the spaCy/HF models again (doc/06 P2 review).
     detectors = build_detectors(config)
     return MaskingEngine(

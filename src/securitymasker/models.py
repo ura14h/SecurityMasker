@@ -1,4 +1,4 @@
-"""Core data model (``doc/00-First-Order.md`` §29).
+"""中核data model（``doc/00-First-Order.md`` §29）。
 
 Kept dependency-free (stdlib only) so the masking core never imports LiteLLM,
 Presidio, or provider SDKs. Enums make the string taxonomies explicit and
@@ -15,7 +15,7 @@ from typing import Any
 
 
 class ContextKind(str, Enum):
-    """Where a value was found, which constrains a safe replacement form (§17)."""
+    """値が見つかった場所。安全な置換形式を制約する（§17）。"""
 
     PROSE = "prose"
     MARKDOWN_CODE = "markdown_code"          # fenced block
@@ -33,7 +33,7 @@ class ContextKind(str, Enum):
 
 
 class ReplacementProfile(str, Enum):
-    """Syntactic shape an alias must preserve (§9)."""
+    """aliasが保持すべき構文上の形状（§9）。"""
 
     PROSE_IDENTIFIER = "prose_identifier"
     HOSTNAME = "hostname"
@@ -48,7 +48,7 @@ class ReplacementProfile(str, Enum):
 
 
 class RestorePolicy(str, Enum):
-    """How an alias is turned back before returning to the client (§10)."""
+    """clientへ返す前にaliasをどう復元するか（§10）。"""
 
     LITERAL = "literal"
     ENV_REFERENCE = "env_reference"
@@ -57,7 +57,7 @@ class RestorePolicy(str, Enum):
 
 
 class EntityType(str, Enum):
-    """Detected entity category. Extensible; string-valued for interop."""
+    """検出したentity category。拡張可能で、相互運用のため文字列値を持つ。"""
 
     PERSON = "PERSON"
     ORGANIZATION = "ORGANIZATION"
@@ -103,7 +103,7 @@ class EntityType(str, Enum):
 
 @dataclass(frozen=True)
 class DetectionResult:
-    """A single detector hit over ``[start, end)`` of the (original) text."""
+    """原文の``[start, end)``に対する一つのdetector hit。"""
 
     entity_type: str
     start: int
@@ -131,7 +131,7 @@ class DetectionResult:
 
 @dataclass
 class AliasMapping:
-    """Bidirectional binding between an alias and an (encrypted) original value."""
+    """aliasと暗号化した原値の双方向binding。"""
 
     entity_type: str
     alias: str
@@ -148,7 +148,7 @@ class AliasMapping:
 
 @dataclass
 class MaskingSession:
-    """The core reversible state for one session (§7)."""
+    """一sessionの中核となる可逆state（§7）。"""
 
     session_id: str
     session_index_key: bytes
@@ -165,7 +165,7 @@ class MaskingSession:
 
 @dataclass(frozen=True)
 class MaskingPolicyDecision:
-    """Outcome of policy evaluation for a resolved detection (§29)."""
+    """解決済みdetectionに対するpolicy評価結果（§29）。"""
 
     action: str  # "mask" | "block" | "ignore" | "audit"
     replacement_profile: str | None

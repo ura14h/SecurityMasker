@@ -1,1 +1,1 @@
-"""Streaming restoration: carry-buffer text replacer and tool-argument reassembly."""
+"""streaming復元：carry-bufferによるtext置換とtool argument再構築。"""

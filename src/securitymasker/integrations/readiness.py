@@ -1,4 +1,4 @@
-"""Gateway readiness probe shared by ``run`` and ``doctor`` (doc/06 P2-1).
+"""``run``と``doctor``が共有するGateway readiness probe（doc/06 P2-1）。
 
 One implementation, so the wrapper and the diagnostic can never disagree about
 whether the gateway is usable. The probe is deliberately strict: an HTTP 200 is
@@ -23,7 +23,7 @@ class Readiness:
 
 
 def check_readiness(gateway: str, *, timeout: float = _TIMEOUT) -> Readiness:
-    """Probe ``<gateway>/ready``. Never raises; failures are reported as ``ok=False``."""
+    """``<gateway>/ready``をprobeする。例外を送出せず失敗は``ok=False``で返す。"""
     url = gateway.rstrip("/") + "/ready"
     try:
         resp = httpx.get(url, timeout=timeout)

@@ -1,4 +1,4 @@
-"""Recognize SecurityMasker's own aliases so they are never re-masked (§11 step 1).
+"""SecurityMasker自身のaliasを認識して再マスクを防ぐ（§11 step 1）。
 
 Makes masking idempotent: replaying conversation history that already contains
 ``SM_ORG_7F3A91`` must not turn it into ``SM_ORG_99AA12`` (§11). These hits are
@@ -13,7 +13,7 @@ import re
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.models import DetectionResult, EntityType, ReplacementProfile, RestorePolicy
 
-# Distinctive alias shapes. Used ONLY as the gateway's heuristic for "this request
+# 特徴的なalias形式。Gatewayが既存aliasらしさを判断するheuristicだけに使う。
 # seems to replay prior aliases" — never for protection, which matches the exact
 # issued set (see ExistingAliasDetector). Profiles whose output is indistinguishable
 # from ordinary data (numeric, and a bare ipv4/uuid) cannot be recognised by shape
@@ -31,7 +31,7 @@ _ALIAS_RX = re.compile(
 
 
 def contains_alias_shape(text: str) -> bool:
-    """True if ``text`` contains a token shaped like a SecurityMasker alias.
+    """``text``にSecurityMasker alias形式のtokenがあればTrue。
 
     Used by the gateway to refuse a request that carries prior-turn aliases when no
     stable session could be resolved — restoring them would be impossible and a
@@ -42,7 +42,7 @@ def contains_alias_shape(text: str) -> bool:
 
 
 class ExistingAliasDetector:
-    """Protect this session's own aliases so replay is idempotent (§11, P0-7).
+    """replayを冪等にするため、このsession自身のaliasを保護する（§11、P0-7）。
 
     Matches the EXACT set of aliases issued in the current session rather than an
     alias *shape*: a shape regex can only describe the profiles whose output looks
@@ -59,7 +59,7 @@ class ExistingAliasDetector:
         if not context.issued_aliases:
             return []
         text = context.norm.normalized
-        # Longest first so a shorter alias that prefixes a longer one cannot take
+        # 長いaliasから処理し、短いprefix aliasの先取りを防ぐ。
         # a partial bite out of it (collision-lengthened tokens, §7).
         pattern = "|".join(
             re.escape(a) for a in sorted(context.issued_aliases, key=len, reverse=True)

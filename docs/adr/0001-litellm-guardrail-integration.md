@@ -1,16 +1,16 @@
 # ADR-0001: LiteLLM への統合は CustomGuardrail で行う
 
-- Status: Accepted
-- Date: 2026-07-24
+- 状態：採用（ADR-0006により撤回）
+- 日付：2026-07-24
 - 関連: `doc/00-First-Order.md` §4, §37 / [compatibility.md](../compatibility.md)
 
-## Context
+## 背景
 
 SecurityMasker は LiteLLM 本体を fork せず、リクエスト直前のマスキング・非ストリーム／
 ストリーム応答の復元・エラー時の安全処理に介入する必要がある（§4）。LiteLLM は
 `CustomLogger` と `CustomGuardrail` の 2 系統で拡張フックを提供する。
 
-## Decision
+## 決定
 
 `litellm.integrations.custom_guardrail.CustomGuardrail` を継承した
 `SecurityMaskerCallback` を実装し、proxy config の `guardrails` セクションで登録する。
@@ -24,13 +24,13 @@ masking core からは LiteLLM を import しない。
 - `async_post_call_streaming_iterator_hook` — ストリームのリアルタイム復元
 - `async_post_call_failure_hook` — 失敗時の漏えい防止
 
-## Alternatives
+## 検討した代替案
 
 - **CustomLogger**: 同じフック群を持つが、ガードレールとしての mode（pre_call /
   during_call / post_call）管理や拒否セマンティクスが `CustomGuardrail` の方が明確。
 - **LiteLLM を fork**: §4・§40-5 で明確に禁止。却下。
 
-## Consequences
+## 影響
 
 - LiteLLM のフック改名・シグネチャ変更は `test_litellm_hook_contract.py` が検知する。
 - masking core は LiteLLM 非依存を保ち、単体テスト・再利用が容易。

@@ -1,4 +1,4 @@
-"""Anthropic Messages SSE stream restorer (§20, §21, §23).
+"""Anthropic Messages SSE stream復元（§20、§21、§23）。
 
 The gateway forwards the Anthropic ``/v1/messages`` response as raw SSE **bytes**.
 This processor decodes them (UTF-8 safe across chunk boundaries), parses SSE
@@ -179,7 +179,7 @@ class AnthropicStreamProcessor:
         return [*extra, ev]
 
     def _safe_restore_json(self, raw: str, *, restore: bool) -> str | None:
-        """Validated tool input, or ``None`` if it is not valid JSON.
+        """検証済みtool input。不正なJSONなら``None``。
 
         ``restore=True`` substitutes real values for a trusted local tool;
         ``restore=False`` re-serializes the parsed JSON with aliases intact. Both
@@ -218,7 +218,7 @@ def _text_delta_event(idx: int, text: str) -> SSEEvent:
 
 
 def _error_event(message: str) -> SSEEvent:
-    """Anthropic-compatible error event (doc/06 P1-10).
+    """Anthropic互換error event（doc/06 P1-10）。
 
     An SSE stream's HTTP status is fixed once it starts, so a mid-stream
     fail-closed outcome is reported as an ``error`` event. Carries no user content.

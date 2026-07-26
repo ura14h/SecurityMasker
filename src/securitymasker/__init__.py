@@ -1,6 +1,6 @@
-"""SecurityMasker — reversible pseudonymization security boundary (transparent proxy).
+"""SecurityMasker — 可逆仮名化を行う透過proxy型のsecurity boundary。
 
-See ``doc/00-First-Order.md`` (source of truth) and ``AGENTS.md`` for the invariants.
+正本の``doc/00-First-Order.md``と不変条件を定める``AGENTS.md``を参照する。
 """
 
 __version__ = "0.0.1"

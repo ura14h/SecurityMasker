@@ -1,4 +1,4 @@
-"""Anthropic Messages adapter (§23, §16).
+"""Anthropic Messages adapter（§23、§16）。
 
 Masks only user-text-bearing fields and restores them on the way back, never
 altering structural fields (§16): ``type``, ``role``, ``id``, ``name``,
@@ -25,7 +25,7 @@ from securitymasker.protocols.structured_walker import (
 
 
 def is_anthropic_request(data: dict[str, Any]) -> bool:
-    # Anthropic requests carry `system`/`max_tokens` alongside `messages`; the
+    # Anthropic requestは`messages`と同階層に`system`／`max_tokens`を持つ。
     # authoritative signal is the route the client used, checked by the caller.
     return "messages" in data and ("system" in data or "max_tokens" in data)
 
@@ -36,7 +36,7 @@ def is_anthropic_request(data: dict[str, Any]) -> bool:
 async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> None:
-    """Mask an Anthropic Messages request in place."""
+    """Anthropic Messages requestをin-placeでマスクする。"""
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
         return (await engine.mask_text(session, text, context_kind=kind)).masked_text
@@ -98,7 +98,7 @@ async def _mask_block(block: dict[str, Any], mask: MaskTransform) -> None:
         )
     elif btype == "tool_result":
         block["content"] = await _mask_content(block.get("content"), mask)
-    # Unknown block types (image, thinking without text, citations, ...) pass through.
+    # 未知block type（image、textなしthinking、citationなど）は透過する。
 
 
 # ------------------------------------------------------------------------ restore
@@ -107,7 +107,7 @@ async def _mask_block(block: dict[str, Any], mask: MaskTransform) -> None:
 def restore_response(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> None:
-    """Restore a non-streaming Anthropic response in place (§19).
+    """非streamingのAnthropic responseをin-placeで復元する（§19）。
 
     ``text`` blocks are restored for display; ``tool_use.input`` is restored only
     for allowlisted trusted-local tools, else left aliased (doc/06 P0-8).
@@ -130,7 +130,7 @@ def _restore_block(block: Any, restore: Any, trust: Any) -> None:
 
 
 def restore_response_object(engine: MaskingEngine, session: MaskingSession, response: Any) -> None:
-    """Restore a live Anthropic response object (attribute access, §19)."""
+    """live Anthropic response objectをattribute accessで復元する（§19）。"""
     restore = engine.make_restorer(session)
     trust = engine.tool_trust
     for block in getattr(response, "content", None) or []:
