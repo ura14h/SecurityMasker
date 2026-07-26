@@ -81,13 +81,29 @@ openssl rand -base64 32
 SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
 ```
 
-  It refuses to run without an egress boundary. Pointing a CLI at a local URL is a
-  routing choice, not containment: both tools make update, analytics and crash
-  reporting requests that never go through the configured provider, so a routing
-  mistake would reach the internet instead of failing. Where a loopback-only
-  network namespace exists (`unshare -n`) the test uses it; otherwise it skips
-  unless you set `SM_E2E_ALLOW_UNSANDBOXED=1`, which asserts that egress is
-  blocked some other way. Set that only on a host where you know it is.
+  It refuses to run without an egress boundary, and checks rather than asks.
+  Pointing a CLI at a local URL is a routing choice, not containment: both tools
+  make update, analytics and crash-reporting requests that never go through the
+  configured provider, so a routing mistake would reach the internet instead of
+  failing. Before anything starts, the suite opens a TCP connection to a routable
+  address; if that succeeds it skips, because this process — and therefore the
+  CLIs — can reach the internet.
+
+  To actually run it, put the whole stack in one network namespace (Linux):
+
+```bash
+./devtools/run_cli_e2e.sh
+```
+
+  or a container with no network at all, using an image that has the CLIs
+  installed:
+
+```bash
+docker run --rm --network none -v "$PWD:/w" -w /w <image> devtools/run_cli_e2e.sh
+```
+
+  Isolating only the CLI does not work: a namespace has its own loopback, so the
+  CLI could not reach the gateway. CI runs this and treats a skip as a failure.
 
   What remains uncovered is the provider itself: the E2E upstream is a local mock,
   deliberately, so nothing here says how a real provider behaves.

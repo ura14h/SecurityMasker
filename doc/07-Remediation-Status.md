@@ -15,8 +15,9 @@
 | 構造保持（JSON・コード・URL・file path） | done | `aliases/structure.py` |
 | 文脈分割とモデル検出器のスケジューリング | done | ADR-0011。分割による回避不可、超過は fail-closed |
 | NER 供給網（pin・検証・オフライン） | done | ADR-0010。実snapshot検証テストあり。`local_files_only` は実測0接続 |
-| 実CLI E2E（codex / claude） | done（sandbox必須） | 送信マスクと復元表示の両方を検査。egress遮断が無い環境では実行しない |
-| 検出精度（識別子の誤検出） | done | UUID内部の誤検出を抑止（実測 0.5% → 0%） |
+| 実CLI E2E（codex / claude） | done（egress遮断が前提） | 両CLIで「送信は alias のみ」と「CLI出力に氏名・ホスト名が復元される」を検査。外部到達可能なら**自動でskip**。CIは namespace 内で実行し、skipを失敗として扱う |
+| 検出精度（識別子の誤検出） | done | UUID内部の**built-in形状ルールのみ**抑止（実測 0.5% → 0%）。dictionary / user_regex / secret_patterns は抑止対象外 |
+| CI 配線 | done | `test` / `cli-e2e` / `release-gate` の3ジョブ。`SM_REQUIRE_MODEL=1` は release-gate で実行 |
 | Redis 排他 | **partial** | owner token・所有権再確認まで。fencing token 未実装 |
 | 日本固有識別子（旅券・免許 等） | **partial** | 公開チェックディジットが無いものは形式＋文脈語のみ |
 | metrics / audit の網羅配線 | **partial** | 安全labelのlogのみ |
@@ -399,3 +400,34 @@ window / prompt-cache key と複数の UUID を載せる。最終 leak gate は 
 
 **教訓**: 合成データだけで検査していると、*実クライアントが実際に送るもの*で壊れる。
 実CLI E2E を入れて最初に得た成果が、単体テストでは決して見つからないこの2件だった。
+
+## 第8回監査の是正（`R33..R38`）
+
+### P1
+
+| 項目 | 実際の不具合 | 是正 |
+|---|---|---|
+| 識別子ガードがユーザー定義ルールも無効化 | 第7回で入れたUUID内部の抑止を**全検出器**に適用していた。`03-9210-9274` を `API_KEY` として user_regex / dictionary に登録しても、**検出0・マスクなし・最終ゲート通過**。利用者が明示宣言した値を外部送信していた。不変条件9（利用者のルールを最も信頼する）の反転であり、誤検出対策が漏えいに化けていた | ガードを**実測済みのbuilt-in形状ルールのみのallowlist**へ限定（`jp_phone` / `formats` / 日本の数字系）。`dictionary` / `user_regex` / `secret_patterns` / `existing_alias` / モデル検出器は対象外。検出・マスク・最終ゲートの3段すべてに回帰テスト（検出だけでは元のバグを捉えられないため） |
+| `unshare -n` E2E が成立しない | CLIだけを新しいnetwork namespaceへ入れていた。namespaceごとにloopbackは別物なので、CLIから親側 `127.0.0.1` の gateway へ到達できない。「Linuxなら第1層が効く」経路は、外部を遮断すると同時に**テスト自体を壊す**設計だった | スタック全体（pytest・gateway・mock・CLI）を1つのnamespaceに入れる `devtools/run_cli_e2e.sh` を追加。CLIだけを再度 `unshare` しない |
+| 遮断の自己申告 | `SM_E2E_ALLOW_UNSANDBOXED=1` は「別の手段で遮断済み」という**検証不能な自己申告**で、「unshareが無いから」という誤った理由で設定されうる | **フラグを廃止**。実行前に routable アドレスへTCP接続を試み、**成功したらskip**（このプロセスが外へ出られる＝CLIも出られる）。firewall・オフライン・namespace はいずれも内側からは別物だが、この計測にはすべて現れる |
+
+### P2
+
+| 項目 | 是正 |
+|---|---|
+| Claude側の復元未検査 / Codexは氏名のみ | 共通アサーションに統一。両CLIで **氏名とホスト名の両方**が標準出力に復元され、aliasが出力に漏れないことを検査。**「両CLIで送信マスクと復元表示を検査」という第7回の記述は、当時は事実ではなかった**（Claudeは送信側のみ、Codexは氏名のみ）。本回で事実に一致させた |
+| 実CLI E2E が CI 未配線 | `cli-e2e` ジョブを追加。実バイナリを導入し namespace 内で実行。**skipを失敗として扱う**（skipを許すとジョブが何も証明しないため） |
+| `SM_REQUIRE_MODEL=1` が release gate 未接続 | `release-gate` ジョブを追加。モデルをfetchし、`SM_REQUIRE_MODEL=1` で manifest 検証を実行 |
+| 辞書値がUUID一部分のときマスクされない | P1-1の是正に含まれる。上表のとおりマスクまで確認済み |
+
+### この回の教訓
+
+第7回の誤検出対策は、**守るべき対象そのものを黙らせる**方向に効いていた。
+精度改善は常に「何を検出しなくなるか」を伴うため、
+**どの検出器に効かせるかを allowlist で明示**しなければ、利用者が最も強く意図した宣言から先に失われる。
+
+また、封じ込めについて「安全な機構がある」と書くことと、それが**実際に機能する**ことは別だった。
+`unshare` をCLIだけに掛けた構成は、動かせば即座に破綻するのに、
+macOS では常に skip されるため誰も実行せず、誤りが残った。
+現在は**遮断を計測**しているので、遮断されていない環境では必ず skip し、
+CI では skip 自体を失敗として扱う。
