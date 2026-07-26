@@ -18,13 +18,24 @@
 | 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
 | one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
 | 旧Redis/Docker/CI/multi-tenant/run撤去 | done | 製品code/artifact削除、文書再編、回帰test |
-| release candidate | partial | 0.1.0、release note、checksum生成、state scenarioを整備。owner操作は下記 |
+| source release candidate | done | 0.1.0、clean setup、全gate、展開artifact、再現可能checksumを検証 |
+| binary公開 | blocked | model再配布判断、署名、対象OS別clean-machine gateが未完 |
 
 ## source版の判断
 
-source checkoutは、固定dependencyと固定NER modelを利用者環境へ取得する形で技術的に配布可能です。
-PyPI登録、Docker、GitHub Actionsは必要ありません。公開前にはPhase 10のclean checkout gateと
-version/release note確定が残っています。
+source checkout/archiveは、固定dependencyと固定NER modelを利用者環境へ取得する形で技術的に
+公開可能です。PyPI登録、Docker、GitHub Actionsは必要ありません。残っているのはrepository公開、
+tag、GitHub Releaseなどownerの公開操作だけです。
+
+2026-07-26に次をrelease candidate `0.1.0` で確認しました。
+
+- macOS arm64とLinux arm64のclean cloneで、環境変数なしの `scripts/setup` が成功
+- Linuxでは公式CPU版Torch `2.13.0+cpu` を選択し、CUDA runtimeへ依存しないこと
+- `ruff`、`mypy`、固定NER必須unit/evaluation 586件、mock Gateway 3件が成功
+- 外部networkなしのLinuxでCodex CLI 0.145.0 / Claude Code 2.1.212実E2E 2件が成功
+- source archiveを展開した状態からsetup、init、validate、NER preview、client config生成が成功
+- 別clean worktreeから生成したsource archiveがbyte-for-byte一致
+- DB/keyのpair backup/restore、不一致拒否、再起動をまたぐidle/absolute TTLを検証
 
 ## one-file実測
 
@@ -32,17 +43,17 @@ macOS arm64、Python 3.12.13、PyInstaller 6.21.0:
 
 | 項目 | 結果 |
 |---|---|
-| artifact | arm64 thin Mach-O、961,152,432 bytes（約917 MiB） |
-| clean build | 約244秒 |
+| artifact | arm64 thin Mach-O、961,117,984 bytes（約917 MiB） |
+| clean build | 243.6秒 |
 | cold `--help` | 約25.5秒 |
 | warm config validate | 約11.5秒 |
 | NER preview | 約46.8秒 |
 | 外部runtime link | macOS標準libSystem/libzのみ |
 | 署名 | ad-hoc |
 | 一時展開 | `TMPDIR/_MEI*`、通常終了/SIGTERM後に残存なし |
-| binary E2E | init、validate、NER、両mode、SQLite、mask/restore、漏えいゼロ |
+| binary E2E | 3件成功（init、validate、NER、両mode、SQLite、mask/restore、漏えいゼロ） |
 
-## 公開ブロッカー
+## binary公開ブロッカー
 
 binaryを公開artifactとして扱うには次が必要です。
 
@@ -57,10 +68,9 @@ weightをrepository/release artifactへ含めないため、このbinary固有bl
 
 ## ownerに必要な操作
 
-- GitHub repositoryの公開設定、tag、GitHub Release、artifact upload
-- 必要なcode signing/notarization
-- 公開対象OSの選択
-- model weight再配布判断
+- source版: GitHub repositoryの公開設定、tag、GitHub Release、source archive/checksum upload
+- binary版も公開する場合: 公開対象OSの選択、model weight再配布判断、必要なcode
+  signing/notarization、対象OSごとのartifact upload
 - 可能なら合成promptだけを使うChatGPT Desktop / Claude Code Desktop手動smoke test
 
 Desktop smoke testを行わなくてもCLIによるprotocol検証は可能ですが、その場合の公開表現は

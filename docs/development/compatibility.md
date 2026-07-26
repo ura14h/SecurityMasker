@@ -17,11 +17,13 @@
 - Anthropic Messages: buffered/streaming text、tool use input、count_tokens、
   feature header
 - SQLite: process restart後のalias復元、wrong key/mode、tamper、二重writer
-- source: Python 3.12
+- source: Python 3.12（macOS arm64 / Linux arm64 clean setup）
+- Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
 - one-file spike: macOS arm64、PyInstaller 6.21.0
 
 実CLIの検証baselineは Codex CLI 0.145.0 と Claude Code 2.1.212です。protocolは変化し得るため、
-release時に最新対象versionでE2Eを再実行します。
+release時に最新対象versionでE2Eを再実行します。0.1.0ではLinux arm64の外部networkなし環境で、
+両CLIのmask、local mockへの到達、response復元を確認しました。
 
 ## Desktopについて
 

@@ -35,6 +35,20 @@ mock upstream、合成credential、隔離HOME、network namespace、test-only環
 から実行します。隔離を証明できないhostでは成功扱いにせず、release gateを失敗させます。
 実providerへtest bodyを送りません。
 
+Docker等のLinux containerで代用する場合も、test setupとCLI取得をnetwork有効時に済ませた後、
+test process全体を `--network none` で起動します。停止中のkernel tunnel deviceは接続経路と
+みなさず、IFF_UPな非loopback interfaceまたはdefault routeが一つでもあればfail-closedします。
+
+### 0.1.0 release candidate実績（2026-07-26）
+
+- `ruff` / `mypy`: 成功
+- unit/evaluation（固定NER必須）: 586件成功
+- mock upstream live Gateway: 3件成功
+- Linux arm64 `--network none` 実CLI E2E: Codex CLI 0.145.0 / Claude Code 2.1.212、
+  2件成功
+- macOS arm64 clean one-file binary E2E: 3件成功
+- source archive: 二つのclean worktreeでbyte一致、展開後setup/smoke成功
+
 ## binary gate
 
 PyInstallerはcross compilerではありません。対象OSごとにnative clean buildします。

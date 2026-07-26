@@ -21,6 +21,8 @@ SecurityMaskerの最初のsource release候補です。
 - loopback bindとsingle workerだけを製品範囲に限定
 - model欠落・破損、DB/key不一致、未知protocol、検出上限、leak guard失敗をfail-closed
 - provider認証を保存・logせず、対応する上流へだけ透過
+- Linuxでは公式CPU版Torchを固定し、CUDA runtimeを要求しない
+- model検出が同一text内の反復を一部だけ返しても、検出済み原文の完全一致を同じaliasへ揃える
 
 ### 対象外・既知の制限
 
