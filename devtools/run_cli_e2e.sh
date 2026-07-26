@@ -10,12 +10,11 @@
 # which starts down; bringing it up gives us loopback and nothing else. The test's
 # own egress probe then fails, which is what lets the suite run at all.
 #
-# Linux only. On macOS there is no equivalent, so use a container:
+# Linux only。macOSでは両CLIを備えたtest image/containerを別途用意する:
 #
 #   docker run --rm --network none -v "$PWD:/w" -w /w <image> devtools/run_cli_e2e.sh
 #
-# ...with an image that has codex and/or claude installed. Without a boundary the
-# tests skip themselves; they are never run unprotected.
+# release gateではcodex/claudeの両方を必須とし、欠落や境界未確認を成功扱いしない。
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -36,5 +35,6 @@ exec unshare --user --map-root-user --net -- sh -c '
     # Loopback exists but is down in a fresh namespace; everything talks over it.
     ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || true
     export SM_RUN_CLI_E2E=1
+    export SM_REQUIRE_ALL_CLIS="${SM_REQUIRE_ALL_CLIS:-0}"
     exec '"$PYTEST"' "$@" -v
 ' sh "$TARGET"

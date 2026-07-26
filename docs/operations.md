@@ -63,19 +63,13 @@ openssl rand -base64 32
   `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`
 - **Claude Code**：`ANTHROPIC_BASE_URL=http://127.0.0.1:4000` と session header を
   設定します。
-- **wrapper**：`securitymasker run codex`／`securitymasker run claude` は proxy
-  route を設定できなければ tool を起動しません。`/ready` の `ready: true` を要求し、
-  Claude Code には `ANTHROPIC_BASE_URL` と session header、Codex には process 単位の
-  `-c` override を設定します。`~/.codex/config.toml` は変更しません。
-  `ANTHROPIC_API_URL`／`OPENAI_BASE_URL`／`OPENAI_API_BASE` によって迂回される場合や、
-  routing 不能な tool は拒否します。session UUID は wrapper が生成します。
+- **persistent client設定**：`securitymasker client-config`がv2のmode/portから生成する
+  snippetを利用者が手動適用する。製品はclient設定を自動変更しない。
 
-  **保証範囲**：unit test は生成設定、override の TOML 妥当性、利用者の実設定を
-  変更しないこと、拒否経路を検証します。さらに
-  `tests/integration/test_real_cli_e2e.py` は、**実際の** `codex`／`claude` binary を
-  `run` 経由で local mock upstream に接続し、process 外へ alias だけが出ること、
-  session header が到着すること、tool の home に `config.toml` を書かないことを
-  検証します。実 process を起動するため opt-in です。
+  **保証範囲**：`tests/integration/test_real_cli_e2e.py`は、通常運用と同じgenerator、
+  v2 config、単一dict、mode別SQLite/keyを隔離した`HOME`、`CODEX_HOME`、
+  `CLAUDE_CONFIG_DIR`で使う。**実際の**`codex`／`claude` binaryをlocal mockへ接続し、
+  上流にaliasだけが届くことと、client出力が元の値へ復元されることを検証する。
 
 ```bash
 SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
@@ -84,8 +78,9 @@ SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.
   この E2E は egress boundary を要求し、自己検査します。local URL を指定するだけでは
   routing は決まっても隔離されません。両 CLI は provider 設定を通らない update、
   analytics、crash reporting 通信を行うため、routing mistake が fail-closed にならず
-  internet へ到達し得ます。suite は開始前に routable address への TCP 接続を試し、
-  成功した場合は process と CLI が internet に到達可能として skip します。
+  internetへ到達し得る。suiteは開始前にnon-loopback interfaceとIPv4/IPv6 default routeを
+  構造検査し、境界を証明できない環境では実行しない。test moduleのimport/collectionだけでは
+  socket接続を行わない。
 
   実行時は stack 全体を同じ Linux network namespace に入れます。
 
@@ -151,16 +146,17 @@ Gateway と同じ信頼領域内に置き、公開範囲と保持期間を別途
 ## test／CI
 
 ```bash
-pytest tests/unit tests/evaluation -q                            # 高速test
-SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # proxy + mock
-SM_RUN_REDIS=1 SECURITYMASKER_REDIS_TEST_URL=redis://127.0.0.1:6379/15 \
-  pytest tests/integration/test_real_redis_fencing.py -q         # 実Redisのfencing
-python -m tests.evaluation.benchmark                             # latency benchmark
+./scripts/test-setup
+./scripts/release-check
 ```
 
-CI（`.github/workflows/ci.yml`）は ruff、mypy `--strict`、test suite、live Gateway
-integration test に加え、実Redis上でlock owner確認とsession書込みがatomicであること、
-複数worker相当のstoreがalias割当を直列化することを実行します。
+`scripts/test-setup`だけがdev/test依存を導入し、通常利用者向け`scripts/setup`には混ぜない。
+`release-check`はruff、mypy、実model必須unit/evaluation、mock Gateway、実CLI E2Eを順に実行する。
+実CLI E2EはLinux network namespaceを要求し、Codex/Claudeのどちらかが欠けてもrelease gateでは
+skipを成功扱いせず失敗する。macOSでは、両CLIを備えた`--network none` Linux環境が必要である。
+
+`devtools/mock_upstream.py`、dummy credential、`SM_RUN_*`はtest専用であり、通常運用手順や
+配布binaryへ含めない。
 
 ## 固定したbase imageの更新
 

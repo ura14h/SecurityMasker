@@ -1,13 +1,7 @@
-"""The real Codex and Claude Code CLIs, driven through `securitymasker run`.
+"""永続client設定を使う実Codex/Claude Code CLI E2E（ADR-0012 Phase 7）。
 
-Everything else about `run` is tested by inspecting the settings we generate. That
-cannot catch the class of bug where the settings are well-formed by our reckoning
-and rejected by the tool — which is exactly what happened: `http_headers` was
-emitted as a JSON object, Codex parses `-c` values as TOML, and it refused to
-start at all. `run codex` was completely broken while every unit test passed.
-
-This test closes that gap by launching the actual binary and asserting on what
-reached the server.
+通常運用と同じv2 config/dict/state/key、`client-config`と同じ生成元の永続設定を使う。
+`securitymasker run`のprocess overrideは使わない。
 
 **Egress.** Pointing a CLI at a local URL is a routing choice, not a containment
 boundary: both tools have update checks, analytics and crash reporting that do not
@@ -66,10 +60,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from securitymasker.integrations.launcher import SESSION_HEADER, build_plan
+from securitymasker.bootstrap import initialize_layout
+from securitymasker.config import load_config
+from securitymasker.integrations.client_config import (
+    client_environment,
+    client_setup_snippet,
+)
 
 REPO = Path(__file__).resolve().parents[2]
-DICT_CONFIG = REPO / "tests" / "integration" / "securitymasker.masking.yaml"
 
 
 def _free_port() -> int:
@@ -208,10 +206,14 @@ def _contained_env(**overrides: str) -> dict[str, str]:
     })
     env.update(overrides)
     return env
-needs_codex = pytest.mark.skipif(shutil.which("codex") is None,
-                                 reason="the codex CLI is not installed")
-needs_claude = pytest.mark.skipif(shutil.which("claude") is None,
-                                  reason="the claude CLI is not installed")
+def _require_cli(name: str) -> str:
+    executable = shutil.which(name)
+    if executable is not None:
+        return executable
+    message = f"required real CLI is not installed: {name}"
+    if os.environ.get("SM_REQUIRE_ALL_CLIS") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 def _wait(url: str, timeout: float = 30.0) -> None:
@@ -245,11 +247,13 @@ def _stop(*procs: subprocess.Popen) -> None:
             proc.kill()
 
 
-def _codex_home(tmp_path: Path) -> Path:
-    """An isolated CODEX_HOME. The user's own ~/.codex is never touched."""
+def _codex_home(tmp_path: Path, config) -> tuple[Path, Path]:
+    """製品generatorで永続設定を作る隔離CODEX_HOME。"""
     home = tmp_path / "codex_home"
     home.mkdir(parents=True, exist_ok=True)
-    return home
+    config_path = home / "config.toml"
+    config_path.write_text(client_setup_snippet(config), encoding="utf-8")
+    return home, config_path
 
 
 def _last_request(record: Path) -> dict:
@@ -307,130 +311,100 @@ def _assert_restored_to_the_user(stdout: str, record: Path) -> None:
     assert not leaked, f"aliases survived into the CLI output: {leaked}"
 
 
+def _write_e2e_dictionary(path: Path) -> None:
+    path.write_text(
+        """\
+version: 1
+entities:
+  - id: person
+    type: PERSON
+    values: ["山田太郎"]
+    replacement_profile: prose_identifier
+    restore_policy: literal
+patterns:
+  - id: prod_host
+    pattern: 'prod-db01\\.internal\\.example'
+    type: HOSTNAME
+    replacement_profile: hostname
+    restore_policy: literal
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+
+
 @pytest.fixture
-def stack(tmp_path: Path):
-    """Mock upstream + gateway pointed at it. Nothing leaves the machine."""
+def stack(tmp_path: Path, request: pytest.FixtureRequest):
+    """mode別v2 layout + mock upstream + source Gateway。"""
+    mode = str(request.param)
+    _require_cli("codex" if mode == "chatgpt" else "claude")
     record = tmp_path / "record.jsonl"
     mock_port, gw_port = _free_port(), _free_port()
+    layout = initialize_layout(tmp_path / "product", mode=mode, port=gw_port)
+    _write_e2e_dictionary(layout.dictionary)
+    config = load_config(layout.config)
     mock = _serve(mock_port, record)
     gw_env = {
         **os.environ,
         "SM_MOCK_RECORD": str(record),
-        "SECURITYMASKER_CONFIG": str(DICT_CONFIG),
+        "SECURITYMASKER_CONFIG": str(layout.config),
         "SECURITYMASKER_OPENAI_UPSTREAM": f"http://127.0.0.1:{mock_port}",
         "SECURITYMASKER_ANTHROPIC_UPSTREAM": f"http://127.0.0.1:{mock_port}",
     }
     gateway = subprocess.Popen(  # noqa: S603
-        [sys.executable, "-m", "uvicorn", "securitymasker.gateway.app:create_app",
-         "--factory", "--host", "127.0.0.1", "--port", str(gw_port),
-         "--log-level", "warning"],
+        [sys.executable, str(REPO / "securitymasker.py"), "--config", str(layout.config)],
         cwd=str(REPO), env=gw_env,
     )
     try:
         _wait(f"http://127.0.0.1:{mock_port}/health")
         _wait(f"http://127.0.0.1:{gw_port}/health")
         assert httpx.get(f"http://127.0.0.1:{gw_port}/ready", timeout=5).json()["ready"]
-        yield record, f"http://127.0.0.1:{gw_port}"
+        yield record, config, layout
     finally:
         _stop(gateway, mock)
 
 
-@needs_codex
-def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
-    """The end-to-end claim: start the real tool, and no original reaches upstream."""
-    record, gateway_url = stack
+@pytest.mark.parametrize("stack", ["chatgpt"], indirect=True)
+def test_real_codex_with_persistent_config_sends_only_aliases(stack, tmp_path) -> None:
+    """隔離した永続config.tomlでmask・復元を確認する。"""
+    codex = _require_cli("codex")
+    record, config, _layout = stack
+    home, config_path = _codex_home(tmp_path, config)
+    original_config = config_path.read_bytes()
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
-         "exec", "--skip-git-repo-check",
+        [codex, "exec", "--skip-git-repo-check",
          f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
-            CODEX_HOME=str(_codex_home(tmp_path)),
-            OPENAI_API_KEY="dummy-not-a-real-key",
-            SECURITYMASKER_GATEWAY_URL=gateway_url),
+            HOME=str(tmp_path / "home"),
+            CODEX_HOME=str(home),
+            OPENAI_API_KEY="dummy-not-a-real-key"),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
     )
     assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
+    assert config_path.read_bytes() == original_config
 
     _assert_masked_upstream(record)
     _assert_restored_to_the_user(result.stdout, record)
 
 
-@needs_codex
-def test_real_codex_does_not_touch_the_users_codex_home(stack, tmp_path) -> None:
-    """`run` must configure the tool per-process, never edit ~/.codex."""
-    _record, gateway_url = stack
-    home = _codex_home(tmp_path)
-    subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
-         "exec", "--skip-git-repo-check", "hello"],
-        cwd=str(REPO),
-        env=_contained_env(
-            CODEX_HOME=str(home),
-            OPENAI_API_KEY="dummy-not-a-real-key",
-            SECURITYMASKER_GATEWAY_URL=gateway_url),
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
-    )
-    assert not (home / "config.toml").exists(), (
-        "run wrote a config.toml; the routing must live in per-process -c overrides"
-    )
-
-
-@needs_codex
-def test_real_codex_actually_sends_our_session_header(tmp_path) -> None:
-    """The regression that unit tests structurally could not catch.
-
-    Codex parses each `-c` value as TOML and, per its own help, falls back to
-    treating an unparseable value as a literal string. `http_headers` emitted as a
-    JSON object therefore became a string, and Codex rejected it with "expected a
-    map" and exited without sending anything. Asserting that the header ARRIVES,
-    from the real binary, is the only check that fails when that regresses.
-    """
-    record = tmp_path / "probe.jsonl"
-    probe_port = _free_port()
-    mock = _serve(probe_port, record)
-    try:
-        _wait(f"http://127.0.0.1:{probe_port}/health")
-        plan = build_plan(["codex"], gateway=f"http://127.0.0.1:{probe_port}",
-                          session_id="sess-header-probe", environ={})
-        argv = [*plan.argv[:1], "exec", "--skip-git-repo-check", *plan.argv[1:], "hi"]
-        result = subprocess.run(  # noqa: S603
-            argv, cwd=str(REPO),
-            env=_contained_env(**plan.env,
-                               CODEX_HOME=str(_codex_home(tmp_path)),
-                               OPENAI_API_KEY="dummy-not-a-real-key"),
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
-        )
-        assert result.returncode == 0, (
-            f"codex rejected the settings we generate: {result.stderr[-800:]}"
-        )
-    finally:
-        _stop(mock)
-
-    headers = {k.lower(): v for k, v in _last_request(record)["headers"].items()}
-    assert headers.get(SESSION_HEADER.lower()) == "sess-header-probe", (
-        "the real CLI did not send the session header; without it the gateway "
-        "cannot bind the conversation to one alias table"
-    )
-
-
-@needs_claude
-def test_real_claude_code_through_run_sends_only_aliases(stack, tmp_path) -> None:
-    """Same guarantee for the Anthropic path, which routes by environment.
-
-    Codex is configured with `-c` overrides and Claude Code with
-    ANTHROPIC_BASE_URL plus custom headers, so the two have entirely separate
-    failure modes and a passing Codex test says nothing about this one.
-    """
-    record, gateway_url = stack
+@pytest.mark.parametrize("stack", ["claude"], indirect=True)
+def test_real_claude_with_persistent_environment_sends_only_aliases(
+    stack, tmp_path
+) -> None:
+    """隔離したClaude設定directoryと製品生成environmentでmask・復元を確認する。"""
+    claude = _require_cli("claude")
+    record, config, _layout = stack
+    claude_home = tmp_path / "claude_home"
+    claude_home.mkdir()
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "claude",
-         "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
+        [claude, "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
+            **client_environment(config),
+            HOME=str(tmp_path / "home"),
             ANTHROPIC_API_KEY="dummy-not-a-real-key",
-            CLAUDE_CONFIG_DIR=str(tmp_path / "claude_home"),
-            SECURITYMASKER_GATEWAY_URL=gateway_url),
+            CLAUDE_CONFIG_DIR=str(claude_home)),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
     )
     assert result.returncode == 0, f"claude failed: {result.stderr[-1500:]}"

@@ -143,3 +143,12 @@ def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert attempts == []
+
+
+def test_e2e_uses_persistent_v2_client_settings_not_the_run_wrapper() -> None:
+    source = MODULE.read_text(encoding="utf-8")
+    assert "initialize_layout" in source
+    assert "client_setup_snippet" in source
+    assert "client_environment" in source
+    assert "build_plan" not in source
+    assert '"securitymasker.cli", "run"' not in source

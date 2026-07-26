@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
+
+"$SCRIPT_DIRECTORY/setup"
+"$PROJECT_DIRECTORY/.venv/bin/python" -m pip install --disable-pip-version-check \
+    --no-deps -r "$PROJECT_DIRECTORY/requirements-dev.lock"
+
+printf '%s\n' "SecurityMasker test environment is ready."

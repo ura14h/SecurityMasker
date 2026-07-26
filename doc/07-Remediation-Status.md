@@ -19,8 +19,8 @@ release target から外れた。最新の仕様と実装順は
 | 3. protocol互換性 | **partial** | Claude `count_tokens` / session header / models / HEAD実装済み。実CLI E2EはPhase 7で再構成 |
 | 4. SQLite session store | **done** | keyed lookup、全record AES-GCM、DB/key/mode拘束、TTL、active writer lease、transactional schema |
 | 5. NER標準化 | **partial** | 実装・source setup・実model test・Presidio撤去は完了。weight同梱binaryの再配布条件確認が残る |
-| 6. preview / setup / doctor | **partial** | v2同一pipelineのoffline preview、mode別snippet、read-only doctorは完了。persistent CLI E2Eとの生成元統一はPhase 7 |
-| 7. test setup分離 | not started | mock、CLI E2E、Desktop手動smokeの役割分離 |
+| 6. preview / setup / doctor | **done** | v2同一pipelineのoffline preview、mode別snippet、read-only doctor、E2Eとの生成元統一 |
+| 7. test setup分離 | **partial** | test-setup/local gate、隔離v2/persistent設定E2E、skip強制失敗を実装。macOSではnamespace実行不能のため実CLI再実行が残る |
 | 8. PyInstaller | not started | sourceと同一挙動のOS別one-file build |
 | 9. legacy撤去・利用者文書 | not started | Docker / Redis / CI / PyPI前提を標準経路から除去 |
 | 10. release candidate判定 | not started | 全gate通過、残存制約明記、手動Desktop smoke |

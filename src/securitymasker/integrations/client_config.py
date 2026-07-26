@@ -30,7 +30,17 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
             "# modelはclient側で選択し、このsnippetでは変更しません。\n"
             f"{codex_config_toml(base_url)}"
         )
+    environment = client_environment(config)
     return (
         "# Claude Code/Desktopを起動する環境へ設定してください。\n"
-        f'export ANTHROPIC_BASE_URL="{base_url}"\n'
+        + "".join(f'export {name}="{value}"\n' for name, value in environment.items())
     )
+
+
+def client_environment(config: SecurityMaskerConfig) -> dict[str, str]:
+    """永続設定を環境変数で受け取るmodeの値を返す。"""
+    if config.runtime is None:
+        raise ConfigError("client configuration requires a version 2 runtime section")
+    if config.runtime.mode == "claude":
+        return {"ANTHROPIC_BASE_URL": gateway_url(config)}
+    return {}

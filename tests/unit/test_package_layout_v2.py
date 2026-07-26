@@ -237,7 +237,28 @@ def test_standard_setup_does_not_install_redis() -> None:
 
     assert "requirements.lock" in setup
     assert "requirements-redis.lock" not in setup
+    assert "requirements-dev.lock" not in setup
+    assert "pytest" not in setup
     assert "\nredis==" not in f"\n{standard_lock}"
+
+
+def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> None:
+    test_setup = (ROOT / "scripts/test-setup").read_text(encoding="utf-8")
+    release = (ROOT / "scripts/release-check").read_text(encoding="utf-8")
+
+    assert '"$SCRIPT_DIRECTORY/setup"' in test_setup
+    assert "requirements-dev.lock" in test_setup
+    for required in (
+        "ruff",
+        "mypy",
+        "tests/unit tests/evaluation",
+        "test_live_gateway.py",
+        "run_cli_e2e.sh",
+        "SM_REQUIRE_MODEL=1",
+        "SM_REQUIRE_ALL_CLIS=1",
+    ):
+        assert required in release
+    assert "|| true" not in release
 
 
 @pytest.mark.parametrize(
