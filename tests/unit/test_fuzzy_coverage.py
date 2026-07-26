@@ -10,7 +10,7 @@ clean scan that found nothing:
    the rest.
 
 Both are deterministic, so both were reachable on purpose. Synthetic data only:
-the "name" is an invented one already used elsewhere in the suite (§30).
+the "name" is invented and already used elsewhere in the suite.
 """
 
 from __future__ import annotations

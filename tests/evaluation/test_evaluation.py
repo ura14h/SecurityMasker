@@ -1,4 +1,4 @@
-"""Evaluation harness: precision / recall / F1 over the corpus (§31).
+"""評価corpusに対するprecision・recall・F1を検証する。
 
 A detection matches a gold label when the entity type is equal and the spans
 overlap (robust to composite-address boundary differences). Reports overall and
@@ -99,14 +99,14 @@ async def test_corpus_metrics_meet_baseline(capsys: pytest.CaptureFixture[str]) 
                   f"(tp={c.tp} fp={c.fp} fn={c.fn})")
 
     # Recall matters most for not leaking secrets; precision matters for not
-    # breaking code (§31). Baselines guard against regressions.
+    # 誤検出はコードを壊すため、baselineで回帰を検出する。
     assert overall.recall >= 0.9, f"recall too low: {overall.recall}"
     assert overall.precision >= 0.85, f"precision too low: {overall.precision}"
 
 
 @pytest.mark.asyncio
 async def test_negatives_produce_no_detections() -> None:
-    """False positives on the negative examples would break code (§31)."""
+    """negative exampleに対する誤検出がないことを確認する。"""
     engine = _build_eval_engine()
     from tests.evaluation.corpus import NEGATIVES
 

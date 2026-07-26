@@ -1,4 +1,4 @@
-"""ADR-0012 Phase 4の暗号化SQLite store検証。"""
+"""暗号化SQLite session storeの永続化と鍵管理を検証する。"""
 
 from __future__ import annotations
 

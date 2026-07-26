@@ -1,4 +1,4 @@
-"""ADR-0012 Phase 2の1 process・1 provider route検証。"""
+"""1 process・1 provider routeのmode分離を検証する。"""
 
 from __future__ import annotations
 

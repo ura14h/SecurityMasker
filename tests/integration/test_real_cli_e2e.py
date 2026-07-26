@@ -1,4 +1,4 @@
-"""永続client設定を使う実Codex/Claude Code CLI E2E（ADR-0012 Phase 7）。
+"""永続client設定を使う実Codex／Claude Code CLIのE2E検証。
 
 通常運用と同じv2 config/dict/state/key、`client-config`と同じ生成元の永続設定を使う。
 
@@ -39,7 +39,7 @@ guarantee.
 
 The gateway's upstream is the local mock, the CLIs get isolated homes so the
 user's own ``~/.codex`` is neither read for credentials nor written to, and the
-prompt is synthetic (§30).
+prompt is synthetic and contains no real personal or secret data.
 
     SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
 """

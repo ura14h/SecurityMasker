@@ -1,4 +1,4 @@
-"""Milestone A security-gate tests (doc/06-Issue.md P0-1/2/3/5 + header hygiene).
+"""gatewayの入力検証、転送遮断、header衛生を検証する。
 
 Reproduce the external-send leakage paths first, then assert the fix: the gateway
 must never forward on config-missing, malformed/non-object/unsupported bodies,
@@ -69,7 +69,7 @@ async def _post(client, path, *, json_body=None, content=None, headers=None):
     return await client.post(path, **kw)
 
 
-# --- P0-2: malformed / non-object / unsupported bodies must not be forwarded ----
+# --- malformed / non-object / unsupported bodies must not be forwarded -------
 
 @pytest.mark.asyncio
 async def test_malformed_json_not_forwarded(app_and_calls) -> None:
@@ -100,7 +100,7 @@ async def test_gzip_content_encoding_not_forwarded(app_and_calls) -> None:
     assert r.status_code in (400, 415) and calls == []
 
 
-# --- P0-3: route allowlist — unknown routes must not be forwarded ---------------
+# --- route allowlist: unknown routes must not be forwarded -------------------
 
 @pytest.mark.asyncio
 async def test_unknown_post_route_not_forwarded(app_and_calls) -> None:
@@ -142,7 +142,7 @@ async def test_chatgpt_mode_does_not_expose_messages(app_and_calls) -> None:
     assert response.status_code == 404 and calls == []
 
 
-# --- P0-5: oversized body must not be forwarded ---------------------------------
+# --- oversized body must not be forwarded -----------------------------------
 
 @pytest.mark.asyncio
 async def test_oversized_body_not_forwarded(monkeypatch, app_and_calls) -> None:
@@ -154,7 +154,7 @@ async def test_oversized_body_not_forwarded(monkeypatch, app_and_calls) -> None:
     assert r.status_code == 413 and calls == []
 
 
-# --- P0-4: final-payload guard blocks registered secrets in fields the adapter --
+# --- final-payload guard blocks registered secrets in fields the adapter -----
 #          never masks (unknown/structural/schema-key), and forwards nothing ------
 
 @pytest.mark.asyncio
@@ -200,7 +200,7 @@ async def test_clean_request_still_forwards(app_and_calls) -> None:
     assert PERSON.encode() not in calls[0]["body"]
 
 
-# --- P0-5: a single oversized field must fail closed, not be silently truncated -
+# --- oversized field must fail closed, not be silently truncated -------------
 
 @pytest.mark.asyncio
 async def test_oversized_field_fails_closed(monkeypatch) -> None:
@@ -236,7 +236,7 @@ async def test_oversized_field_fails_closed(monkeypatch) -> None:
     assert r.status_code == 400 and calls == []
 
 
-# --- P0-1: readiness distinct from liveness -------------------------------------
+# --- readiness distinct from liveness ---------------------------------------
 
 @pytest.mark.asyncio
 async def test_readiness_ok_with_engine(app_and_calls) -> None:

@@ -1,4 +1,4 @@
-"""Session store tests (§30.1: TTL, deletion; §30.4 basics)."""
+"""session storeのTTL、削除、並行性、分離を検証する。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def test_absolute_ttl_boundary() -> None:
 
 @pytest.mark.asyncio
 async def test_concurrent_first_registration_single_session() -> None:
-    """Parallel get_or_create for a new id yields one shared session (§30.4)."""
+    """同じ新規IDの並行登録が一つのsessionを共有することを確認する。"""
     store = InMemorySessionStore()
     results = await asyncio.gather(*[store.get_or_create("s1") for _ in range(20)])
     assert all(r is results[0] for r in results)

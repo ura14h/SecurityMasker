@@ -1,4 +1,4 @@
-"""Masking latency benchmark (§32).
+"""マスキング処理のレイテンシを測定するbenchmark。
 
 Measures added latency of the dictionary + regex + secret + JP + format pipeline
 across input sizes and registered-secret counts, checking that large inputs do not

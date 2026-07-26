@@ -1,4 +1,4 @@
-"""Audit round-2: multi-turn continuity via response binding (doc/06 P1-1).
+"""response bindingによるmulti-turn sessionの継続性を検証する。
 
 Re-audit finding 4: `previous_response_id` was treated as a stable session key,
 but it changes every turn, so turn 3+ landed on a different alias table and prior

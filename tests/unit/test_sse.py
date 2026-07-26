@@ -1,4 +1,4 @@
-"""SSE parser/serializer tests (§30.2: multiline data, comments, event, retry)."""
+"""SSEの複数行data、comment、event、retryの解析と直列化を検証する。"""
 
 from __future__ import annotations
 

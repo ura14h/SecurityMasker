@@ -1,4 +1,4 @@
-"""Phase 8のone-file成果物を通常のPython test harnessから検証する。"""
+"""one-file実行ファイルを通常のPython test harnessから検証する。"""
 
 from __future__ import annotations
 

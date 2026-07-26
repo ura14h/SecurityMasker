@@ -1,4 +1,4 @@
-"""ResponsesStreamProcessor tests (§20, §21): delta/done/completed + tool args."""
+"""Responses streamのdelta・完了event・tool引数復元を検証する。"""
 
 from __future__ import annotations
 

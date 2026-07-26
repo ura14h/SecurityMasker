@@ -1,4 +1,4 @@
-"""Config loading/validation tests (§12: startup validation, env values)."""
+"""設定の読み込み、起動時検証、環境変数参照を検証する。"""
 
 from __future__ import annotations
 

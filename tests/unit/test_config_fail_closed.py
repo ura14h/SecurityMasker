@@ -1,4 +1,4 @@
-"""Milestone B tests (doc/06 P0-6 + P1-2): config + detector fail-closed.
+"""設定とdetectorのfail-closed動作を検証する。
 
 A misconfiguration or a failed/unavailable detector must fail at startup or block
 the request — never silently become a normal, forwarding gateway. Reproduce each
@@ -20,7 +20,7 @@ from securitymasker.detectors.base import DetectionContext
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError, DetectionError
 
-# --- P1-2: strict schema — unknown fields / version / durations / regex ---------
+# --- strict schema: unknown fields / version / durations / regex -------------
 
 
 def _load_raw(tmp_path, text: str):
@@ -114,7 +114,7 @@ def test_parse_duration_units() -> None:
             parse_duration(bad)
 
 
-# --- P0-6: value_from_env must resolve at startup -------------------------------
+# --- value_from_env must resolve at startup ---------------------------------
 
 
 def _env_config() -> SecurityMaskerConfig:
@@ -145,7 +145,7 @@ def test_value_from_env_present_ok(monkeypatch) -> None:
     assert isinstance(engine, MaskingEngine)
 
 
-# --- P1-2: preserve_aliases actually toggles the existing-alias detector ---------
+# --- preserve_aliases actually toggles the existing-alias detector -----------
 
 
 def test_preserve_aliases_toggles_detector() -> None:
@@ -158,7 +158,7 @@ def test_preserve_aliases_toggles_detector() -> None:
     assert "existing_alias" not in names_off
 
 
-# --- P0-6: required detector that cannot load fails startup ----------------------
+# --- required detector that cannot load fails startup ------------------------
 
 
 def test_ner_required_missing_dependency_fails_startup() -> None:
@@ -170,7 +170,7 @@ def test_ner_required_missing_dependency_fails_startup() -> None:
         JapaneseNerDetector(model="does-not-exist/model", required=True)
 
 
-# --- P0-6: a runtime detector fault blocks (closed) / may skip fuzzy (open) ------
+# --- runtime detector fault: closed blocks; open may skip fuzzy detector ------
 
 
 class _Boom:

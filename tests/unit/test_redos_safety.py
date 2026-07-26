@@ -1,4 +1,4 @@
-"""ReDoS defences (doc/06 P1-5): pattern linting + detector timeout.
+"""pattern lintとdetector timeoutによるReDoS対策を検証する。
 
 The 10MB body cap does not stop catastrophic backtracking — a few dozen characters
 of input against `(a+)+$` occupies a core for minutes. `re` cannot be interrupted

@@ -1,4 +1,4 @@
-"""Anthropic Messages adapter tests (§16, §23: mask values, keep structure)."""
+"""Anthropic Messages adapterが構造を保って値をマスクすることを検証する。"""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ async def test_restore_tool_use_input_values_trusted() -> None:
 
 @pytest.mark.asyncio
 async def test_restore_tool_use_input_untrusted_keeps_aliases() -> None:
-    # Default: the tool is not trusted -> input keeps its aliases (doc/06 P0-8).
+    # Default: the tool is not trusted, so input keeps its aliases.
     eng, s = build_engine(), await _session()
     await adapter.mask_request(eng, s, {"max_tokens": 10, "messages": [
         {"role": "user", "content": "prod-db01.internal.example"}]})

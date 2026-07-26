@@ -1,9 +1,9 @@
-"""URL / file-path structure preservation (invariant 3, doc/06 P1-6).
+"""URLとfile pathを構文的に壊さずマスクできることを検証する。
 
 The alias must stay syntactically valid and structurally equivalent — a parser, a
 shell, or a build tool must still be able to consume it — while carrying none of
 the original identity. Values that cannot be rebuilt safely must BLOCK, never be
-half-masked. Synthetic values only (§30).
+half-masked. Synthetic values only.
 """
 
 from __future__ import annotations

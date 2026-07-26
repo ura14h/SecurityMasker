@@ -1,4 +1,4 @@
-"""Context segmentation + syntax safety (§17, doc/06 P1-7).
+"""context分割と構文安全性を検証する。
 
 Two properties matter and they pull in opposite directions:
 
@@ -9,7 +9,7 @@ Two properties matter and they pull in opposite directions:
   the dictionary and the deterministic secret detectors run everywhere, because
   a real key pasted into a fence is still a real key.
 
-Synthetic data only (§30).
+Synthetic data only.
 """
 
 from __future__ import annotations
@@ -338,7 +338,7 @@ async def test_masking_is_stable_across_fence_boundary_positions(split) -> None:
     assert masked.count("```") == 2
 
 
-# --- unfenced block classification (ADR-0011) -------------------------------------
+# --- unfenced block classification ------------------------------------------
 # People paste these raw, without a Markdown fence. Before, all of them were prose,
 # so fuzzy NER ran over identifiers, commands and patch bodies.
 
@@ -395,7 +395,7 @@ def test_unfenced_classification_stays_lossless(text) -> None:
     assert "".join(s.text for s in segment(text)) == text
 
 
-# --- DoS bounds (ADR-0011) ----------------------------------------------------------
+# --- DoS bounds --------------------------------------------------------------
 
 
 def test_segment_count_is_capped() -> None:

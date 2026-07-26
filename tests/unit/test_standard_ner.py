@@ -1,4 +1,4 @@
-"""ADR-0012標準NER経路を実配布modelで検証する。"""
+"""標準NER経路の固定model設定と実配布modelでの検出を検証する。"""
 
 from __future__ import annotations
 

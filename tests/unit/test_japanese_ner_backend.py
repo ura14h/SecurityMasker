@@ -1,4 +1,4 @@
-"""Japanese NER backend safety (ADR-0009, doc/06 §5.3).
+"""日本語NER backendのschema検証と安全な無効化を検証する。
 
 The model itself is optional and not present in CI, so these tests drive the
 detector with stub pipelines. That is the point: what must be verified is not the
@@ -147,7 +147,7 @@ async def test_japanese_labels_map_to_our_entity_types() -> None:
 @pytest.mark.asyncio
 async def test_location_is_not_treated_as_a_personal_address() -> None:
     # Conflating a city with somebody's home address would let a coarse hit
-    # inherit an address's sensitivity (ADR-0009).
+    # inherit an address's sensitivity.
     det = _detector(["LOC", "O"],
                     [{"entity_group": "LOC", "word": "神奈川県横浜市", "score": 0.99,
                       "start": 3, "end": 10}])

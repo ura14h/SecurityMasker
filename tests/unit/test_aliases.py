@@ -1,4 +1,4 @@
-"""Alias factory + profile tests (§30.1: same/diff alias, collision, profiles)."""
+"""Alias factoryとprofileの安定性・衝突回避・形式を検証する。"""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_profile_email_is_syntactically_valid() -> None:
 
 
 def test_profile_ipv4_is_documentation_range() -> None:
-    # All three RFC 5737 ranges are used, tripling the alias space (ADR-0007).
+    # All three RFC 5737 ranges are used, tripling the alias space.
     nets = [ipaddress.ip_network(n) for n in
             ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
     for token in ("abcdef", "123456", "ffffff", "0f0f0f"):
@@ -139,7 +139,7 @@ def test_collision_exhaustion_raises() -> None:
 @pytest.mark.asyncio
 async def test_ipv4_alias_space_exhaustion_fails_closed() -> None:
     """Shape preservation caps IPv4 aliases at 3x254; exhaustion must BLOCK, never
-    reuse an alias for a second secret (ADR-0007, doc/06 P1-8)."""
+    reuse an alias for a second secret."""
     from securitymasker.sessions.memory import InMemorySessionStore
 
     session = await InMemorySessionStore().get_or_create("exhaust")

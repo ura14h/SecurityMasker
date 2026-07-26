@@ -1,4 +1,4 @@
-"""Bounded inference execution (ADR-0011).
+"""推論処理の回数・入力サイズ・時間の上限を検証する。
 
 The audit's finding was that `asyncio.wait_for(asyncio.to_thread(...))` ends the
 WAIT but not the work: after a timeout the worker keeps running, and repeated

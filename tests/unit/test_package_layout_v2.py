@@ -1,4 +1,4 @@
-"""ADR-0012 Phase 1のconfig、辞書、init、source launcher検証。"""
+"""config、辞書、init、source launcherの利用者向け構成を検証する。"""
 
 from __future__ import annotations
 

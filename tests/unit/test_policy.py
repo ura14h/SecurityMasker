@@ -1,4 +1,4 @@
-"""Policy resolution tests (§30.1: overlap resolution, longest match, protection)."""
+"""重複解決・最長一致・保護を含むpolicy決定を検証する。"""
 
 from __future__ import annotations
 

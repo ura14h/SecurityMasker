@@ -1,7 +1,7 @@
-"""Measure a Japanese NER backend against the synthetic corpus (doc/06 §5.3).
+"""合成corpusを使って日本語NER backendを評価する。
 
 Development tooling, not production code: nothing in ``src/`` imports it. Run it
-directly to produce the numbers recorded in ADR-0009.
+directly to compare backend quality and resource usage.
 
     python -m tests.evaluation.ner_benchmark [model-id]
 

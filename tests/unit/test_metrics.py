@@ -1,4 +1,4 @@
-"""Metrics + audit tests (§25: fixed schema, bounded labels, fingerprint only)."""
+"""固定schema・有限label・fingerprint限定のmetricsとauditを検証する。"""
 
 from __future__ import annotations
 

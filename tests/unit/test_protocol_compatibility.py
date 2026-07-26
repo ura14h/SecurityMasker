@@ -1,4 +1,4 @@
-"""ADR-0012 Phase 3のClaude/OpenAI protocol互換性検証。"""
+"""Claude／OpenAI protocolの互換性と透過性を検証する。"""
 
 from __future__ import annotations
 

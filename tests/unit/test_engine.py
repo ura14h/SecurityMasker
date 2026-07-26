@@ -1,4 +1,4 @@
-"""End-to-end masking engine tests (§30.1, §38 acceptance criteria)."""
+"""masking engineのend-to-end受け入れ条件を検証する。"""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ async def test_same_secret_same_alias_within_session() -> None:
     assert len(aliases) == 1
     alias = aliases.pop()
     assert r1.masked_text == f"{alias} と {alias}"
-    # A later request in the same session reuses the same alias (idempotent, §7).
+    # A later request in the same session reuses the same alias.
     r2 = await eng.mask_text(s, "山田太郎")
     assert r2.masked_text == alias
 
@@ -166,7 +166,7 @@ async def test_only_this_session_aliases_restored() -> None:
 
 @pytest.mark.asyncio
 async def test_json_string_escaping_is_preserved() -> None:
-    """Original with a double-quote restores to valid JSON (§30.3 spirit)."""
+    """二重引用符を含む元値を復元しても有効なJSONになることを確認する。"""
     entries = [DictionaryEntry(ORG, ('a"b\\c',), PROSE, LITERAL, 100)]
     eng = MaskingEngine([DictionaryDetector(entries)])
     store = InMemorySessionStore()

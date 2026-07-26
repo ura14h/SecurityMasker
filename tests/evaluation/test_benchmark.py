@@ -1,4 +1,4 @@
-"""Light performance regression guard (§32).
+"""大幅な性能劣化を検出する軽量な回帰テスト。
 
 Not a precise benchmark (see benchmark.py) — just asserts a 100 KB input masks in
 a sane time so accidental quadratic blowups are caught in CI.

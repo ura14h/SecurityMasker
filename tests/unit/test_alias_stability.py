@@ -1,4 +1,4 @@
-"""Audit round-2: issued-alias protection covers EVERY profile (doc/06 P0-7).
+"""発行済みaliasがすべてのprofileで再検出されないことを検証する。
 
 Re-audit finding 5: alias protection was driven by a shape regex that only knew
 prose/hostname/email/env_reference, so ipv4, ipv6, uuid and numeric aliases were
@@ -72,7 +72,7 @@ async def test_ipv4_alias_replay_does_not_grow_mappings() -> None:
     ])
     session = await _session()
     # A real (private) address: RFC 5737 documentation ranges are deliberately not
-    # detected, since they are the ranges aliases are minted from (ADR-0007).
+    # detected, since they are the ranges aliases are minted from.
     text = "host 10.20.30.40 responded"
     seen = []
     for _ in range(3):

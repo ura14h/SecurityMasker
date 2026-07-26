@@ -1,4 +1,4 @@
-"""NER artifact verification (ADR-0010).
+"""NER artifactのmanifestとdigest検証を確認する。
 
 A pinned revision says which commit we asked for. It does NOT say the files on
 disk are the ones we pinned: a partial download, a corrupted cache, or a swapped

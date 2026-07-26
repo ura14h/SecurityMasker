@@ -1,4 +1,4 @@
-"""Tool-argument reassembly tests (§30.3: split deltas, special chars, fail-closed)."""
+"""分割deltaと特殊文字を含むtool引数の再構成とfail-closedを検証する。"""
 
 from __future__ import annotations
 

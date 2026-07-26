@@ -1,9 +1,9 @@
-"""Synthetic corpus for comparing Japanese NER backends (doc/06 §5.3).
+"""日本語NER backendを比較するための合成corpus。
 
 Everything here is invented. No real person, company, or address appears — names
 are constructed from common surname/given-name characters, organisations use
 obviously fictional coinages, and addresses use the documentation-style ward and
-block numbers already used elsewhere in the suite (§30).
+block numbers already used elsewhere in the suite.
 
 The corpus is deliberately adversarial in both directions, because a NER backend
 is only useful to us if it is good at BOTH:

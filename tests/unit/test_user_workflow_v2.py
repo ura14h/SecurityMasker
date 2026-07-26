@@ -1,4 +1,4 @@
-"""ADR-0012 Phase 6の通常運用CLIを検証する。"""
+"""利用者が通常運用で使用するCLI workflowを検証する。"""
 
 from __future__ import annotations
 

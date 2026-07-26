@@ -1,4 +1,4 @@
-"""CLI tests (§12: must not print original sensitive values)."""
+"""CLIが元の機密値を表示せず安全に動作することを検証する。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def test_config_validate_bad_returns_error(tmp_path: Path, capsys: pytest.Captur
 def test_entities_test_masks_and_hides_original(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["entities", "test", "担当は山田太郎です", "--config", config_path]) == 0
     out = capsys.readouterr().out
-    assert "山田太郎" not in out  # original never printed (§12)
+    assert "山田太郎" not in out  # 元の機密値は表示しない
     assert "SM_PERSON_" in out
     assert "PERSON: 1" in out
 

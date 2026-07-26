@@ -1,4 +1,4 @@
-"""Anonymized Japanese evaluation corpus (§31). Synthetic data only (§30).
+"""合成データだけで構成した日本語マスキング評価corpus。
 
 Mixes prose, chat, logs, config, and source code with positive and negative
 examples. Gold labels are ``(entity_type, surface)`` pairs; negatives have none.
@@ -13,7 +13,7 @@ from securitymasker.detectors.japanese_identifiers import residence_check_digit
 from securitymasker.detectors.japanese_my_number import check_digit
 from securitymasker.models import EntityType
 
-# Synthetic My Number with a valid check digit (never a real number, §14.5).
+# 正しい検査用数字を持つ合成マイナンバー。実在する番号ではない。
 _MYNUM = "12345678901" + str(check_digit("12345678901"))
 
 
@@ -42,10 +42,10 @@ PENSION = EntityType.JP_PENSION_NUMBER.value
 EMPINS = EntityType.JP_EMPLOYMENT_INSURANCE_NUMBER.value
 BANK = EntityType.JP_BANK_ACCOUNT.value
 
-# Synthetic residence-card number with a valid check digit (§30).
+# 正しい検査用文字を持つ合成在留カード番号。
 _RESIDENCE = f"AB1234567{residence_check_digit('1234567')}CD"
 
-# Dictionary the evaluation engine registers (names/orgs are user-defined, §14).
+# 評価用engineに登録するユーザー定義の氏名・組織辞書。
 DICTIONARY: dict[str, tuple[str, ...]] = {
     PERSON: ("山田太郎",),
     ORG: ("株式会社極秘技研", "極秘技研"),
@@ -71,14 +71,14 @@ POSITIVES: list[Example] = [
     Example("連絡先は０９０－１２３４－５６７８です。", ((PHONE, "０９０－１２３４－５６７８"),)),
     Example("メールは TARO.YAMADA@EXAMPLE.CO.JP です。",
             ((EMAIL, "TARO.YAMADA@EXAMPLE.CO.JP"),)),
-    # --- EAI / 国際化メール (doc/06 §5.4) -------------------------------------
+    # --- EAI / 国際化メール ------------------------------------------
     Example("連絡先は山田＠example.co.jpです。", ((EMAIL, "山田＠example.co.jp"),)),
     Example("問い合わせは山田太郎@例え.jpまで。", ((EMAIL, "山田太郎@例え.jp"),)),
-    # --- 住所のバリエーション (doc/06 §5.5) -----------------------------------
+    # --- 住所のバリエーション ----------------------------------------
     Example("送付先は東京都渋谷区神宮前1-2-3です。", ((ADDR, "東京都渋谷区神宮前1-2-3"),)),
     Example("所在地は東京都渋谷区神宮前1丁目2番3号 秘密ビル401です。",
             ((ADDR, "東京都渋谷区神宮前1丁目2番3号 秘密ビル401"),)),
-    # --- 日本固有の公的・業務識別子 (doc/06 §5.7) -----------------------------
+    # --- 日本固有の公的・業務識別子 ----------------------------------
     Example(f"在留カード番号は{_RESIDENCE}です。", ((RESIDENCE, _RESIDENCE),)),
     Example("旅券番号はTK1234567です。", ((PASSPORT, "TK1234567"),)),
     Example("運転免許証番号は123456789012です。", ((LICENSE, "123456789012"),)),

@@ -142,7 +142,7 @@ async def responses(request: Request):
             ev("response.in_progress", {"response": obj}),
             ev("response.output_item.added", {"output_index": 0, "item": item}),
             ev("response.content_part.added", {**common, "part": part}),
-            # Small chunks so aliases land split across deltas (§20).
+            # aliasが複数deltaに分割されるよう、小さなchunkで返す。
             *(ev("response.output_text.delta", {**common, "delta": tok})
               for tok in _chunk(text)),
             ev("response.output_text.done", {**common, "text": text}),
@@ -165,7 +165,7 @@ async def messages(request: Request):
     if body.get("stream"):
         delta_lines = [
             f'event: content_block_delta\ndata: {json.dumps({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": tok}})}\n\n'
-            for tok in _chunk(text)  # small chunks split aliases across deltas (§20)
+            for tok in _chunk(text)  # aliasを複数deltaに分割する小さなchunk
         ]
         lines = [
             f'event: message_start\ndata: {json.dumps({"type": "message_start", "message": {"id": "msg-mock", "role": "assistant", "content": []}})}\n\n',

@@ -1,4 +1,4 @@
-"""Milestone E limit tests (doc/06 P1-5, P1-10): bounded resources, fail-closed.
+"""resource上限と超過時のfail-closed動作を検証する。
 
 Session mapping tables and streaming tool-argument buffers are bounded so a
 runaway or hostile stream cannot exhaust memory, and overflow never produces a
@@ -89,7 +89,7 @@ def test_arg_buffer_overflow_fails_closed_with_error_event(monkeypatch) -> None:
 def test_missing_done_reports_incomplete_tool_call() -> None:
     # A stream that ends before `.done`: the incomplete JSON must never be emitted
     # as an executable call, but the client must be told rather than silently
-    # losing the call (doc/06 P1-10).
+    # losing the call.
     added = _ev({"type": "response.output_item.added", "output_index": 0,
                  "item": {"id": "fc_1", "type": "function_call", "name": "connect_db"}})
     deltas = _ev({"type": "response.function_call_arguments.delta", "item_id": "fc_1",

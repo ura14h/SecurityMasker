@@ -1,4 +1,4 @@
-"""AnthropicStreamProcessor tests (§20, §21, §23: text/json deltas, passthrough)."""
+"""Anthropic streamのtext・JSON delta復元と透過転送を検証する。"""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def test_unknown_event_passthrough() -> None:
 def test_invalid_tool_json_fails_closed_for_trusted_and_untrusted(trusted) -> None:
     # Missing closing brace. JSON validity is independent of tool trust: a
     # malformed tool call must never be re-sent to the client, restored or not
-    # (audit round-3 finding 5 / doc/06 P1-10).
+    # バッファを使い回しても、前の応答の状態を次へ持ち越さない。
     bad = '{"host": "SM_PERSON_2B891C"'
     sse = (
         'event: content_block_start\n'

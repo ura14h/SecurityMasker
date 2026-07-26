@@ -1,4 +1,4 @@
-"""Crypto tests (§30.1: HMAC entity separation, encryption tamper detection)."""
+"""HMACのentity分離と暗号文改ざん検出を検証する。"""
 
 from __future__ import annotations
 

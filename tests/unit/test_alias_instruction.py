@@ -1,4 +1,4 @@
-"""inject_alias_instruction wiring (doc/06 P1-2): opt-in placeholder note.
+"""alias説明文を任意で注入する設定と配線を検証する。
 
 When enabled, the adapters prepend a placeholder-preservation note to the
 system/instructions field once masking has produced an alias; when disabled (the

@@ -1,4 +1,4 @@
-"""Normalization + offset-map tests (§30.1: Unicode NFC/NFKC, width, JP space)."""
+"""Unicode正規化と元文字列へのoffset mapを検証する。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def test_normalized_slice_preserves_original_surface() -> None:
 
 
 def test_combining_voiced_mark_composes_across_code_points() -> None:
-    # か + U+3099 (combining voiced mark) must normalize to が (doc/06 P0-7);
+    # か + U+3099 (combining voiced mark) must normalize to が;
     # per-code-point normalization would leave them separate and evade detection.
     text = "がぎ"  # -> がぎ
     n = normalize(text, "nfkc")

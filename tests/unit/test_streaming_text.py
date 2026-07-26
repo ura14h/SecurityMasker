@@ -1,4 +1,4 @@
-"""StreamingRestorer tests (§30.2: alias split at every boundary, property-based)."""
+"""全境界で分割されたaliasをstreamから復元できることを検証する。"""
 
 from __future__ import annotations
 

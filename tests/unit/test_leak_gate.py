@@ -1,10 +1,10 @@
-"""Audit round-2 regression tests: final payload + header leak gate (doc/06 P0-4).
+"""最終payloadとheaderの漏洩防止gateを検証する回帰テスト。
 
 Reproduces the leaks found in re-audit finding 1 and 2, then proves they are
 refused. A leak == the forwarder being called at all, so every blocked case
 asserts ``calls == []``.
 
-All data is synthetic (§30): the "card" is a Luhn-valid test number, hosts are
+All data is synthetic: the "card" is a Luhn-valid test number, hosts are
 .invalid/.example, and no real person or secret appears.
 """
 

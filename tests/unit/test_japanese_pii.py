@@ -1,4 +1,4 @@
-"""Japanese PII recognizer tests (§14, §30.1). Synthetic data only (§30)."""
+"""合成データを使って日本固有PIIの認識精度を検証する。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def ctx(text: str) -> DetectionContext:
     return DetectionContext(norm=normalize(text, "nfkc"))
 
 
-# Build a synthetic-but-checksum-valid My Number (never a real person's, §14.5).
+# 正しいchecksumを持つ合成マイナンバー。実在人物の番号ではない。
 _BODY11 = "12345678901"
 VALID_MYNUMBER = _BODY11 + str(check_digit(_BODY11))
 
@@ -78,7 +78,7 @@ async def test_phone_extension_and_bare_number() -> None:
 @pytest.mark.asyncio
 async def test_postal_code_needs_marker_or_prefecture() -> None:
     det = JapanesePostalCodeDetector()
-    assert await det.detect(ctx("チケット番号は123-4567")) == []  # bare -> ignored (§14.6)
+    assert await det.detect(ctx("チケット番号は123-4567")) == []  # 文脈なしでは無視する
     assert await det.detect(ctx("〒150-0001")) != []
     assert await det.detect(ctx("150-0001 東京都渋谷区")) != []
 
@@ -122,12 +122,12 @@ async def test_composite_address_single_span() -> None:
     hits = await det.detect(ctx("住所は東京都渋谷区神宮前1丁目2番3号 秘密ビル401です"))
     assert len(hits) == 1
     assert hits[0].entity_type == EntityType.JP_ADDRESS.value
-    # The whole address is one span (no partial-address leakage, §14.2).
+    # The whole address is one span, preventing partial-address leakage.
     assert "東京都渋谷区神宮前" in hits[0].original_value
     assert "号" in hits[0].original_value
 
 
-# --- §5.6: My Number confidence gate --------------------------------------------
+# --- My Number confidence gate ----------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_my_number_default_gate_catches_bare_number() -> None:
     assert len(hits) == 1
 
 
-# --- §5.7: 法人番号 (corporate number) ------------------------------------------
+# --- 法人番号 (corporate number) --------------------------------------------
 
 
 def _valid_corporate() -> str:
@@ -191,7 +191,7 @@ async def test_corporate_number_invalid_checksum_ignored() -> None:
     assert await det.detect(ctx("法人番号は1234567890123です")) == []
 
 
-# --- §5.4 EAI / internationalized email -----------------------------------------
+# --- EAI / internationalized email ------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -235,7 +235,7 @@ async def test_documentation_ip_ranges_are_not_detected() -> None:
     assert len(hits) == 1
 
 
-# --- §5.3 dictionary spacing tolerance ------------------------------------------
+# --- dictionary spacing tolerance -------------------------------------------
 
 
 @pytest.mark.asyncio

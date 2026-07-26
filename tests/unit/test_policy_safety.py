@@ -1,4 +1,4 @@
-"""Milestone D tests (doc/06 P1-3): critical-secret minimum-safety policy.
+"""重大secretに対する最低安全policyを検証する。
 
 A high-priority weak dictionary/regex must not be able to weaken a critical
 secret's restore policy (env_reference/block) down to literal via overlap or
