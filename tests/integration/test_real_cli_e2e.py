@@ -9,9 +9,27 @@ start at all. `run codex` was completely broken while every unit test passed.
 This test closes that gap by launching the actual binary and asserting on what
 reached the server.
 
-No real provider is contacted: the gateway's upstream is the local mock, and the
-CLI is given an isolated ``CODEX_HOME`` so the user's own ``~/.codex`` is neither
-read for credentials nor written to. The prompt is synthetic (§30).
+**Egress.** Pointing a CLI at a local URL is a routing choice, not a containment
+boundary: both tools have update checks, analytics and crash reporting that do not
+go through the configured provider at all, so a routing mistake here would leak to
+the internet rather than fail. Dummy credentials do not change that.
+
+So the boundary is enforced, in this order:
+
+1. A network sandbox that can only reach loopback, when the platform has one
+   (``unshare -n`` on Linux). This is the only real boundary.
+2. Otherwise the test does NOT run. It skips unless the operator sets
+   ``SM_E2E_ALLOW_UNSANDBOXED=1``, which is an assertion that egress is
+   controlled some other way (an outbound firewall, an offline machine).
+3. In both cases the child gets a scrubbed environment, telemetry and
+   auto-update switched off, and proxy variables aimed at a closed loopback
+   port so anything that respects them fails fast instead of reaching out.
+
+Layers 2 and 3 are defence in depth. Layer 1 is the guarantee.
+
+The gateway's upstream is the local mock, the CLIs get isolated homes so the
+user's own ``~/.codex`` is neither read for credentials nor written to, and the
+prompt is synthetic (§30).
 
     SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
 """
@@ -21,6 +39,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -33,18 +52,73 @@ from securitymasker.integrations.launcher import SESSION_HEADER, build_plan
 
 REPO = Path(__file__).resolve().parents[2]
 DICT_CONFIG = REPO / "tests" / "integration" / "securitymasker.masking.yaml"
-MOCK_PORT = 8097
-GW_PORT = 4017
-PROBE_PORT = 8098
+def _free_port() -> int:
+    """A port the OS just told us is free.
+
+    Fixed ports made these tests interfere: each one starts its own servers, and a
+    previous test's dying uvicorn can still answer /health on the same port while
+    the new one is binding — so a test would talk to the wrong gateway and fail
+    intermittently. Nothing here is long-lived enough to need a stable port.
+    """
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 PERSON = "山田太郎"                       # synthetic, already used across the suite
 HOST = "prod-db01.internal.example"      # .example is reserved for documentation
 CARRIER = "接続する Python を書いて"       # non-sensitive; proves the body ARRIVED
 
+# A port nothing listens on: proxy settings pointed here fail immediately.
+CLOSED_PORT = 1
+
 pytestmark = [
     pytest.mark.skipif(os.environ.get("SM_RUN_CLI_E2E") != "1",
                        reason="set SM_RUN_CLI_E2E=1 to drive the real CLI"),
+    pytest.mark.skipif(
+        shutil.which("unshare") is None
+        and os.environ.get("SM_E2E_ALLOW_UNSANDBOXED") != "1",
+        reason="no loopback-only network sandbox available; set "
+               "SM_E2E_ALLOW_UNSANDBOXED=1 only if egress is blocked another way",
+    ),
 ]
+
+
+def _sandboxed(argv: list[str]) -> list[str]:
+    """Wrap ``argv`` so it can reach loopback and nothing else, where possible."""
+    if shutil.which("unshare") is None:
+        return argv           # gated above; the operator has asserted containment
+    # A fresh network namespace has only `lo`, and it starts down.
+    inner = "ip link set lo up 2>/dev/null; exec \"$@\""
+    return ["unshare", "-r", "-n", "sh", "-c", inner, "sh", *argv]
+
+
+def _contained_env(**overrides: str) -> dict[str, str]:
+    """A minimal environment with telemetry, updates and egress turned off.
+
+    Inherited variables are dropped rather than filtered: a stray ANTHROPIC_API_URL
+    or HTTPS_PROXY from the developer's shell is exactly the kind of thing that
+    would route real traffic out of a test that looks local.
+    """
+    keep = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL", "USER", "TERM")
+    env = {k: os.environ[k] for k in keep if k in os.environ}
+    env.update({
+        # Nothing this test does should leave the machine; if any component
+        # honours proxy settings, send it somewhere closed.
+        "HTTP_PROXY": f"http://127.0.0.1:{CLOSED_PORT}",
+        "HTTPS_PROXY": f"http://127.0.0.1:{CLOSED_PORT}",
+        "ALL_PROXY": f"http://127.0.0.1:{CLOSED_PORT}",
+        "NO_PROXY": "127.0.0.1,localhost",      # ...except our own stack
+        # Documented switches for the non-provider traffic each CLI can make.
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "DISABLE_TELEMETRY": "1",
+        "DISABLE_ERROR_REPORTING": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "DISABLE_BUG_COMMAND": "1",
+        "CODEX_DISABLE_UPDATE_CHECK": "1",
+        "DO_NOT_TRACK": "1",
+    })
+    env.update(overrides)
+    return env
 needs_codex = pytest.mark.skipif(shutil.which("codex") is None,
                                  reason="the codex CLI is not installed")
 needs_claude = pytest.mark.skipif(shutil.which("claude") is None,
@@ -99,25 +173,26 @@ def _last_request(record: Path) -> dict:
 def stack(tmp_path: Path):
     """Mock upstream + gateway pointed at it. Nothing leaves the machine."""
     record = tmp_path / "record.jsonl"
-    mock = _serve(MOCK_PORT, record)
+    mock_port, gw_port = _free_port(), _free_port()
+    mock = _serve(mock_port, record)
     gw_env = {
         **os.environ,
         "SM_MOCK_RECORD": str(record),
         "SECURITYMASKER_CONFIG": str(DICT_CONFIG),
-        "SECURITYMASKER_OPENAI_UPSTREAM": f"http://127.0.0.1:{MOCK_PORT}",
-        "SECURITYMASKER_ANTHROPIC_UPSTREAM": f"http://127.0.0.1:{MOCK_PORT}",
+        "SECURITYMASKER_OPENAI_UPSTREAM": f"http://127.0.0.1:{mock_port}",
+        "SECURITYMASKER_ANTHROPIC_UPSTREAM": f"http://127.0.0.1:{mock_port}",
     }
     gateway = subprocess.Popen(  # noqa: S603
         [sys.executable, "-m", "uvicorn", "securitymasker.gateway.app:create_app",
-         "--factory", "--host", "127.0.0.1", "--port", str(GW_PORT),
+         "--factory", "--host", "127.0.0.1", "--port", str(gw_port),
          "--log-level", "warning"],
         cwd=str(REPO), env=gw_env,
     )
     try:
-        _wait(f"http://127.0.0.1:{MOCK_PORT}/health")
-        _wait(f"http://127.0.0.1:{GW_PORT}/health")
-        assert httpx.get(f"http://127.0.0.1:{GW_PORT}/ready", timeout=5).json()["ready"]
-        yield record
+        _wait(f"http://127.0.0.1:{mock_port}/health")
+        _wait(f"http://127.0.0.1:{gw_port}/health")
+        assert httpx.get(f"http://127.0.0.1:{gw_port}/ready", timeout=5).json()["ready"]
+        yield record, f"http://127.0.0.1:{gw_port}"
     finally:
         _stop(gateway, mock)
 
@@ -125,16 +200,16 @@ def stack(tmp_path: Path):
 @needs_codex
 def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
     """The end-to-end claim: start the real tool, and no original reaches upstream."""
-    record = stack
+    record, gateway_url = stack
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
-         "exec", "--skip-git-repo-check",
-         f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
+        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "codex",
+                    "exec", "--skip-git-repo-check",
+                    f"担当は{PERSON}です。{HOST} に{CARRIER}。"]),
         cwd=str(REPO),
-        env={**os.environ,
-             "CODEX_HOME": str(_codex_home(tmp_path)),
-             "OPENAI_API_KEY": "dummy-not-a-real-key",
-             "SECURITYMASKER_GATEWAY_URL": f"http://127.0.0.1:{GW_PORT}"},
+        env=_contained_env(
+            CODEX_HOME=str(_codex_home(tmp_path)),
+            OPENAI_API_KEY="dummy-not-a-real-key",
+            SECURITYMASKER_GATEWAY_URL=gateway_url),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
     )
     assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
@@ -147,19 +222,33 @@ def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
     assert HOST not in body, "the internal hostname reached the upstream"
     # ...and it arrived as aliases rather than being dropped.
     assert "SM_PERSON_" in body, f"no PERSON alias in the outbound body: {body[:400]}"
+    assert PERSON in result.stdout, (
+        f"the CLI never showed the restored name. stdout: {result.stdout[-600:]}"
+    )
+
+    # Masking is only half the product. The mock echoes the text it was sent, so
+    # the alias comes back down the stream and the user must see their own data
+    # again — otherwise the tool is merely broken in a safe direction.
+    assert PERSON in result.stdout, (
+        "the CLI never showed the restored name; masking without restoration is "
+        f"not the feature. stdout: {result.stdout[-600:]}"
+    )
+    assert "SM_PERSON_" not in result.stdout, "an alias leaked into the CLI output"
 
 
 @needs_codex
 def test_real_codex_does_not_touch_the_users_codex_home(stack, tmp_path) -> None:
     """`run` must configure the tool per-process, never edit ~/.codex."""
+    _record, gateway_url = stack
     home = _codex_home(tmp_path)
     subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
-         "exec", "--skip-git-repo-check", "hello"],
+        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "codex",
+                    "exec", "--skip-git-repo-check", "hello"]),
         cwd=str(REPO),
-        env={**os.environ, "CODEX_HOME": str(home),
-             "OPENAI_API_KEY": "dummy-not-a-real-key",
-             "SECURITYMASKER_GATEWAY_URL": f"http://127.0.0.1:{GW_PORT}"},
+        env=_contained_env(
+            CODEX_HOME=str(home),
+            OPENAI_API_KEY="dummy-not-a-real-key",
+            SECURITYMASKER_GATEWAY_URL=gateway_url),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
     )
     assert not (home / "config.toml").exists(), (
@@ -178,17 +267,18 @@ def test_real_codex_actually_sends_our_session_header(tmp_path) -> None:
     from the real binary, is the only check that fails when that regresses.
     """
     record = tmp_path / "probe.jsonl"
-    mock = _serve(PROBE_PORT, record)
+    probe_port = _free_port()
+    mock = _serve(probe_port, record)
     try:
-        _wait(f"http://127.0.0.1:{PROBE_PORT}/health")
-        plan = build_plan(["codex"], gateway=f"http://127.0.0.1:{PROBE_PORT}",
+        _wait(f"http://127.0.0.1:{probe_port}/health")
+        plan = build_plan(["codex"], gateway=f"http://127.0.0.1:{probe_port}",
                           session_id="sess-header-probe", environ={})
         argv = [*plan.argv[:1], "exec", "--skip-git-repo-check", *plan.argv[1:], "hi"]
         result = subprocess.run(  # noqa: S603
-            argv, cwd=str(REPO),
-            env={**os.environ, **plan.env,
-                 "CODEX_HOME": str(_codex_home(tmp_path)),
-                 "OPENAI_API_KEY": "dummy-not-a-real-key"},
+            _sandboxed(argv), cwd=str(REPO),
+            env=_contained_env(**plan.env,
+                               CODEX_HOME=str(_codex_home(tmp_path)),
+                               OPENAI_API_KEY="dummy-not-a-real-key"),
             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
         )
         assert result.returncode == 0, (
@@ -212,15 +302,15 @@ def test_real_claude_code_through_run_sends_only_aliases(stack, tmp_path) -> Non
     ANTHROPIC_BASE_URL plus custom headers, so the two have entirely separate
     failure modes and a passing Codex test says nothing about this one.
     """
-    record = stack
+    record, gateway_url = stack
     result = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "securitymasker.cli", "run", "claude",
-         "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
+        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "claude",
+                    "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"]),
         cwd=str(REPO),
-        env={**os.environ,
-             "ANTHROPIC_API_KEY": "dummy-not-a-real-key",
-             "CLAUDE_CONFIG_DIR": str(tmp_path / "claude_home"),
-             "SECURITYMASKER_GATEWAY_URL": f"http://127.0.0.1:{GW_PORT}"},
+        env=_contained_env(
+            ANTHROPIC_API_KEY="dummy-not-a-real-key",
+            CLAUDE_CONFIG_DIR=str(tmp_path / "claude_home"),
+            SECURITYMASKER_GATEWAY_URL=gateway_url),
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
     )
     assert result.returncode == 0, f"claude failed: {result.stderr[-1500:]}"

@@ -163,10 +163,34 @@ async def responses(request: Request):
     text = _reply_text(body)
     if body.get("stream"):
         obj = _responses_object(text)
+        # The FULL documented item lifecycle, not just created/delta/completed.
+        # A real client tracks the active item, so a bare delta is discarded
+        # ("OutputTextDelta without active item") and the reply never renders —
+        # which meant an end-to-end test could not observe restoration at all.
+        item = {"id": "msg-mock-0", "type": "message", "role": "assistant",
+                "status": "in_progress", "content": []}
+        part = {"type": "output_text", "text": "", "annotations": []}
+        common = {"item_id": "msg-mock-0", "output_index": 0, "content_index": 0}
+
+        def ev(name: str, payload: dict) -> str:
+            return f"event: {name}\ndata: {json.dumps({'type': name, **payload})}\n\n"
+
         lines = [
-            f'event: response.created\ndata: {json.dumps({"type": "response.created", "response": obj})}\n\n',
-            f'event: response.output_text.delta\ndata: {json.dumps({"type": "response.output_text.delta", "item_id": "msg-mock-0", "output_index": 0, "content_index": 0, "delta": text})}\n\n',
-            f'event: response.completed\ndata: {json.dumps({"type": "response.completed", "response": obj})}\n\n',
+            ev("response.created", {"response": obj}),
+            ev("response.in_progress", {"response": obj}),
+            ev("response.output_item.added", {"output_index": 0, "item": item}),
+            ev("response.content_part.added", {**common, "part": part}),
+            # Small chunks so aliases land split across deltas (§20).
+            *(ev("response.output_text.delta", {**common, "delta": tok})
+              for tok in _chunk(text)),
+            ev("response.output_text.done", {**common, "text": text}),
+            ev("response.content_part.done",
+               {**common, "part": {**part, "text": text}}),
+            ev("response.output_item.done",
+               {"output_index": 0,
+                "item": {**item, "status": "completed",
+                         "content": [{**part, "text": text}]}}),
+            ev("response.completed", {"response": obj}),
         ]
         return _sse(lines)
     return JSONResponse(_responses_object(text))
