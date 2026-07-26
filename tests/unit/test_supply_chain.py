@@ -238,3 +238,49 @@ def test_container_bind_acknowledgement_is_set_in_compose_not_the_image() -> Non
     env = _compose_env("docker-compose.yml")
     assert env["gateway"].get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
     assert "SECURITYMASKER_ALLOW_PUBLIC_BIND=1" not in DOCKERFILE.read_text(encoding="utf-8")
+
+
+# --- decisions the code cites must actually be written down ------------------------
+
+
+def test_every_cited_adr_exists() -> None:
+    """A comment pointing at a missing ADR is worse than no comment.
+
+    Twenty places in the source cited ADR-0010 and ADR-0011 while `docs/adr/`
+    stopped at 0009. Each of those citations read as "this was reasoned about and
+    reviewed", and neither had been — including the model-supply-chain and
+    detection-budget decisions that later turned out to be wrong.
+    """
+    have = {int(path.name[:4]) for path in (ROOT / "docs/adr").glob("[0-9]*.md")}
+    cited: dict[int, set[str]] = {}
+    for root in ("src", "tests", "docs", "doc"):
+        for path in (ROOT / root).rglob("*"):
+            if path.suffix not in {".py", ".md", ".toml", ".yaml", ".yml"}:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for number in re.findall(r"ADR-(\d{4})", text):
+                cited.setdefault(int(number), set()).add(str(path.relative_to(ROOT)))
+
+    missing = {n: sorted(files) for n, files in cited.items() if n not in have}
+    assert not missing, f"cited but not written: {missing}"
+
+
+def test_documented_redis_command_actually_switches_the_store() -> None:
+    """The Redis instructions must name the overlay, not a shell prefix.
+
+    `SECURITYMASKER_STORE=redis docker compose --profile redis up` starts Redis
+    and leaves the gateway on its in-process store: Compose uses such a variable
+    for YAML substitution, not as container environment. Following it produced a
+    stack that looked like shared-store mode and was not — sessions would not be
+    shared, and nobody would be told.
+    """
+    text = (ROOT / "docs/operations.md").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if "docker compose" not in stripped or "--profile redis" not in stripped:
+            continue
+        if stripped.startswith("#") or "does **not**" in stripped:
+            continue
+        assert "docker-compose.redis.yml" in stripped, (
+            f"documented Redis command does not apply the overlay: {stripped!r}"
+        )

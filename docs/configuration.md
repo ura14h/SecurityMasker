@@ -117,6 +117,7 @@ classified stays `prose`, the context with the fewest detectors disabled.
 ```yaml
 defaults:
   detector_timeout_seconds: 10.0   # 0 disables; a timeout BLOCKS the request
+  max_fuzzy_chars: 200000          # over this, the request is REFUSED
 ```
 
 User regexes are linted at load and known catastrophic-backtracking shapes
@@ -129,6 +130,17 @@ regexes are refused at load, and model inference runs on a fixed-size pool with 
 admission limit, so abandoned inferences keep their slot until they finish and
 further requests are REFUSED rather than queued behind them (ADR-0011). Refusal is
 a `DetectionError`, so the request fails closed.
+
+**How much text the model detectors see is not capped by segmentation.** They run
+once per request over the fuzzy-eligible spans joined together, so the cost tracks
+how much prose a request contains, not how finely it happens to be split. An
+earlier design capped the number of detector passes instead; that let a request
+padded with inline-code spans push later text past the cap and out of NER's reach
+entirely, which is why the bound is now on volume (ADR-0011).
+
+Past `max_fuzzy_chars` the request is **refused**, not truncated. Scanning part of
+a request and returning success is indistinguishable from a clean result, so it is
+the one thing this limit must never do. Raise it only with inference cost in mind.
 
 ## Optional Japanese NER (ADR-0009)
 
