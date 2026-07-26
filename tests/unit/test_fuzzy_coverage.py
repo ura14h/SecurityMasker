@@ -130,3 +130,73 @@ async def test_detections_come_back_in_original_coordinates() -> None:
     assert body[hit.start:hit.end] == NAME, (
         f"offset mapping is wrong: got {body[hit.start:hit.end]!r}"
     )
+
+
+# --- the detector's own skip_code_contexts setting must be honoured ----------------
+
+
+class _RecordingFuzzyInCode(_RecordingFuzzy):
+    """A model detector the operator has asked to scan code contexts too."""
+
+    name = "recording_fuzzy_in_code"
+    skip_code_contexts = False
+
+
+def _engine_with(*detectors, **defaults):
+    engine = build_engine(
+        SecurityMaskerConfig.model_validate({"version": 1, "defaults": defaults}))
+    engine._detectors = [*engine._detectors, *detectors]
+    return engine
+
+
+@pytest.mark.asyncio
+async def test_skip_code_contexts_false_actually_sees_code() -> None:
+    # The engine used to filter code-like spans out before consulting this flag,
+    # so turning it off changed nothing — and it failed in the direction that
+    # scans LESS than the operator asked for.
+    recorder = _RecordingFuzzyInCode()
+    await _engine_with(recorder).detect(_padded(5))
+    joined = "\n".join(recorder.seen)
+    assert "tok0" in joined, "a detector with skip_code_contexts=False never saw code"
+
+
+@pytest.mark.asyncio
+async def test_skip_code_contexts_true_still_withholds_code() -> None:
+    recorder = _RecordingFuzzy()
+    await _engine_with(recorder).detect(_padded(5))
+    joined = "\n".join(recorder.seen)
+    assert "tok0" not in joined
+
+
+@pytest.mark.asyncio
+async def test_both_settings_coexist_in_one_request() -> None:
+    """Two groups, two passes — not one pass with the stricter policy applied."""
+    skips, scans = _RecordingFuzzy(), _RecordingFuzzyInCode()
+    await _engine_with(skips, scans).detect(_padded(5))
+    assert len(skips.seen) == 1 and len(scans.seen) == 1
+    assert "tok0" not in "\n".join(skips.seen)
+    assert "tok0" in "\n".join(scans.seen)
+
+
+# --- the fuzzy ceiling must not apply when nothing fuzzy is enabled ----------------
+
+
+@pytest.mark.asyncio
+async def test_no_fuzzy_detector_means_no_fuzzy_limit() -> None:
+    """Presidio and NER are off by default, so the default build has none.
+
+    Rejecting a large request for exceeding a budget that governs work nobody
+    asked for would fail closed against a threat that is not present.
+    """
+    engine = build_engine(SecurityMaskerConfig.model_validate(
+        {"version": 1, "defaults": {"max_fuzzy_chars": 1000}}))
+    assert not [d for d in engine.detectors if getattr(d, "fuzzy", False)]
+    results = await engine.detect("これはテスト文章です。" * 200 + f"担当は{NAME}です。")
+    assert isinstance(results, list)     # completed rather than raising
+
+
+@pytest.mark.asyncio
+async def test_the_limit_still_applies_once_a_fuzzy_detector_exists() -> None:
+    engine = _engine_with(_RecordingFuzzy(), max_fuzzy_chars=1000)
+    with pytest.raises(DetectionError):
+        await engine.detect("これはテスト文章です。" * 200 + f"担当は{NAME}です。")

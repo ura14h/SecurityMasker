@@ -21,6 +21,7 @@ from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.context import Segment, coalesce_for_detection, is_code_like, segment
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
+from securitymasker.detectors.identifiers import identifier_spans, inside_identifier
 from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
@@ -82,6 +83,18 @@ def _apply_replacements(text: str, spans: list[tuple[int, int, str]]) -> str:
 _FUZZY_JOIN = "\n\n"
 
 
+def _drop_inside_identifiers(
+    found: list[DetectionResult], text: str
+) -> list[DetectionResult]:
+    """Remove findings that are a proper substring of a structural identifier."""
+    if not found:
+        return found
+    spans = identifier_spans(text)
+    if not spans:
+        return found
+    return [d for d in found if not inside_identifier(spans, d.start, d.end)]
+
+
 def _is_fuzzy(detector: SensitiveDataDetector) -> bool:
     """Whether ``detector`` is model-backed, and so scheduled request-wide.
 
@@ -131,11 +144,11 @@ class MaskingEngine:
         segment_contexts: bool = True,
         max_fuzzy_chars: int = 200_000,
     ) -> None:
-        # How many spans get the FULL detector set (including model-backed ones)
-        # per request. Beyond this the deterministic detectors still run on every
-        # span — nothing goes unscanned — but the expensive ones stop, so a body
-        # engineered into hundreds of context switches cannot multiply inference
-        # cost (ADR-0011).
+        # Ceiling on how much text one request may put through the model-backed
+        # detectors. Over it the request is REFUSED — never partially scanned,
+        # which the caller could not distinguish from a clean result. It bounds
+        # VOLUME, not span count: the span-pass budget this replaced could be
+        # defeated by chopping a request into more pieces (ADR-0011).
         self._max_fuzzy_chars = max_fuzzy_chars
         self._detector_timeout = detector_timeout
         self._detectors = detectors
@@ -241,22 +254,53 @@ class MaskingEngine:
     async def _detect_fuzzy(
         self, segments: Sequence[Segment], issued_aliases: frozenset[str]
     ) -> list[DetectionResult]:
-        """Run the model-backed detectors once over all fuzzy-eligible spans.
+        """Run the model-backed detectors once over the spans each may look at.
 
-        Code-like spans are excluded, as they always were: a model that has learned
-        "capitalised token = name" fires on identifiers. Everything else is joined
-        with a blank line — a boundary no entity should span — and scanned as one
-        text so the model reads each span in context.
+        Whether a detector sees code-like spans is ITS setting, not this method's.
+        Filtering code out here — before consulting `skip_code_contexts` — silently
+        overrode operators who had turned it off to scan code too, and did so in
+        the direction that scans less. So the detectors are grouped by that flag
+        and each group gets its own joined pass: at most two, regardless of how
+        many spans or detectors there are.
         """
-        eligible = [seg for seg in segments if not is_code_like(seg.kind)]
-        if not eligible:
+        fuzzy = [d for d in self._detectors if _is_fuzzy(d)]
+        if not fuzzy:
+            # Nothing model-backed is enabled (the default). There is no work to
+            # bound, so max_fuzzy_chars must not reject the request either.
+            return []
+
+        found: list[DetectionResult] = []
+        for skips_code in (True, False):
+            group = [d for d in fuzzy
+                     if bool(getattr(d, "skip_code_contexts", False)) is skips_code]
+            if not group:
+                continue
+            eligible = [seg for seg in segments
+                        if not (skips_code and is_code_like(seg.kind))]
+            found.extend(await self._detect_joined(eligible, group, issued_aliases))
+        return found
+
+    async def _detect_joined(
+        self,
+        segments: Sequence[Segment],
+        detectors: Sequence[SensitiveDataDetector],
+        issued_aliases: frozenset[str],
+    ) -> list[DetectionResult]:
+        """Scan ``segments`` as one text, then map findings back to real offsets.
+
+        Joining with a blank line — a boundary no name or organisation crosses —
+        lets the model read each span in the context of its neighbours, and keeps
+        the number of inference calls independent of how finely the request was
+        segmented.
+        """
+        if not segments:
             return []
 
         joined_parts: list[str] = []
         # (start in joined text, end in joined text, start in original text)
         spans: list[tuple[int, int, int]] = []
         cursor = 0
-        for seg in eligible:
+        for seg in segments:
             spans.append((cursor, cursor + len(seg.text), seg.start))
             joined_parts.append(seg.text)
             cursor += len(seg.text) + len(_FUZZY_JOIN)
@@ -273,23 +317,22 @@ class MaskingEngine:
             )
 
         raw = await self._detect_one(joined, ContextKind.PROSE.value, issued_aliases,
-                                     fuzzy_only=True)
+                                     only=detectors)
         return [mapped for det in raw for mapped in _map_to_segments(det, spans)]
 
     async def _detect_one(
         self, text: str, context_kind: str, issued_aliases: frozenset[str],
-        *, deterministic_only: bool = False, fuzzy_only: bool = False,
+        *, deterministic_only: bool = False,
+        only: Sequence[SensitiveDataDetector] | None = None,
     ) -> list[DetectionResult]:
         norm = normalize(text, self._normalization)
         ctx = DetectionContext(norm=norm, context_kind=context_kind, issued_aliases=issued_aliases)
         found: list[DetectionResult] = []
-        for detector in self._detectors:
+        for detector in (self._detectors if only is None else only):
             if self._skips_context(detector, context_kind):
                 continue
             if deterministic_only and _is_fuzzy(detector):
                 continue     # scanned once, request-wide, by _detect_fuzzy
-            if fuzzy_only and not _is_fuzzy(detector):
-                continue     # already scanned per-span with exact offsets
             try:
                 if self._detector_timeout > 0:
                     # Bound how long any one detector may take. This does NOT stop
@@ -315,7 +358,7 @@ class MaskingEngine:
                 if self._fail_mode == "open" and name in _FAIL_OPEN_ELIGIBLE:
                     continue  # best-effort detector skipped; critical ones never are
                 raise
-        return policy.resolve(found)
+        return policy.resolve(_drop_inside_identifiers(found, norm.normalized))
 
     async def mask_text(
         self,
@@ -438,10 +481,17 @@ class MaskingEngine:
             if not scanners:
                 continue
             ctx = DetectionContext(norm=norm, request_id=request_id, issued_aliases=issued)
+            spans = identifier_spans(hay)
             for scanner in scanners:
                 for hit in await scanner.detect(ctx):
                     if hit.original_value in issued or hit.normalized_value in issued:
                         continue  # one of this session's own aliases
+                    if inside_identifier(spans, hit.start, hit.end):
+                        # Digits that happen to sit inside a UUID. This gate walks
+                        # EVERY string, including the client's own session and
+                        # thread ids, so without this a request is refused whenever
+                        # a random identifier happens to look like a phone number.
+                        continue
                     raise LeakageError(entity_type=hit.entity_type, request_id=request_id)
 
     def literal_restorations(self, session: MaskingSession) -> dict[str, str]:
