@@ -26,7 +26,7 @@ jobs:
           pip install --no-deps -e .
 
       - name: Lint (ruff)
-        run: ruff check src tests
+        run: ruff check src tests devtools
 
       - name: Type check (mypy --strict)
         run: mypy
@@ -36,3 +36,78 @@ jobs:
 
       - name: Live gateway integration (proxy + mock upstream)
         run: SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q
+
+  # The real CLIs, driven end to end, with egress actually blocked. Kept separate
+  # from `test` because it installs external binaries and runs inside a network
+  # namespace; a failure here means the product is broken for real users even if
+  # every unit test passes, which is exactly what happened when `run codex`
+  # emitted http_headers Codex could not parse.
+  cli-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install from the lock
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.lock
+          pip install --no-deps -e .
+
+      - name: Install the real CLIs
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex
+          claude --version
+          codex --version
+
+      - name: Real-CLI E2E (inside a loopback-only network namespace)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq util-linux iproute2
+          # The suite skips itself when it cannot verify egress is blocked. That
+          # default is correct, and a silent skip here would make this job prove
+          # nothing — so the run must report passes and no skips.
+          ./devtools/run_cli_e2e.sh 2>&1 | tee /tmp/e2e.log
+          grep -qE "[0-9]+ passed" /tmp/e2e.log
+          if grep -qiE "[0-9]+ skipped" /tmp/e2e.log; then
+            echo "::error::real-CLI E2E skipped; the egress boundary was not in place"
+            exit 1
+          fi
+
+  # Release gate: everything `test` covers, plus the checks that are allowed to
+  # skip on a developer machine but must not skip before shipping.
+  release-gate:
+    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install with the NER extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.lock
+          pip install --no-deps -r requirements-ner.lock
+          pip install --no-deps -e .
+
+      - name: Fetch and verify the pinned model
+        run: securitymasker models fetch
+
+      - name: Model artifacts must be VERIFIED, not skipped
+        # Without SM_REQUIRE_MODEL the manifest tests skip when the model is
+        # absent. A release that skips them has verified nothing about the model
+        # it ships — and a manifest that rejected the real model shipped exactly
+        # once already.
+        run: SM_REQUIRE_MODEL=1 pytest tests/unit/test_model_supply_chain.py -q
+
+      - name: Full suite with the model present
+        run: pytest tests/unit tests/evaluation -q
