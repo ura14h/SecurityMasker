@@ -222,7 +222,7 @@ SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可�
 - **`securitymasker run` の保証範囲** — 「実Codex CLIでparse検証済み」という第4次の記述は
   **撤回する**。`--strict-config` は `login` / `mcp` では受け付けられず、`--version` / `--help` は
   設定を構築する前に終了するため、**当時の検証手順は実際には何も検証していなかった**
-  （不明キーを与えても exit 0 になる）。現在の検証は「生成した各 `-c` 値が単体で妥当な TOML 
+  （不明キーを与えても exit 0 になる）。現在の検証は「生成した各 `-c` 値が単体で妥当な TOML
   代入であること」を `tomllib` で確認するところまでであり、実CLIプロセスの起動と
   proxy経由通信の自動テストは、CIに実バイナリが無いため**未実施**のまま。
 - **供給網**: package hash検証・image署名/provenance・SBOM・CI脆弱性scan は引き続き**未実装**。
@@ -237,10 +237,10 @@ SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可�
 | 項目 | 第4次の主張 | 実際 | 現在 |
 |---|---|---|---|
 | NER lock | `requirements-ner.lock` は推移閉包 | 手作業で列挙したため `huggingface-hub` 等が欠落 | **done**。インストール済みメタデータの `requires()` から推移閉包を実際に計算して再生成（22パッケージ）。Dockerfile は `--no-deps` で導入し、lockに無い依存が暗黙に入らないようにした |
-| NER manifest | 「完全マニフェスト」 | 6成果物中3件のみ固定。`config.json`（`id2label` = 検出ラベル体系）と tokenizer 設定が未固定 | **done**。6件すべてに SHA-256 とサイズを記録。`config.json` が未固定だと**検出対象ラベルを差し替えられる**ため、これは可用性ではなく検出性能の問題だった |
+| NER manifest | 「完全マニフェスト」 | 6成果物中3件のみ固定。`config.json`（`id2label` = 検出ラベル体系）と tokenizer 設定が未固定 | **partial**（第6回で是正 → 下表）。6件に増やしたが、追加した3件の digest を**末尾改行を除去した内容から計算**しており、実モデルを拒否する状態だった |
 | 文脈分類の網羅 | 6形状を追加 | 1行の shell / SQL / コード文が prose 扱いのまま | **done**。`_SHELL_COMMAND`（既知バイナリ＋パイプ/リダイレクト/フラグの後読み）、`_SQL_STATEMENT`、`_CODE_STATEMENT` を追加。複数行形の後に評価し、既存の分類を変えない |
 | 文脈分類の計算量 | 「線形化」 | `_outside_fence` が fence ごとに走査する O(n·m) | **done**。fence開始位置の昇順配列に対する `bisect_right` で判定。セグメント上限も収集中に判定し、上限超過は `SegmentationLimitError` で fail-closed |
-| 検出器の実効上限 | セグメント上限＝上限 | セグメント数を絞ってもセグメントあたり全検出器が走る | **done**。リクエスト単位の検出器予算（既定64）を追加。予算超過分は決定論的検出器のみ。実測: NER呼び出しは 1000セグメントでも32回で頭打ち |
+| 検出器の実効上限 | セグメント上限＝上限 | セグメント数を絞ってもセグメントあたり全検出器が走る | **撤回**（第6回で再設計 → 下表）。導入した「検出器予算」自体が**回避可能な盲点**だった。予算超過分をNER非対象にしたため、inline code を並べて予算を超えさせれば未登録氏名をNERから隠せた |
 | Docker demo stage | ビルド可能 | `chown /app/tests` が存在しないパスを参照し `mock-upstream` のビルドが失敗 | **done**。`/app/devtools` へ修正。`docker compose build mock-upstream` の成功を実機で確認 |
 | Codex `-c` override | 正しい設定を生成 | **`http_headers` を JSON オブジェクト記法で生成しており、TOMLとしては構文エラー**（`:` は不正） | **done**。TOML inline table 記法（`{ "k" = "v" }`）へ修正。`-c` は config.toml に重ねられ TOML として解釈されるため、従来の値は Codex に渡した時点で壊れていた |
 | テスト配置 | — | `test_audit_round3.py` / `test_audit_round4.py` が監査回ごとの束になっており、責務からテストを探せない | **done**。21件を責務別ファイル（`test_config_fail_closed` / `test_sessions` / `test_leak_gate` / `test_multiturn_session` / `test_responses_stream` / `test_config` / `test_run_guarantee`）へ移設し、監査回ファイルを削除 |
@@ -259,3 +259,34 @@ pytest tests/unit tests/evaluation -q
 docker compose config --quiet && docker compose build mock-upstream
 SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可時のみ
 ```
+
+## 第6回監査の是正（`R17..R24`）
+
+第5回の是正のうち2件は、**是正そのものが誤り**だった。1件は実モデルを拒否するマニフェスト、
+もう1件は回避可能な検出予算である。いずれも「テストは通るが製品としては壊れている」型の失敗で、
+検証の当て方が原因だった。
+
+### P1
+
+| 項目 | 実際の不具合 | 是正 |
+|---|---|---|
+| NERマニフェストが実モデルを拒否 | 追加した3つのJSON成果物の digest とサイズが、末尾改行を除いた内容のものだった（1029→1028 等）。`require_verified()` は固定revisionの実ファイルに対して3件とも `ArtifactVerificationError` を返し、**NER有効時の起動と `models fetch` が両方壊れていた** | 実ファイルのbyte列から再生成。**固定snapshotそのものを検査するテスト**を追加（未取得時は skip、決して pass しない）。旧digestに戻すとテストが落ちることを確認済み |
+| 文脈分割でNERを回避できた | 検出予算（64）を超えたセグメントはモデル検出器を完全にskip。inline code 40個を挟んで末尾に未登録氏名を置くと、**決定論的に**NER検出ゼロになった | 予算を撤廃し、**モデル検出器はfuzzy対象spanを連結してリクエスト全体で1回**走らせ、offsetを元座標へ写像する方式へ変更（ADR-0011）。コストはセグメント数ではなく散文量に比例するため、同じ文面をどう分割しても検査量は減らない。実測: 5分割でも300分割でもモデル呼び出しは1回 |
+| NERが長文の末尾を無言で捨てていた | 512トークン超の入力でpipelineは**例外を出さず**前半だけを分類する。3312文字の合成入力で末尾の氏名は検出ゼロ。監査指摘外だが同種のより広い盲点 | tokenizer offset で重なり付きwindowへ分割し、window毎に推論して重複を除去。実モデルで先頭・中間・末尾すべての氏名を検出することと、全文字がいずれかのwindowに含まれることを確認 |
+| 上限超過時の扱い | 「一部だけ検査して成功を返す」= 正常終了と区別できない | `defaults.max_fuzzy_chars` 超過は **fail-closed**（block）。上限が挙動を変える唯一の箇所であり、必ず可視化する |
+
+### P2
+
+| 項目 | 実際 | 是正 |
+|---|---|---|
+| `AGENTS.md` / `CLAUDE.md` | Codexが作業開始時に読む**現行指示**であるにもかかわらず、製品定義をLiteLLM拡張とし、構成図・ディレクトリ・フェーズ・`uv`（ADR-0002で不採用）を旧状態のまま記載。CLAUDE.md は doc/00 を「正典・矛盾時優先」としており AGENTS.md と逆 | 両ファイルを現行アーキテクチャへ全面改訂。優先順位を**不変条件 ＞ 最新ADR ＞ doc/00 の手段記述**で統一。環境状況も現在の値へ更新 |
+| ADR-0010 / ADR-0011 不在 | コードとテストの20箇所が参照する ADR が存在せず、供給網とNER予算の設計判断が**レビュー不能**だった。今回の2件のP1はまさにその2領域 | 両ADRを実際に執筆。ADR-0011 は撤回した予算方式とその失敗理由も記録。**参照されたADRの実在を検査するテスト**を追加 |
+| 旧LiteLLM E2Eスクリプト | `scripts/codex_e2e_setup.py` が実行可能なまま、実 `~/.codex/auth.json` の OAuth token を LiteLLM 形式へ複製していた。用途は既に消滅 | 削除（`securitymasker run` が後継）。`docs/compatibility.md` の歴史節に削除理由を記載 |
+| Redis 起動手順が誤り | `SECURITYMASKER_STORE=redis docker compose --profile redis up` はRedisを起動するだけで、**Gatewayはmemory storeのまま**。Composeはシェル前置き変数をコンテナ環境へ自動注入しない | overlay 指定へ修正し、誤る理由も明記。`docker compose config` の実出力で両者の差を確認。**手順がoverlayを含むことを検査するテスト**を追加 |
+| `run` の保証表現 | 実CLI E2E未実施のまま `GUARANTEED` と表現 | 「検証済み＝生成設定・拒否条件・未起動保証」「未検証＝起動後のプロセスが常に経路を守ること」を明記した表現へ変更（cli.py / launcher.py / operations.md） |
+| その他の現行文書 | SECURITY.md が撤廃済み pre-call hook と不存在の `test_live_masking.py` を根拠にしていた。threat-model のスコープ、streaming docstring、pyproject の ruff 例外、`multitenant` 推奨も旧状態 | すべて現行の実体（`test_live_gateway.py`、pre-send 再検査、`tenant_user`）へ更新。Phase 2/3 設計メモと doc/01 には**現行指示ではない旨のバナー**を追加 |
+
+**この回で分かったこと**: 第5回の「manifest完全化」は、**拒否できることだけを検証して受理できることを
+検証していなかった**。合成fixtureで作った manifest テストは、正しいモデルまで拒否する manifest を
+全件パスさせる。同様に「検出予算」は、コストの上限としては正しくても**攻撃者が分割方法を選べる**という
+前提を見落としていた。どちらも「テストが通る」ことと「製品が動く／守れる」ことの差である。
