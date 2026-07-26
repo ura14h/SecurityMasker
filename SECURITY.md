@@ -37,8 +37,12 @@ limits, and hardening guidance (`doc/00-First-Order.md` §33).
   and restored tool arguments are **never** logged.
 - Only safe fields (entity types, counts, timings, irreversible fingerprints) are
   logged/audited (`securitymasker.metrics`, `securitymasker.logging`).
-- Do not enable LiteLLM verbose/raw-request logging in production; external log
-  integrations stay disabled until raw-request non-forwarding is verified.
+- Do not enable request/response body logging anywhere in the path — the gateway's
+  own debug logging, a reverse proxy in front of it, or an APM agent. The gateway
+  handles original text before masking and restored text after, so a body log is a
+  copy of exactly what this product exists to keep out of external systems.
+- External log/telemetry integrations stay disabled until it is verified that they
+  do not forward raw request bodies.
 
 ## Known limits (§34)
 
