@@ -138,7 +138,9 @@ fixture: `tests/integration/fixture_openai_chat_stream.sse` /
 ### Codex 実バージョン E2E で判明した重要事項（2026-07-25、実測）
 
 実 Codex CLI 0.145.0 → Gateway → 本物の ChatGPT バックエンド（`litellm chatgpt/` プロバイダ、
-OAuth 再利用・API キー不要）を送信内容タップ付きで検証。ハーネス: `scripts/codex_e2e_setup.py`
+OAuth 再利用・API キー不要）を送信内容タップ付きで検証。ハーネス: `scripts/codex_e2e_setup.py`（**削除済み**。LiteLLM 用に実 `~/.codex/auth.json` の
+OAuth token を複製する手順であり、LiteLLM 撤廃後は使い道が無く、複製だけが残るため。
+現行の起動経路は `securitymasker run`）
 （隔離 `CODEX_HOME`/`CHATGPT_TOKEN_DIR`・`~/.codex` 無変更）/ `config/litellm.codex-e2e.yaml` /
 （この検証に使った使い捨ての透過フォワーダ spike は、production path と混ざらないよう削除済み。再検証が必要なら `devtools/` に置くこと。）
 
