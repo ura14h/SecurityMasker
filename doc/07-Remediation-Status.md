@@ -1,12 +1,13 @@
 # 07 — doc/06 Remediation Status
 
-作成日: 2026-07-25 / 更新: 2026-07-26（第7回監査の是正を反映）
+作成日: 2026-07-25 / 更新: 2026-07-26（第9回監査の是正を反映）
 
 ---
 
 ## 現在の状態（ここだけ読めば最新がわかる）
 
-**総合: 未受け入れ。** 第7回監査で P1 3件を指摘され、いずれも是正済み。再判定待ち。
+**総合: 未受け入れ（再判定待ち）。** 直近は第9回監査で P1 2件・P2 3件。いずれも是正済み。
+**この節は毎回の監査後に必ず更新する** — 冒頭が古いままなら「ここだけ読めば最新」は成立しない。
 
 | 領域 | 状態 | 補足 |
 |---|---|---|
@@ -15,9 +16,9 @@
 | 構造保持（JSON・コード・URL・file path） | done | `aliases/structure.py` |
 | 文脈分割とモデル検出器のスケジューリング | done | ADR-0011。分割による回避不可、超過は fail-closed |
 | NER 供給網（pin・検証・オフライン） | done | ADR-0010。実snapshot検証テストあり。`local_files_only` は実測0接続 |
-| 実CLI E2E（codex / claude） | done（egress遮断が前提） | 両CLIで「送信は alias のみ」と「CLI出力に氏名・ホスト名が復元される」を検査。外部到達可能なら**自動でskip**。CIは namespace 内で実行し、skipを失敗として扱う |
+| 実CLI E2E（codex / claude） | done（**Linux namespace 内でのみ実行**） | 両CLIで「送信は alias のみ」「CLI出力に氏名・ホスト名が復元」「送信した alias が出力に残らない」を検査。**非loopback interface と default route が無いことを構造的に確認**できない限り実行しない（import時にネットワークへ触れない）。CIは namespace 内で実行し skip を失敗として扱う |
 | 検出精度（識別子の誤検出） | done | UUID内部の**built-in形状ルールのみ**抑止（実測 0.5% → 0%）。dictionary / user_regex / secret_patterns は抑止対象外 |
-| CI 配線 | done | `test` / `cli-e2e` / `release-gate` の3ジョブ。`SM_REQUIRE_MODEL=1` は release-gate で実行 |
+| CI 配線 | done（**未実行**） | `test` / `cli-e2e` / `release-gate` の3ジョブ。`release-gate` は tag push でも起動する。定義とコマンドの妥当性はテストで固定したが、**CI上での実行は未確認** |
 | Redis 排他 | **partial** | owner token・所有権再確認まで。fencing token 未実装 |
 | 日本固有識別子（旅券・免許 等） | **partial** | 公開チェックディジットが無いものは形式＋文脈語のみ |
 | metrics / audit の網羅配線 | **partial** | 安全labelのlogのみ |
@@ -431,3 +432,30 @@ window / prompt-cache key と複数の UUID を載せる。最終 leak gate は 
 macOS では常に skip されるため誰も実行せず、誤りが残った。
 現在は**遮断を計測**しているので、遮断されていない環境では必ず skip し、
 CI では skip 自体を失敗として扱う。
+
+## 第9回監査の是正（`R39..R43`）
+
+### P1
+
+| 項目 | 実際の不具合 | 是正 |
+|---|---|---|
+| 「遮断の証明」になっていない到達性チェック | `1.1.1.1:443` と `8.8.8.8:53` へ到達できないことを安全と判定していた。**固定IPだけ遮断しproviderは許可／IPv4だけ遮断しIPv6は許可／public DNSだけ遮断** のいずれでも誤判定する。2宛先へ届かないことは3つ目について何も言わない。さらに skip 条件が import 時評価のため、`SM_RUN_CLI_E2E` 未設定でも**収集だけで外向き接続を試みていた**（実測） | **構造的な検査**へ変更: 非loopback interface が存在せず、そこへ向かう default route も無いこと。`lo` しか無ければ firewall 方針に関わらず packet の行き先が無い。判定は fixture で行うため **import時のネットワーク接触は0**（実測）。接続試行は構造チェック通過後の**二次確認**としてのみ残し、それでも繋がる場合は skip ではなく失敗。`/proc` 解析は実フォーマットの fixture で単体テスト（Linux でしか動かないコードなので） |
+| `release-gate` がモデル取得前に必ず失敗 | `securitymasker models fetch` は引数なしでは exit 2（モデルを推測しない）。`--config config/securitymasker.example.yaml` も `ner.model: null` のため exit 2。`SM_REQUIRE_MODEL=1` に到達していなかった | pin を明示指定。**その pin が `MANIFESTS` に実在することを検査するテスト**を追加し、コマンドとマニフェストの乖離を防ぐ |
+
+### P2
+
+| 項目 | 是正 |
+|---|---|
+| hostname alias が出力に残らないことを未検査 | 氏名 alias の prefix だけを見ていたため、**原文と alias が両方表示される回帰**を検出できなかった。record から**実際に送信した alias を抽出**し（`SM_…` と host 形の両方）、そのいずれも stdout に無いことを検査 |
+| tag push で workflow が起動しない | `push.branches` のみ定義されていたため `refs/tags/` 条件は評価されなかった。`push.tags` を追加し、**tag 条件付き job があるのに tag trigger が無い場合に落ちるテスト**を追加 |
+| 冒頭の更新表示が古い | 本節を更新。冒頭は毎回の監査後に必ず更新する旨も明記 |
+
+### この回の教訓
+
+「安全である」ことの根拠として**到達できなかったこと**を使っていた。
+到達性の欠如は経路の一部についての観測にすぎず、遮断の証明にはならない。
+現在は**そもそも行き先が存在しないこと**（interface と route）を確認している。
+これは firewall 方針から独立した、ネットワークスタック自体の性質である。
+
+CI についても同じ問題がある: **定義しただけでは実行の証明にならない。**
+本書では `done（未実行）` と書き分けた。
