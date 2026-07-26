@@ -140,6 +140,15 @@ class JapaneseNerDetector:
         # Re-verify the cached artifacts BEFORE loading them. Fetch-time
         # verification says what was downloaded once; a cache can be altered
         # afterwards, so the gate has to be here too (ADR-0010).
+        #
+        # `source` is what we hand to transformers. In offline mode it is the
+        # VERIFIED SNAPSHOT DIRECTORY, not the model id: passing the id makes
+        # transformers 4.57 contact the Hub even with local_files_only=True
+        # (measured: one outbound connection per load), which breaks an air-gapped
+        # deployment and quietly reintroduces a network dependency into the
+        # security boundary. Loading from the path is what the flag was supposed
+        # to mean, and it measured zero outbound connections.
+        source = model
         if local_files_only:
             from securitymasker.models_fetch import cache_directory, require_verified
 
@@ -158,6 +167,7 @@ class JapaneseNerDetector:
                 if required:
                     raise      # message already names the artifacts, not any secret
                 return
+            source = str(directory)
 
         try:
             # Load the weights and tokenizer EXPLICITLY rather than letting
@@ -165,19 +175,25 @@ class JapaneseNerDetector:
             # commit and `local_files_only` guarantees no network access at request
             # time. `pipeline()` itself does not accept local_files_only.
             load_kwargs: dict[str, Any] = {
-                "revision": revision,
                 "local_files_only": local_files_only,
                 # Never execute model-supplied code (§ supply chain).
                 "trust_remote_code": False,
             }
+            if source == model:
+                # Online mode only. A `revision` alongside a local PATH is
+                # meaningless to transformers; offline the pin is enforced more
+                # strongly than a kwarg could — cache_directory() resolves the
+                # snapshot for exactly this revision and require_verified() has
+                # already checked every artifact's bytes.
+                load_kwargs["revision"] = revision
             # transformers ships no stubs for this factory; the kwargs are checked
             # by the explicit `load_kwargs` dict above.
-            tokenizer = AutoTokenizer.from_pretrained(model, **load_kwargs)  # type: ignore[no-untyped-call]
+            tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)  # type: ignore[no-untyped-call]
             # use_safetensors=True is REQUIRED, not preferred: without it
             # transformers silently falls back to a pickle .bin, which executes
             # arbitrary code on load (ADR-0010).
             weights = AutoModelForTokenClassification.from_pretrained(
-                model, use_safetensors=True, **load_kwargs)
+                source, use_safetensors=True, **load_kwargs)
             self._pipeline = pipeline(
                 "token-classification",
                 model=weights,
