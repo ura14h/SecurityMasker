@@ -1,5 +1,12 @@
 # 04-Phase3-Design — Claude Code / Anthropic Messages 対応 設計メモ
 
+> **注意（2026-07-26, [ADR-0006](../docs/adr/0006-drop-litellm-purpose-built-proxy.md)）**:
+> 本書は **Phase 3 当時の設計メモ**であり、現行アーキテクチャの説明ではありません。
+> 記載の LiteLLM hook（`async_pre_call_hook` 等）による配線は**撤廃済み**です。
+> 現行の透過プロキシ設計は [`05-Phase6-Design.md`](05-Phase6-Design.md)、現行の運用指示は
+> [`../AGENTS.md`](../AGENTS.md) を参照してください。マスキング対象フィールドと
+> 構造保持の要件（§16/§20/§21/§23）は現在も有効です。
+
 正典 [`00-First-Order.md`](00-First-Order.md) Phase 3（§37, §23）＋ §16・§20・§21。
 Phase 1/2 のコアと streaming/tool_arguments を再利用し、Anthropic Messages API へ配線する。
 

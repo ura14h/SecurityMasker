@@ -79,7 +79,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 "src/securitymasker/detectors/japanese_ner.py" = ["E501"]
 "src/securitymasker/detectors/formats.py" = ["E501"]
 # Proxy log handle is intentionally held open for the fixture lifetime.
-"tests/integration/test_live_proxy.py" = ["SIM115"]
+"tests/integration/test_live_gateway.py" = ["SIM115"]
 
 [tool.mypy]
 python_version = "3.12"

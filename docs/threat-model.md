@@ -1,8 +1,8 @@
 # Threat Model
 
 Scope: keep original sensitive data inside the trusted zone; don't break payloads;
-stay maintainable against LiteLLM/Codex/Claude Code updates (`doc/00-First-Order.md`
-§5, §33).
+stay maintainable against Codex / Claude Code and OpenAI / Anthropic wire-protocol
+updates (`doc/00-First-Order.md` §5, §33).
 
 ## Trust boundaries
 

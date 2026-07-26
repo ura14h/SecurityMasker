@@ -1,16 +1,17 @@
 """Anthropic Messages SSE stream restorer (§20, §21, §23).
 
-LiteLLM streams the Anthropic ``/v1/messages`` passthrough as raw SSE **bytes** at
-the iterator hook (not typed objects). This processor decodes bytes (UTF-8 safe
-across chunk boundaries), parses SSE events, and:
+The gateway forwards the Anthropic ``/v1/messages`` response as raw SSE **bytes**.
+This processor decodes them (UTF-8 safe across chunk boundaries), parses SSE
+events, and:
 
 - restores ``text_delta`` text with a per-block carry buffer so aliases split
   across ``content_block_delta`` events are recovered (§20); the block's tail is
   flushed as an extra delta at ``content_block_stop``;
 - buffers ``input_json_delta`` ``partial_json`` per block, suppressing the deltas
   until ``content_block_stop``, then emits one restored ``input_json_delta`` (§21).
-  If the buffered JSON is invalid it is emitted unchanged (aliases left in place —
-  safe, never an approximate restore, §24).
+  If the buffered JSON is invalid it is NOT re-sent: the client receives an error
+  event instead. Forwarding text we could not parse would hand over a tool call
+  assembled from unvalidated model output (§24).
 
 All other events (``message_start``/``message_delta``/``message_stop``/``ping``/
 unknown) pass through unchanged, preserving event order and ``usage`` (§20).

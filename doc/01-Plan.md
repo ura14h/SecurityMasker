@@ -1,5 +1,10 @@
 # 01-Plan — SecurityMasker 実装計画メモ
 
+> **注意（2026-07-26, [ADR-0006](../docs/adr/0006-drop-litellm-purpose-built-proxy.md)）**:
+> 本書は初期の実装計画の記録であり、現行の指示ではありません。LiteLLM を前提とした記述は
+> **撤廃済み**です。現行の運用指示は [`../AGENTS.md`](../AGENTS.md)、現状の是正状況は
+> [`07-Remediation-Status.md`](07-Remediation-Status.md) を参照してください。
+
 正典は [`00-First-Order.md`](00-First-Order.md)。本メモは着手前の合意事項と作業計画を記録する。
 運用ルールの要約は [`../AGENTS.md`](../AGENTS.md)、Claude Code 入口は [`../CLAUDE.md`](../CLAUDE.md)。
 

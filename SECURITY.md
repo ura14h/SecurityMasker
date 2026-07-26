@@ -6,10 +6,13 @@ limits, and hardening guidance (`doc/00-First-Order.md` §33).
 
 ## Guarantees (and how they are enforced)
 
-- **No original secret reaches an external LLM.** Masking runs in the pre-call hook
-  and a pre-send re-scan fails closed if a registered/high-confidence secret remains
-  (`engine._verify_no_leak`, §18). Verified by the live leakage test
-  (`tests/integration/test_live_masking.py`).
+- **No original secret reaches an external LLM.** The gateway masks the request
+  before forwarding, and re-scans the FINAL payload and headers immediately before
+  they are sent; a registered/high-confidence secret still present fails closed
+  (`engine._verify_no_leak` and `engine.assert_no_leak_in_payload`, §18). Verified
+  end-to-end against a local mock upstream by
+  `tests/integration/test_live_gateway.py`, which asserts on what actually left
+  the process.
 - **Sessions/tenants are isolated.** Aliases are per-session (HMAC keyed by a
   per-session CSPRNG key); restoration only reverses *this* session's aliases (§7).
   Redis keys are tenant-namespaced and sealed under a process master key (§8).
