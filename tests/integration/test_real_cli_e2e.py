@@ -14,18 +14,26 @@ boundary: both tools have update checks, analytics and crash reporting that do n
 go through the configured provider at all, so a routing mistake here would leak to
 the internet rather than fail. Dummy credentials do not change that.
 
-So the boundary is enforced, in this order:
+So containment is **measured, not declared**: before anything starts, the test
+tries to open a TCP connection to a routable address. If that succeeds, this
+process can reach the internet, and the test skips. No environment variable
+overrides this — an earlier version had an ``SM_E2E_ALLOW_UNSANDBOXED`` flag, and
+a flag meaning "trust me, egress is blocked" is exactly the assurance that cannot
+be checked. The probe can be, so it is.
 
-1. A network sandbox that can only reach loopback, when the platform has one
-   (``unshare -n`` on Linux). This is the only real boundary.
-2. Otherwise the test does NOT run. It skips unless the operator sets
-   ``SM_E2E_ALLOW_UNSANDBOXED=1``, which is an assertion that egress is
-   controlled some other way (an outbound firewall, an offline machine).
-3. In both cases the child gets a scrubbed environment, telemetry and
-   auto-update switched off, and proxy variables aimed at a closed loopback
-   port so anything that respects them fails fast instead of reaching out.
+To make the probe fail, run the WHOLE stack — pytest, the gateway, the mock and
+the CLI — inside one network namespace or a ``--network none`` container:
 
-Layers 2 and 3 are defence in depth. Layer 1 is the guarantee.
+    devtools/run_cli_e2e.sh          # unshare -rn around pytest itself (Linux)
+
+Isolating only the CLI does not work, and was the previous mistake here: a network
+namespace has its own loopback, so a CLI inside one cannot reach a gateway on the
+parent's 127.0.0.1. Everything has to share the namespace.
+
+On top of the boundary, the child gets a scrubbed environment, telemetry and
+auto-update switched off, and proxy variables aimed at a closed loopback port, so
+anything that honours them fails fast. That is defence in depth; the probe is the
+guarantee.
 
 The gateway's upstream is the local mock, the CLIs get isolated homes so the
 user's own ``~/.codex`` is neither read for credentials nor written to, and the
@@ -52,6 +60,8 @@ from securitymasker.integrations.launcher import SESSION_HEADER, build_plan
 
 REPO = Path(__file__).resolve().parents[2]
 DICT_CONFIG = REPO / "tests" / "integration" / "securitymasker.masking.yaml"
+
+
 def _free_port() -> int:
     """A port the OS just told us is free.
 
@@ -64,6 +74,27 @@ def _free_port() -> int:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
+
+def _can_reach_the_internet(timeout: float = 1.5) -> bool:
+    """Whether this process can open a TCP connection off-box.
+
+    Deliberately empirical. A firewall, an offline host and a network namespace
+    all look different from the inside, and none of them can be recognised by
+    checking for a tool or reading a flag — but all of them show up here. Only a
+    connection is attempted; nothing is sent.
+
+    A drop-style firewall makes this time out rather than refuse, so a timeout
+    counts as blocked.
+    """
+    for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53)):
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 PERSON = "山田太郎"                       # synthetic, already used across the suite
 HOST = "prod-db01.internal.example"      # .example is reserved for documentation
 CARRIER = "接続する Python を書いて"       # non-sensitive; proves the body ARRIVED
@@ -75,21 +106,12 @@ pytestmark = [
     pytest.mark.skipif(os.environ.get("SM_RUN_CLI_E2E") != "1",
                        reason="set SM_RUN_CLI_E2E=1 to drive the real CLI"),
     pytest.mark.skipif(
-        shutil.which("unshare") is None
-        and os.environ.get("SM_E2E_ALLOW_UNSANDBOXED") != "1",
-        reason="no loopback-only network sandbox available; set "
-               "SM_E2E_ALLOW_UNSANDBOXED=1 only if egress is blocked another way",
+        _can_reach_the_internet(),
+        reason="this process can reach the internet, so the CLIs could too; run "
+               "the whole stack in a network namespace (devtools/run_cli_e2e.sh) "
+               "or a --network none container",
     ),
 ]
-
-
-def _sandboxed(argv: list[str]) -> list[str]:
-    """Wrap ``argv`` so it can reach loopback and nothing else, where possible."""
-    if shutil.which("unshare") is None:
-        return argv           # gated above; the operator has asserted containment
-    # A fresh network namespace has only `lo`, and it starts down.
-    inner = "ip link set lo up 2>/dev/null; exec \"$@\""
-    return ["unshare", "-r", "-n", "sh", "-c", inner, "sh", *argv]
 
 
 def _contained_env(**overrides: str) -> dict[str, str]:
@@ -169,6 +191,32 @@ def _last_request(record: Path) -> dict:
     return json.loads(lines[-1])
 
 
+def _assert_masked_upstream(record: Path) -> None:
+    """Only aliases left the process — and the body actually arrived."""
+    body = json.dumps(_last_request(record)["body"], ensure_ascii=False)
+    # CARRIER first: without it the checks below would also pass on a request that
+    # never carried the prompt at all.
+    assert CARRIER in body, "the prompt never reached the upstream at all"
+    assert PERSON not in body, "the person's name reached the upstream"
+    assert HOST not in body, "the internal hostname reached the upstream"
+    assert "SM_PERSON_" in body, f"no PERSON alias in the outbound body: {body[:400]}"
+
+
+def _assert_restored_to_the_user(stdout: str) -> None:
+    """The user got their own data back.
+
+    Masking without restoration is not the feature — it is the product broken in a
+    safe direction, and every upstream assertion would still pass. The mock echoes
+    what it was sent, so both originals come back down the stream and must appear.
+    """
+    for original, what in ((PERSON, "name"), (HOST, "hostname")):
+        assert original in stdout, (
+            f"the CLI never showed the restored {what}; the response was not "
+            f"restored. stdout: {stdout[-800:]}"
+        )
+    assert "SM_PERSON_" not in stdout, "an alias leaked into the CLI output"
+
+
 @pytest.fixture
 def stack(tmp_path: Path):
     """Mock upstream + gateway pointed at it. Nothing leaves the machine."""
@@ -202,9 +250,9 @@ def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
     """The end-to-end claim: start the real tool, and no original reaches upstream."""
     record, gateway_url = stack
     result = subprocess.run(  # noqa: S603
-        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "codex",
-                    "exec", "--skip-git-repo-check",
-                    f"担当は{PERSON}です。{HOST} に{CARRIER}。"]),
+        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
+         "exec", "--skip-git-repo-check",
+         f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
             CODEX_HOME=str(_codex_home(tmp_path)),
@@ -214,26 +262,8 @@ def test_real_codex_through_run_sends_only_aliases(stack, tmp_path) -> None:
     )
     assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
 
-    body = json.dumps(_last_request(record)["body"], ensure_ascii=False)
-
-    # The body arrived — so the assertions below are about masking, not absence.
-    assert CARRIER in body, "the prompt never reached the upstream at all"
-    assert PERSON not in body, "the person's name reached the upstream"
-    assert HOST not in body, "the internal hostname reached the upstream"
-    # ...and it arrived as aliases rather than being dropped.
-    assert "SM_PERSON_" in body, f"no PERSON alias in the outbound body: {body[:400]}"
-    assert PERSON in result.stdout, (
-        f"the CLI never showed the restored name. stdout: {result.stdout[-600:]}"
-    )
-
-    # Masking is only half the product. The mock echoes the text it was sent, so
-    # the alias comes back down the stream and the user must see their own data
-    # again — otherwise the tool is merely broken in a safe direction.
-    assert PERSON in result.stdout, (
-        "the CLI never showed the restored name; masking without restoration is "
-        f"not the feature. stdout: {result.stdout[-600:]}"
-    )
-    assert "SM_PERSON_" not in result.stdout, "an alias leaked into the CLI output"
+    _assert_masked_upstream(record)
+    _assert_restored_to_the_user(result.stdout)
 
 
 @needs_codex
@@ -242,8 +272,8 @@ def test_real_codex_does_not_touch_the_users_codex_home(stack, tmp_path) -> None
     _record, gateway_url = stack
     home = _codex_home(tmp_path)
     subprocess.run(  # noqa: S603
-        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "codex",
-                    "exec", "--skip-git-repo-check", "hello"]),
+        [sys.executable, "-m", "securitymasker.cli", "run", "codex",
+         "exec", "--skip-git-repo-check", "hello"],
         cwd=str(REPO),
         env=_contained_env(
             CODEX_HOME=str(home),
@@ -275,7 +305,7 @@ def test_real_codex_actually_sends_our_session_header(tmp_path) -> None:
                           session_id="sess-header-probe", environ={})
         argv = [*plan.argv[:1], "exec", "--skip-git-repo-check", *plan.argv[1:], "hi"]
         result = subprocess.run(  # noqa: S603
-            _sandboxed(argv), cwd=str(REPO),
+            argv, cwd=str(REPO),
             env=_contained_env(**plan.env,
                                CODEX_HOME=str(_codex_home(tmp_path)),
                                OPENAI_API_KEY="dummy-not-a-real-key"),
@@ -304,8 +334,8 @@ def test_real_claude_code_through_run_sends_only_aliases(stack, tmp_path) -> Non
     """
     record, gateway_url = stack
     result = subprocess.run(  # noqa: S603
-        _sandboxed([sys.executable, "-m", "securitymasker.cli", "run", "claude",
-                    "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"]),
+        [sys.executable, "-m", "securitymasker.cli", "run", "claude",
+         "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
             ANTHROPIC_API_KEY="dummy-not-a-real-key",
@@ -315,13 +345,8 @@ def test_real_claude_code_through_run_sends_only_aliases(stack, tmp_path) -> Non
     )
     assert result.returncode == 0, f"claude failed: {result.stderr[-1500:]}"
 
-    request = _last_request(record)
-    body = json.dumps(request["body"], ensure_ascii=False)
-
-    assert request["path"].endswith("/messages"), (
-        f"expected the Anthropic path, got {request['path']}"
+    assert _last_request(record)["path"].endswith("/messages"), (
+        f"expected the Anthropic path, got {_last_request(record)['path']}"
     )
-    assert CARRIER in body, "the prompt never reached the upstream at all"
-    assert PERSON not in body, "the person's name reached the upstream"
-    assert HOST not in body, "the internal hostname reached the upstream"
-    assert "SM_PERSON_" in body, f"no PERSON alias in the outbound body: {body[:400]}"
+    _assert_masked_upstream(record)
+    _assert_restored_to_the_user(result.stdout)
