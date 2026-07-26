@@ -84,7 +84,12 @@ Conditions of adoption, all enforced in code:
    are recorded on the detector rather than dropped per-token.
 6. **Offsets validated at load** with a synthetic probe, so a tokenizer that
    cannot report spans fails at startup instead of mid-request.
-7. **Off the event loop.** Inference runs via `asyncio.to_thread`, so the
+7. **Off the event loop.** Inference runs on a dedicated bounded pool with an
+   admission limit — see [ADR-0011](0011-bounding-model-inference.md), which
+   replaced the `asyncio.to_thread` call this ADR originally specified. A plain
+   `to_thread` grows the default executor without limit and lets a stuck
+   inference starve everything else in the process. The property below is what
+   mattered and still holds: the
    engine's per-detector timeout genuinely bounds it and one request cannot stall
    every other connection.
 8. **`min_score` defaults to 0.7**, the measured optimum. Below it prose false

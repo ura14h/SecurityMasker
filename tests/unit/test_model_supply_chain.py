@@ -16,6 +16,7 @@ when the model is not present.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -197,6 +198,23 @@ def test_allow_unverified_model_defaults_to_false() -> None:
 # --- the pinned manifest must accept the REAL model ---------------------------------
 
 
+def _require_model() -> bool:
+    """Whether a missing model is a FAILURE rather than a skip.
+
+    Skipping is right on a developer laptop that has never fetched the model. It
+    is wrong at a release gate: the whole point of these two tests is that the
+    manifest accepts the real artifact, so a release that skips them has verified
+    nothing about the model it ships. Set SM_REQUIRE_MODEL=1 there.
+    """
+    return os.environ.get("SM_REQUIRE_MODEL") == "1"
+
+
+def _missing(reason: str) -> None:
+    if _require_model():
+        pytest.fail(f"SM_REQUIRE_MODEL=1 but {reason}")
+    pytest.skip(reason)
+
+
 def _snapshot() -> Path | None:
     """The cached directory for the pinned revision, or None if not fetched."""
     from securitymasker import models_fetch
@@ -220,8 +238,9 @@ def test_pinned_manifest_verifies_the_real_snapshot() -> None:
     """
     directory = _snapshot()
     if directory is None:
-        pytest.skip(f"{ADOPTED}@{ADOPTED_REV} not in the local cache "
-                    "(run: securitymasker models fetch)")
+        _missing(f"{ADOPTED}@{ADOPTED_REV} is not in the local cache "
+                 "(run: securitymasker models fetch)")
+        return
 
     manifest = manifest_for(ADOPTED, ADOPTED_REV)
     assert manifest is not None
@@ -241,7 +260,8 @@ def test_pinned_manifest_records_whole_file_bytes() -> None:
     """
     directory = _snapshot()
     if directory is None:
-        pytest.skip("pinned model not in the local cache")
+        _missing("the pinned model is not in the local cache")
+        return
 
     manifest = manifest_for(ADOPTED, ADOPTED_REV)
     assert manifest is not None

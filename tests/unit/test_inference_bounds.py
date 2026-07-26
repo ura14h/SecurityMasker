@@ -131,12 +131,17 @@ async def test_capacity_is_reclaimed_after_work_completes() -> None:
 async def test_thread_pool_size_is_capped() -> None:
     """Runaway inferences must not spawn unbounded threads."""
     release = threading.Event()
-    runner = BoundedInferenceRunner(max_workers=2, max_inflight=8)
+    runner = BoundedInferenceRunner(max_workers=2, max_inflight=8,
+                                    thread_name_prefix="sm-infer-pooltest")
     try:
         for _ in range(4):
             with pytest.raises(TimeoutError):
                 await runner.run(release.wait, timeout=0.02)
-        live = [t for t in threading.enumerate() if t.name.startswith("sm-infer")]
+        # Count only THIS runner's threads. `sm-infer` is also the prefix used by
+        # the process-wide shared runner, so matching on the name alone made the
+        # assertion depend on whether an earlier test had warmed that one up.
+        live = [t for t in threading.enumerate()
+                if t.name.startswith(runner.thread_name_prefix)]
         assert len(live) <= 2, f"{len(live)} inference threads for a 2-worker pool"
     finally:
         release.set()

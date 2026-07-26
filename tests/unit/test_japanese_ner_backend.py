@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from securitymasker.detectors import japanese_ner as mod
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.detectors.japanese_ner import (
     JapaneseNerDetector,
@@ -232,3 +233,95 @@ def test_ner_is_off_by_default() -> None:
 
     config = SecurityMaskerConfig.model_validate({"version": 1})
     assert config.ner.model is None
+
+
+# --- long input must not lose its tail -------------------------------------------
+#
+# A 512-token model does not raise when given more: the pipeline classifies the
+# prefix and returns nothing for the rest, which is indistinguishable from a clean
+# scan. These pin the windowing that prevents it. The offline tests use a stub, so
+# they run anywhere; the real-model test skips when the pinned snapshot is absent.
+
+
+class _WindowStub:
+    """Reports one entity per occurrence, so a dropped window is visible."""
+
+    def __init__(self, needle: str) -> None:
+        self.needle = needle
+        self.calls: list[str] = []
+
+    def __call__(self, text: str):
+        self.calls.append(text)
+        return [{"entity_group": "人名", "score": 0.99, "word": self.needle,
+                 "start": at, "end": at + len(self.needle)}
+                for at in _occurrences(text, self.needle)]
+
+
+def _occurrences(text: str, needle: str) -> list[int]:
+    out, at = [], text.find(needle)
+    while at != -1:
+        out.append(at)
+        at = text.find(needle, at + 1)
+    return out
+
+
+def _detector_with(pipeline) -> mod.JapaneseNerDetector:
+    detector = mod.JapaneseNerDetector()
+    detector._pipeline = pipeline
+    detector.available = True
+    detector._min_score = 0.5
+    return detector
+
+
+def test_character_windows_cover_every_character() -> None:
+    """No gap between windows: a name in one would be seen by nobody."""
+    detector = _detector_with(_WindowStub("X"))
+    text = "あ" * 5000
+    covered: set[int] = set()
+    for offset, chunk in detector._windows(text):
+        covered |= set(range(offset, offset + len(chunk)))
+    assert covered == set(range(len(text)))
+
+
+def test_windows_overlap_so_a_boundary_name_is_not_split() -> None:
+    detector = _detector_with(_WindowStub("X"))
+    windows = detector._windows("あ" * 5000)
+    assert len(windows) > 1
+    for (start_a, chunk_a), (start_b, _) in zip(windows, windows[1:], strict=False):
+        assert start_b < start_a + len(chunk_a), "consecutive windows do not overlap"
+
+
+def test_duplicate_entities_from_the_overlap_are_collapsed() -> None:
+    entities = [{"entity_group": "人名", "score": 0.8, "start": 3, "end": 8},
+                {"entity_group": "人名", "score": 0.95, "start": 3, "end": 8},
+                {"entity_group": "人名", "score": 0.9, "start": 20, "end": 25}]
+    deduped = mod._dedupe(entities)
+    assert len(deduped) == 2
+    assert deduped[0]["score"] == 0.95, "the more confident window should win"
+
+
+@pytest.mark.parametrize("position", ["head", "middle", "tail"])
+def test_the_real_model_finds_a_name_anywhere_in_a_long_document(position) -> None:
+    """The measured behaviour, pinned. Before windowing, 'tail' found nothing."""
+    pytest.importorskip("transformers")
+    import asyncio
+
+    from securitymasker.models_fetch import cache_directory
+
+    model = "tsmatz/xlm-roberta-ner-japanese"
+    revision = "aba094e118d5ffc622e9b25e07edc49f9dd85feb"
+    if cache_directory(model, revision) is None:
+        pytest.skip("pinned model not cached (run: securitymasker models fetch)")
+
+    detector = mod.JapaneseNerDetector(model=model, revision=revision, required=True)
+    filler, sentence = "これはテスト文章です。" * 150, "担当者は佐々木健一です。"
+    text = {"head": sentence + filler + filler,
+            "middle": filler + sentence + filler,
+            "tail": filler + filler + sentence}[position]
+
+    norm = normalize(text, "nfkc")
+    results = asyncio.run(detector.detect(DetectionContext(norm=norm)))
+    assert any(r.original_value == "佐々木健一" for r in results), (
+        f"the name was lost when placed at the {position} of a "
+        f"{len(text)}-character document"
+    )

@@ -59,6 +59,9 @@ class BoundedInferenceRunner:
         self._max_workers = max_workers
         self._max_inflight = max_inflight
         self._prefix = thread_name_prefix
+        # Exposed so a test can count exactly ITS OWN threads: the shared
+        # process-wide runner uses the same default prefix.
+        self.thread_name_prefix = thread_name_prefix
         self._executor: ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
         # Counts jobs SUBMITTED and not yet finished — including ones whose caller
