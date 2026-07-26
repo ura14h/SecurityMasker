@@ -16,6 +16,8 @@ when the model is not present.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from securitymasker.models_fetch import (
@@ -195,17 +197,15 @@ def test_allow_unverified_model_defaults_to_false() -> None:
 # --- the pinned manifest must accept the REAL model ---------------------------------
 
 
-def _snapshot() -> "pathlib.Path | None":
+def _snapshot() -> Path | None:
     """The cached directory for the pinned revision, or None if not fetched."""
-    import pathlib
-
     from securitymasker import models_fetch
 
     cached = models_fetch.cache_directory(ADOPTED, ADOPTED_REV)
     if cached is not None:
         return cached
     # huggingface_hub may be absent; fall back to the default cache layout.
-    guess = (pathlib.Path.home() / ".cache/huggingface/hub"
+    guess = (Path.home() / ".cache/huggingface/hub"
              / f"models--{ADOPTED.replace('/', '--')}" / "snapshots" / ADOPTED_REV)
     return guess if guess.is_dir() else None
 
