@@ -62,6 +62,13 @@ def _valid_ipv4(text: str) -> bool:
     parts = text.split(".")
     if len(parts) != 4 or not all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
         return False
+    # A leading zero is not IPv4 in dotted-quad notation — inet_aton would read it
+    # as octal, so tools disagree about what it even means. What it usually IS is a
+    # four-part version number: Claude Code sends "cc_version=2.1.212.057" on every
+    # request, which the final leak gate then refused as an address. Requiring
+    # canonical octets costs no real address and drops a whole class of these.
+    if any(len(p) > 1 and p[0] == "0" for p in parts):
+        return False
     return not text.startswith(_DOC_IPV4_PREFIXES)
 
 
