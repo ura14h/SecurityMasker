@@ -40,13 +40,38 @@ def _is_loopback(url: str) -> bool:
     return host in LOOPBACK_HOSTS
 
 
-def _build_store(*, idle_ttl: Any, absolute_ttl: Any) -> SessionStore:
+def _build_store(
+    *,
+    idle_ttl: Any,
+    absolute_ttl: Any,
+    config: Any = None,
+    product_mode: str | None = None,
+) -> SessionStore:
     """``SECURITYMASKER_STORE``からsession storeを選択する（P1-9）。
 
     Default ``memory`` is single-process. ``redis`` shares state across workers and
     is required for multi-worker deployments; if selected but unavailable, fail
     startup (fail-closed) rather than silently fall back to an unshared store.
     """
+    if config is not None and getattr(config, "version", None) == 2:
+        if config.state is None or config.runtime is None:
+            raise ConfigError("v2 config requires runtime and state settings")
+        requested = os.environ.get("SECURITYMASKER_STORE")
+        if requested and requested.lower() != "sqlite":
+            raise ConfigError(
+                "v2 standard runtime uses SQLite; SECURITYMASKER_STORE cannot select "
+                "memory or Redis"
+            )
+        from securitymasker.sessions.sqlite import SQLiteSessionStore
+
+        return SQLiteSessionStore(
+            config.state.database,
+            config.state.key,
+            mode=product_mode or config.runtime.mode,
+            idle_ttl=idle_ttl,
+            absolute_ttl=absolute_ttl,
+        )
+
     backend = os.environ.get("SECURITYMASKER_STORE", "memory").lower()
     if backend == "memory":
         return InMemorySessionStore(idle_ttl=idle_ttl, absolute_ttl=absolute_ttl)
@@ -119,6 +144,7 @@ class GatewayRuntime:
         # engine-less transparent mode exists only as an explicit, dev-only opt-in.
         config_path = os.environ.get("SECURITYMASKER_CONFIG")
         dev_transparent = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
+        product_mode = os.environ.get("SECURITYMASKER_PRODUCT_MODE")
         if not config_path:
             if not dev_transparent:
                 raise ConfigError(
@@ -131,11 +157,20 @@ class GatewayRuntime:
         else:
             if config is None:
                 config = load_config(config_path)
+            if product_mode is None and getattr(config, "runtime", None) is not None:
+                product_mode = config.runtime.mode
+            if product_mode is not None and product_mode not in PRODUCT_MODES:
+                raise ConfigError(
+                    "SECURITYMASKER_PRODUCT_MODE must be 'chatgpt' or 'claude'; "
+                    f"got {product_mode!r}"
+                )
             if engine is None:
                 engine = build_engine(config)
             store = _build_store(
                 idle_ttl=parse_duration(config.defaults.session_idle_ttl),
                 absolute_ttl=parse_duration(config.defaults.session_absolute_ttl),
+                config=config,
+                product_mode=product_mode,
             )
         # `multitenant` was the old name for tenant-only isolation; normalize_mode
         # keeps it working while giving every consumer one definition to read.
@@ -151,14 +186,6 @@ class GatewayRuntime:
         )
         anthropic_upstream = os.environ.get(
             "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
-        )
-        configured_product_mode = (
-            config.runtime.mode
-            if config is not None and getattr(config, "runtime", None) is not None
-            else None
-        )
-        product_mode = os.environ.get(
-            "SECURITYMASKER_PRODUCT_MODE", configured_product_mode
         )
         if product_mode is not None and product_mode not in PRODUCT_MODES:
             raise ConfigError(

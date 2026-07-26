@@ -108,7 +108,7 @@ def test_runtime_uses_v2_config_mode_and_allows_cli_environment_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = SecurityMaskerConfig.model_validate(
-        {"version": 2, "runtime": {"mode": "claude", "port": 4001}}
+        {"version": 1, "runtime": {"mode": "claude", "port": 4001}}
     )
     monkeypatch.setenv("SECURITYMASKER_CONFIG", "/synthetic/securitymasker.config")
     monkeypatch.delenv("SECURITYMASKER_PRODUCT_MODE", raising=False)
@@ -125,7 +125,7 @@ def test_runtime_rejects_combined_mode_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = SecurityMaskerConfig.model_validate(
-        {"version": 2, "runtime": {"mode": "claude", "port": 4001}}
+        {"version": 1, "runtime": {"mode": "claude", "port": 4001}}
     )
     monkeypatch.setenv("SECURITYMASKER_CONFIG", "/synthetic/securitymasker.config")
     monkeypatch.setenv("SECURITYMASKER_PRODUCT_MODE", "both")

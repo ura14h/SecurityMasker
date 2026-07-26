@@ -17,7 +17,7 @@ release target から外れた。最新の仕様と実装順は
 | 1. config / dict / init / source実行 | **done** | v2 strict schema、単一辞書、隣接探索、private key生成、DB遅延作成、root script、setup |
 | 2. mode / route分離 | **done** | v2は`chatgpt` / `claude`の片方だけを公開、1 process・1 mode |
 | 3. protocol互換性 | **partial** | Claude `count_tokens` / session header / models / HEAD実装済み。実CLI E2EはPhase 7で再構成 |
-| 4. SQLite session store | not started | DB-key 1:1、mode拘束、writer排他、migration |
+| 4. SQLite session store | **done** | keyed lookup、全record AES-GCM、DB/key/mode拘束、TTL、active writer lease、transactional schema |
 | 5. NER標準化 | not started | 既定ON、固定model、Presidio撤去、offline fail-closed |
 | 6. preview / setup / doctor | not started | 通常運用setupと安全なmask preview |
 | 7. test setup分離 | not started | mock、CLI E2E、Desktop手動smokeの役割分離 |
