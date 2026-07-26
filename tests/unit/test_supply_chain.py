@@ -11,6 +11,7 @@ anywhere, without a Docker daemon.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -24,6 +25,17 @@ RUNTIME_LOCK = ROOT / "requirements.lock"
 DEV_LOCK = ROOT / "requirements-dev.lock"
 
 _DIGEST = re.compile(r"@sha256:[0-9a-f]{64}\b")
+
+
+# --- release metadata ---------------------------------------------------------------
+
+
+def test_license_is_the_canonical_apache_2_text() -> None:
+    """Apache-2.0を名乗る配布物へ要約・改変した条文を混入させない。"""
+    content = (ROOT / "LICENSE").read_bytes()
+    assert hashlib.sha256(content).hexdigest() == (
+        "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    )
 
 
 # --- image pinning ------------------------------------------------------------------
