@@ -1,8 +1,12 @@
 # ADR-0004: Presidio は in-process Python ライブラリとして利用
 
-- 状態：採用（実装・実モデル検証済み）
+- 状態：撤回（[ADR-0012](0012-renew-package-design.md)）
 - 日付：2026-07-24（2026-07-25更新）
-- 関連: `doc/00-First-Order.md` §13, §14
+- 関連: `doc/00-First-Order.md` §13, §14、ADR-0012
+
+> この ADR は従来構成での判断記録として残す。ADR-0012 により Presidio は標準製品から
+> 撤去し、日本語 NER を標準搭載・既定 ON とする。移行完了までは実装が repository に
+> 残るが、新規機能を Presidio 前提で設計しない。
 
 ## 背景
 

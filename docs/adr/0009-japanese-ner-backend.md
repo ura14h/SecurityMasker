@@ -1,8 +1,11 @@
 # ADR-0009 — 日本語NER backendの比較と採用
 
-- 状態：採用
-- 日付：2026-07-25
-- 関連：ADR-0004（in-process Presidio）、doc/06 §5.3
+- 状態：採用（[ADR-0012](0012-renew-package-design.md) で標準搭載・既定 ON へ変更）
+- 日付：2026-07-25（2026-07-26更新）
+- 関連：ADR-0010（model供給網）、ADR-0011（推論上限）、ADR-0012、doc/06 §5.3
+
+> backend の比較・選定結果は維持する。任意 extra・既定 OFF・Presidio 併存という
+> 配布判断だけを ADR-0012 で置き換える。
 
 ## 背景
 
@@ -47,8 +50,8 @@ Apple Silicon、CPU／MPS、model cache warm の条件です。各 backend の�
 
 ## 決定
 
-**`tsmatz/xlm-roberta-ner-japanese`を任意・既定OFFのextraとして採用**し、追加依存なしの
-選択肢として Presidio を残します。
+**`tsmatz/xlm-roberta-ner-japanese`を標準 backend として採用**する。ADR-0012 の
+release target では標準搭載・既定 ON とし、Presidio は撤去する。
 
 Presidio は総合値だけでなく、ORG precision が0.38（raw）、F1が0.46で、10件の code
 負例中5件を誤検出します。採用 model は `min_score=0.7` でこの corpus の全 entity が
@@ -57,8 +60,9 @@ code で誤検出しなかった唯一の候補です。
 
 採用条件はすべて code で強制します。
 
-1. **任意extra、既定OFF。** `pip install -e '.[ner]'` で導入する。
-   `ner.model` 未設定なら detector を生成せず、torch は runtime dependency にしない。
+1. **標準搭載、既定ON。** `scripts/setup` と binary build が固定依存と固定 model を
+   準備する。model が利用できない状態を黙って決定論的検出器だけへ downgrade せず、
+   起動時に fail-closed とする。明示的な無効化は診断で強く警告する。
 2. **固定。** `ner.model` 指定時は `ner.revision` を必須とする。採用値：
    - model：`tsmatz/xlm-roberta-ner-japanese`
    - revision：`aba094e118d5ffc622e9b25e07edc49f9dd85feb`
@@ -84,10 +88,11 @@ code で誤検出しなかった唯一の候補です。
 
 ## 影響
 
-- 未登録名を検出したい deployment だけが extra を導入し revision を固定します。
-  それ以外には torch、model、挙動変更の影響はありません。
+- 標準 setup と binary build は NER runtime と固定 model を含むため、配布容量と
+  memory 使用量は増える。repository 自体には model weight を commit しない。
 - 有効時は resident memory 約825 MB、起動約3.4秒です。long-lived proxy には許容
-  できますが、既定で課すには大きいため extra とします。
+  できる一方、single-file binary は大きくなる。この trade-off は「機密情報をマスクする」
+  という製品期待を優先して受け入れる。
 - corpus は detector と同じ作成者による合成データです。**0.7でF1=1.00は実運用の
   1.00を意味しません。** 想定した failure shape に対する regression baseline です。
 - NER は最も信頼度の低い signal とし、priority は最低、dictionary と deterministic

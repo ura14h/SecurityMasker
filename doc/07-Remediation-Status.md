@@ -1,12 +1,37 @@
 # 07 — doc/06 是正状況
 
-作成日: 2026-07-25 / 更新: 2026-07-26（第9回監査の是正を反映）
+作成日: 2026-07-25 / 更新: 2026-07-26（ADR-0012への移行開始）
 
 ---
 
 ## 現在の状態（ここだけ読めば最新がわかる）
 
-**総合: 未受け入れ（再判定待ち）。** 直近は第9回監査で P1 2件・P2 3件。いずれも是正済み。
+**総合: release 不可（ADR-0012への再構築中）。** 従来 architecture は第9回監査までの
+是正を完了したが、Docker / Redis / optional NER / multi-tenant / CI を含む構成は
+release target から外れた。最新の仕様と実装順は
+[ADR-0012](../docs/adr/0012-renew-package-design.md) を正とする。
+
+| 移行 Phase | 状態 | release に必要な到達点 |
+|---|---|---|
+| 0. 判断固定・現行rule更新 | **done** | ADR-0004/0008/0009と本書をADR-0012へ整合 |
+| 1. config / dict / init / source実行 | not started | 隣接設定探索、key生成、DB遅延作成、root script |
+| 2. mode / route分離 | not started | `chatgpt` / `claude`、1 process・1 mode |
+| 3. protocol互換性 | not started | Claude `count_tokens` / session header、ChatGPT/Codex契約 |
+| 4. SQLite session store | not started | DB-key 1:1、mode拘束、writer排他、migration |
+| 5. NER標準化 | not started | 既定ON、固定model、Presidio撤去、offline fail-closed |
+| 6. preview / setup / doctor | not started | 通常運用setupと安全なmask preview |
+| 7. test setup分離 | not started | mock、CLI E2E、Desktop手動smokeの役割分離 |
+| 8. PyInstaller | not started | sourceと同一挙動のOS別one-file build |
+| 9. legacy撤去・利用者文書 | not started | Docker / Redis / CI / PyPI前提を標準経路から除去 |
+| 10. release candidate判定 | not started | 全gate通過、残存制約明記、手動Desktop smoke |
+
+**Phase 0 の `done` はこの文書変更だけを指し、製品機能の移行完了を意味しない。**
+以下の表と履歴は、移行前実装の監査結果として保存する。新しい release target の
+実装済み主張には使用しない。
+
+### 移行前実装の最終状態（履歴）
+
+直近は第9回監査で P1 2件・P2 3件。いずれも従来 architecture 上では是正済み。
 **この節は毎回の監査後に必ず更新する** — 冒頭が古いままなら「ここだけ読めば最新」は成立しない。
 
 | 領域 | 状態 | 補足 |
