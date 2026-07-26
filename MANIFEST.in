@@ -1,0 +1,13 @@
+include LICENSE
+include README.md
+include SECURITY.md
+include Dockerfile
+include docker-compose.yml
+include docker-compose.redis.yml
+include requirements.lock
+include requirements-dev.lock
+include requirements-ner.lock
+include requirements-presidio.lock
+recursive-include config *.yaml
+recursive-include doc *.md
+recursive-include docs *.md

@@ -20,6 +20,7 @@ import os
 import sys
 import uuid
 from collections import Counter
+from importlib import resources
 from pathlib import Path
 
 from securitymasker import __version__
@@ -49,6 +50,32 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
         f"{len(config.patterns)} patterns, secret_detector="
         f"{config.enable_secret_detector}, normalization={config.defaults.normalization}"
     )
+    return 0
+
+
+def cmd_config_init(args: argparse.Namespace) -> int:
+    """配布物内の合成値だけを含むstarter設定を安全に書き出す。"""
+    output = Path(args.output)
+    template = resources.files("securitymasker").joinpath(
+        "resources/securitymasker.example.yaml"
+    ).read_text(encoding="utf-8")
+    try:
+        if args.force:
+            output.write_text(template, encoding="utf-8")
+        else:
+            with output.open("x", encoding="utf-8") as stream:
+                stream.write(template)
+    except FileExistsError:
+        print(
+            f"error: {output} already exists; pass --force to replace it",
+            file=sys.stderr,
+        )
+        return 2
+    except OSError as exc:
+        detail = exc.strerror or exc.__class__.__name__
+        print(f"error: cannot write {output}: {detail}", file=sys.stderr)
+        return 1
+    print(f"created {output}")
     return 0
 
 
@@ -283,6 +310,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate = config_sub.add_parser("validate", help="validate the config")
     add_config(p_validate)
     p_validate.set_defaults(func=cmd_config_validate)
+    p_init = config_sub.add_parser(
+        "init", help="write a safe starter config containing synthetic values"
+    )
+    p_init.add_argument(
+        "--output", default="securitymasker.yaml", help="destination YAML path"
+    )
+    p_init.add_argument(
+        "--force", action="store_true", help="replace an existing destination"
+    )
+    p_init.set_defaults(func=cmd_config_init)
 
     p_entities = sub.add_parser("entities", help="entity dictionary operations")
     entities_sub = p_entities.add_subparsers(dest="subaction", required=True)

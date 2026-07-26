@@ -37,6 +37,35 @@ def test_config_validate_bad_returns_error(tmp_path: Path, capsys: pytest.Captur
     assert main(["config", "validate", "--config", str(bad)]) == 1
 
 
+def test_config_init_creates_self_contained_valid_starter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "securitymasker.yaml"
+    assert main(["config", "init", "--output", str(output)]) == 0
+    assert output.is_file()
+    assert main(["config", "validate", "--config", str(output)]) == 0
+    captured = capsys.readouterr()
+    assert "created" in captured.out
+    assert "OK: config valid" in captured.out
+
+
+def test_config_init_refuses_to_overwrite_without_force(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output = tmp_path / "securitymasker.yaml"
+    output.write_text("sentinel\n", encoding="utf-8")
+    assert main(["config", "init", "--output", str(output)]) == 2
+    assert output.read_text(encoding="utf-8") == "sentinel\n"
+    assert "--force" in capsys.readouterr().err
+
+
+def test_config_init_force_replaces_existing_file(tmp_path: Path) -> None:
+    output = tmp_path / "securitymasker.yaml"
+    output.write_text("sentinel\n", encoding="utf-8")
+    assert main(["config", "init", "--output", str(output), "--force"]) == 0
+    assert "version: 1" in output.read_text(encoding="utf-8")
+
+
 def test_entities_test_masks_and_hides_original(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["entities", "test", "担当は山田太郎です", "--config", config_path]) == 0
     out = capsys.readouterr().out

@@ -37,9 +37,18 @@ Codex / Claude Code ──▶ SecurityMasker Proxy ──▶ OpenAI / Anthropic 
 ## マスキングを試す（CLI・外部送信なし）
 
 ```bash
-export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install securitymasker
+securitymasker config init --output securitymasker.yaml
+export SECURITYMASKER_CONFIG="$PWD/securitymasker.yaml"
+securitymasker config validate
 securitymasker entities test "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
 ```
+
+`config init` が書き出すのは合成値だけを含む自己完結したstarter設定です。既存ファイルは
+`--force` を明示しない限り上書きしません。実運用では辞書値を置き換え、API key・password・
+private key はファイルへ直書きせず `value_from_env` で参照してください。
 
 出力例（alias は session 鍵に基づくため実行ごとに異なります）：
 
@@ -61,7 +70,7 @@ session が生成した `literal` alias だけをローカルで復元します�
 ## プロキシを起動して Codex/Claude Code をつなぐ
 
 ```bash
-export SECURITYMASKER_CONFIG=config/securitymasker.example.yaml
+export SECURITYMASKER_CONFIG="$PWD/securitymasker.yaml"
 securitymasker gateway --port 4000            # 透過マスキングプロキシ
 ```
 

@@ -23,6 +23,7 @@ DOCKERFILE = ROOT / "Dockerfile"
 COMPOSE = ROOT / "docker-compose.yml"
 RUNTIME_LOCK = ROOT / "requirements.lock"
 DEV_LOCK = ROOT / "requirements-dev.lock"
+SDIST_MANIFEST = ROOT / "MANIFEST.in"
 
 _DIGEST = re.compile(r"@sha256:[0-9a-f]{64}\b")
 
@@ -36,6 +37,18 @@ def test_license_is_the_canonical_apache_2_text() -> None:
     assert hashlib.sha256(content).hexdigest() == (
         "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
     )
+
+
+def test_source_distribution_contains_operator_materials() -> None:
+    """sdistから設定例・運用文書・lockが脱落しないことを固定する。"""
+    manifest = SDIST_MANIFEST.read_text(encoding="utf-8")
+    for required in (
+        "SECURITY.md",
+        "requirements.lock",
+        "recursive-include config *.yaml",
+        "recursive-include docs *.md",
+    ):
+        assert required in manifest
 
 
 # --- image pinning ------------------------------------------------------------------
