@@ -1,14 +1,9 @@
-"""OpenAI Responses／Chat Completions adapter（§22、§16）。
+"""OpenAI Responses APIのrequestをマスクし、responseを復元するadapter。
 
-Masks only user-text-bearing fields on the way out and restores them on the way
-back, never altering structural fields (§16): ``model``, ``*_id``, ``type``,
-``role``, ``status``, ``previous_response_id``, tool ``name``, JSON Schema keys/
-types, or ``usage``. Unknown fields pass through untouched.
-
-Maskable request fields (§22): ``instructions``; ``input`` (string, or a list of
-message items whose content parts carry ``text``); chat ``messages`` content; tool
-``description``; function-call ``arguments`` (string values only). Response
-restoration reverses the text fields and re-serializes tool-call ``arguments``.
+利用者の文字列を保持する``instructions``、``input``、toolの``description``、
+function callの``arguments``だけを変換する。``model``、各種ID、``type``、``role``、
+``status``、toolの``name``、JSON Schemaのkeyと型、``usage``などの構造fieldは変更しない。
+未知fieldもそのまま保持する。
 """
 
 from __future__ import annotations
@@ -27,18 +22,13 @@ from securitymasker.protocols.base import (
 )
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 
-
-def is_responses_request(data: dict[str, Any]) -> bool:
-    return "input" in data or "previous_response_id" in data
-
-
 # --------------------------------------------------------------------------- mask
 
 
 async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> MaskingSummary:
-    """Responses／Chat Completions requestをin-placeでマスクする。"""
+    """Responses requestを構造を保ったままin-placeでマスクする。"""
     summary = MaskingSummary()
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
@@ -52,17 +42,12 @@ async def mask_request(
     if "input" in data:
         data["input"] = await _mask_input(data["input"], mask)
 
-    if isinstance(data.get("messages"), list):
-        for message in data["messages"]:
-            if isinstance(message, dict):
-                await _mask_message_content(message, mask)
-
     if isinstance(data.get("tools"), list):
         for tool in data["tools"]:
             await _mask_tool_definition(tool, mask)
 
     # 一つ以上のaliasを生成した場合、modelへ保持指示を任意で追加する。
-    # placeholders verbatim.
+    # 指示文はplaceholderを改変せずそのまま返すようmodelへ依頼する。
     if engine.inject_alias_instruction and session.mappings_by_alias:
         _prepend_instruction(data)
     return summary
@@ -87,7 +72,7 @@ async def _mask_input(node: Any, mask: MaskTransform) -> Any:
 async def _mask_input_item(item: Any, mask: MaskTransform) -> Any:
     if not isinstance(item, dict):
         return item
-    # A message item with content parts, or a bare content part with `text`.
+    # contentを持つmessage itemと、textを直接持つcontent partの両方を扱う。
     if "content" in item:
         await _mask_message_content(item, mask)
     for key in TEXT_KEYS:
@@ -114,7 +99,7 @@ async def _mask_message_content(message: dict[str, Any], mask: MaskTransform) ->
 
 
 async def _mask_tool_definition(tool: Any, mask: MaskTransform) -> None:
-    # 人間向けdescriptionだけをマスクし、nameとJSON Schemaは維持する（§16）。
+    # 人間向けdescriptionだけをマスクし、nameとJSON Schemaは維持する。
     if not isinstance(tool, dict):
         return
     if isinstance(tool.get("description"), str):
@@ -147,10 +132,10 @@ async def _mask_arguments(raw: str, mask: MaskTransform) -> str:
 
 
 def restore_response(engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]) -> None:
-    """非streamingのResponses／Chat responseをin-placeで復元する（§19）。
+    """非streamingのResponses responseをin-placeで復元する。
 
-    Response text is restored for display; tool-call ``arguments`` are restored to
-    real values only for allowlisted trusted-local tools.
+    表示用textは元の値へ復元する。tool callの``arguments``は、明示的に信頼した
+    local toolに限って実値へ復元する。
     """
     restore = engine.make_restorer(session)
     reasm = ToolArgumentReassembler(restore)
@@ -160,14 +145,6 @@ def restore_response(engine: MaskingEngine, session: MaskingSession, data: dict[
     if isinstance(data.get("output"), list):
         for item in data["output"]:
             _restore_output_item(item, restore, reasm, trust)
-
-    # Chat Completions：`choices[].message.{content, tool_calls[].function.arguments}`。
-    if isinstance(data.get("choices"), list):
-        for choice in data["choices"]:
-            msg = choice.get("message") if isinstance(choice, dict) else None
-            if isinstance(msg, dict):
-                _restore_message(msg, restore, reasm, trust)
-
 
 def _restore_output_item(
     item: Any, restore: RestoreTransform, reasm: ToolArgumentReassembler, trust: Any
@@ -182,24 +159,6 @@ def _restore_output_item(
                     if isinstance(part.get(key), str):
                         part[key] = restore(part[key])
     # tool argumentは実行対象なので、信頼済みlocal toolだけ実値へ復元する。
-    # otherwise leave the aliases in place.
+    # それ以外はaliasのまま保持し、外部toolへ元の機密値を渡さない。
     if isinstance(item.get("arguments"), str) and trust.restores_arguments(item.get("name")):
         item["arguments"] = reasm.restore_arguments(item["arguments"])
-
-
-def _restore_message(
-    msg: dict[str, Any], restore: RestoreTransform, reasm: ToolArgumentReassembler, trust: Any
-) -> None:
-    if isinstance(msg.get("content"), str):
-        msg["content"] = restore(msg["content"])
-    elif isinstance(msg.get("content"), list):
-        for part in msg["content"]:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                part["text"] = restore(part["text"])
-    tool_calls = msg.get("tool_calls")
-    if isinstance(tool_calls, list):
-        for call in tool_calls:
-            fn = call.get("function") if isinstance(call, dict) else None
-            if (isinstance(fn, dict) and isinstance(fn.get("arguments"), str)
-                    and trust.restores_arguments(fn.get("name"))):
-                fn["arguments"] = reasm.restore_arguments(fn["arguments"])

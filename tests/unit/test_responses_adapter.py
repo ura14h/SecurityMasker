@@ -1,4 +1,4 @@
-"""OpenAI Responses/Chat adapter tests (§16, §22: mask values, keep structure)."""
+"""OpenAI Responses adapterが値だけを変換し、構造を維持することのテスト。"""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ async def test_mask_responses_input_string() -> None:
     await adapter.mask_request(eng, s, data)
     assert "山田太郎" not in data["input"]
     assert data["model"] == "gpt-4o"  # structural field untouched
-    assert data["previous_response_id"] == "resp_123"  # never masked (§16)
+    assert data["previous_response_id"] == "resp_123"  # 構造fieldはマスクしない
 
 
 @pytest.mark.asyncio
@@ -60,20 +60,20 @@ async def test_mask_responses_input_items_only_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mask_chat_messages_and_tool_description() -> None:
+async def test_mask_tool_description_without_changing_schema() -> None:
     eng, s = build_engine(), await _session()
     data = {
-        "messages": [{"role": "system", "content": "担当: 山田太郎"}],
+        "input": "担当: 山田太郎",
         "tools": [{"type": "function",
                    "function": {"name": "connect_db", "description": "接続先 prod-db01.internal.example",
                                 "parameters": {"type": "object", "properties": {"山田太郎_key": {"type": "string"}}}}}],
     }
     await adapter.mask_request(eng, s, data)
-    assert "山田太郎" not in data["messages"][0]["content"]
+    assert "山田太郎" not in data["input"]
     fn = data["tools"][0]["function"]
-    assert fn["name"] == "connect_db"  # tool name untouched (§16)
+    assert fn["name"] == "connect_db"  # tool nameは構造fieldなので変更しない
     assert "prod-db01.internal.example" not in fn["description"]
-    # JSON Schema keys must NOT be masked even if they look sensitive.
+    # 機密値に見える文字列でもJSON Schemaのkeyは変更しない。
     assert "山田太郎_key" in fn["parameters"]["properties"]
 
 
@@ -98,38 +98,42 @@ async def test_mask_then_restore_response_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
-async def test_restore_chat_tool_call_arguments_trusted() -> None:
-    # connect_db is an allowlisted trusted-local tool: its arguments are restored.
+async def test_restore_responses_tool_call_arguments_trusted() -> None:
+    # allowlist済みlocal toolの引数は元の値へ復元する。
     eng, s = build_engine(trusted_tools=("connect_db",)), await _session()
     await adapter.mask_request(eng, s, {"input": "山田太郎 prod-db01.internal.example"})
     person_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "山田太郎")
     host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
     resp = {
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": None,
-            "tool_calls": [{"id": "call_1", "type": "function", "function": {
-                "name": "connect_db",
-                "arguments": f'{{"host": "{host_alias}", "user": "{person_alias}"}}'}}]}}],
+        "output": [{
+            "id": "call_1",
+            "type": "function_call",
+            "name": "connect_db",
+            "arguments": f'{{"host": "{host_alias}", "user": "{person_alias}"}}',
+        }],
     }
     adapter.restore_response(eng, s, resp)
     import json
-    args = json.loads(resp["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+    args = json.loads(resp["output"][0]["arguments"])
     assert args == {"host": "prod-db01.internal.example", "user": "山田太郎"}
-    assert resp["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "connect_db"
+    assert resp["output"][0]["name"] == "connect_db"
 
 
 @pytest.mark.asyncio
 async def test_untrusted_tool_call_arguments_not_restored() -> None:
-    # Default: no tool is trusted -> arguments keep their aliases (doc/06 P0-8).
+    # 信頼指定のないtool引数はaliasのまま保持する。
     eng, s = build_engine(), await _session()
     await adapter.mask_request(eng, s, {"input": "山田太郎 prod-db01.internal.example"})
     host_alias = next(a for a, o in eng.literal_restorations(s).items() if o == "prod-db01.internal.example")
     resp = {
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": None,
-            "tool_calls": [{"id": "call_1", "type": "function", "function": {
-                "name": "external_mcp_tool",
-                "arguments": f'{{"host": "{host_alias}"}}'}}]}}],
+        "output": [{
+            "id": "call_1",
+            "type": "function_call",
+            "name": "external_mcp_tool",
+            "arguments": f'{{"host": "{host_alias}"}}',
+        }],
     }
     adapter.restore_response(eng, s, resp)
-    args = resp["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    args = resp["output"][0]["arguments"]
     assert host_alias in args                          # alias preserved
     assert "prod-db01.internal.example" not in args    # real value NOT leaked

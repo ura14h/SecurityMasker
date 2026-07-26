@@ -1,14 +1,11 @@
-"""Mock upstream LLM server for leakage / SSE-structure verification.
+"""漏洩防止とSSE構造を検証するための合成upstream LLM server。
 
-A single ASGI app that emulates just enough of the OpenAI (chat/completions +
-Responses) and Anthropic (Messages) wire protocols for the proxy to route to it
-as a fake provider. Every received request body is appended (as JSON lines) to
-the file named by ``$SM_MOCK_RECORD`` so tests can assert what actually left the
-gateway (``doc/00-First-Order.md`` §30.5 leakage tests).
+OpenAI ResponsesとAnthropic Messagesの必要最小限のwire protocolを模倣する。
+受信したrequest bodyは``$SM_MOCK_RECORD``が示すJSON Lines fileへ記録し、
+Gatewayから外へ出た最終payloadに元の機密値がないことをテストから確認できるようにする。
 
-Canned responses embed a fixed alias token (``SM_ORG_7F3A91``) so later phases can
-verify alias restoration through the proxy. Phase 0 only checks connectivity, SSE
-shape, and that no original secret is recorded/leaked.
+固定alias ``SM_ORG_7F3A91``と受信したマスク済み文字列を応答へ含め、Gatewayを通した
+復元、SSEの分割処理、漏洩防止をend-to-endで検証する。
 
 Run standalone:
     SM_MOCK_RECORD=/tmp/rec.jsonl uvicorn devtools.mock_upstream:app --port 8081
@@ -62,10 +59,10 @@ def _sse(lines: list[str]) -> StreamingResponse:
 
 
 def _echo_user_text(body: dict) -> str:
-    """Extract the user's text so the mock can echo it back (masked) in the reply.
+    """利用者のマスク済み文字列を抽出し、合成応答へそのまま含める。
 
-    This lets restoration be tested end-to-end: whatever aliases the gateway put on
-    the wire come back in the response and must be restored before the client.
+    Gatewayが送信payloadへ置いたaliasを応答経由で返すことで、clientへ届く前に
+    元の値へ復元されることをend-to-endで確認できる。
     """
     parts: list[str] = []
     inp = body.get("input")
@@ -88,48 +85,13 @@ def _echo_user_text(body: dict) -> str:
 
 
 def _reply_text(body: dict) -> str:
-    # Always include the canned alias (keeps Phase 0 fixtures valid) plus an echo of
-    # the (possibly masked) user text so Phase 2 restoration can be verified.
+    # 固定aliasと受信したマスク済み文字列を含め、両方の復元を確認できるようにする。
     echo = _echo_user_text(body)
     return f"Connected to {ALIAS_IN_RESPONSE}. :: {echo}" if echo else f"Connected to {ALIAS_IN_RESPONSE}."
 
 
 def _chunk(text: str, size: int = 4) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
-
-
-# ---- OpenAI chat/completions -------------------------------------------------
-async def chat_completions(request: Request):
-    body = await _read(request)
-    text = _reply_text(body)
-    if body.get("stream"):
-        # Small chunks deliberately split aliases across SSE boundaries (§20).
-        chunks = [
-            {
-                "id": "chatcmpl-mock",
-                "object": "chat.completion.chunk",
-                "choices": [{"index": 0, "delta": {"content": tok}, "finish_reason": None}],
-            }
-            for tok in _chunk(text)
-        ]
-        lines = [f"data: {json.dumps(c)}\n\n" for c in chunks]
-        lines.append("data: [DONE]\n\n")
-        return _sse(lines)
-    return JSONResponse(
-        {
-            "id": "chatcmpl-mock",
-            "object": "chat.completion",
-            "model": body.get("model", "gpt-4o"),
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        }
-    )
 
 
 # ---- OpenAI Responses API ----------------------------------------------------
@@ -260,8 +222,6 @@ async def health(request: Request):
 # Accept both /v1/* and /* path variants (the proxy may or may not add the prefix).
 routes = [
     Route("/health", health, methods=["GET"]),
-    Route("/chat/completions", chat_completions, methods=["POST"]),
-    Route("/v1/chat/completions", chat_completions, methods=["POST"]),
     Route("/responses", responses, methods=["POST"]),
     Route("/v1/responses", responses, methods=["POST"]),
     Route("/messages", messages, methods=["POST"]),
