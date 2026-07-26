@@ -14,8 +14,11 @@
   - **Codex 画面に原本が復元表示**（山田太郎 / 株式会社極秘技研）— LiteLLM で不可能だった
     Responses ストリーミング復元がクライアントまで到達。
 - Anthropic Messages（stream/非stream）も同プロキシで mask+restore・0 漏えいを確認。
-- 依存: Python 3.12 / Starlette / uvicorn / httpx / pydantic / cryptography（`requirements.lock`、36 pkg）。
-  Presidio 日本語 NER は任意（`presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0`）。
+- 依存: Python 3.12 / Starlette / uvicorn / httpx / pydantic / cryptography
+  （`requirements.lock`）に加え、固定日本語NER層（`requirements-ner.lock`）。
+- 標準modelは`tsmatz/xlm-roberta-ner-japanese`の固定revision。全artifactを
+  SHA-256検証し、offline loadする。出典・ライセンスは
+  [model-licenses.md](model-licenses.md)を参照。
 
 ---
 
@@ -33,7 +36,7 @@
 | Python | 3.12.13 | 要件 §36 は 3.12+。Homebrew `python@3.12` を使用 |
 | 依存管理 | pip + venv | ユーザー合意。`requirements.lock` に `pip freeze` を固定（[ADR-0002](adr/0002-pip-venv-over-uv.md)） |
 | LiteLLM | `litellm[proxy]==1.93.0` | 最新安定版（2026-07-19）。**供給網インシデント（2026-03）は 1.82.7/1.82.8 のみ**が対象で本版は安全 |
-| Presidio | `presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0` | in-process 日本語 NER（任意、[ADR-0004](adr/0004-presidio-in-process.md)、[requirements-presidio.lock](../requirements-presidio.lock)） |
+| Presidio | `presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0` | 当時の任意日本語NER。ADR-0012で撤去済み（[ADR-0004](adr/0004-presidio-in-process.md)） |
 | OpenAI SDK | `openai==2.48.0` | litellm 1.93.0 が推移的に固定 |
 | Anthropic SDK | `anthropic>=0.40,<1` | Phase 3 で確定 |
 | cryptography | `48.0.1` | litellm 推移依存に合わせて上限を `<49` に調整 |

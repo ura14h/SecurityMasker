@@ -3,8 +3,7 @@
 Development tooling, not production code: nothing in ``src/`` imports it. Run it
 directly to produce the numbers recorded in ADR-0009.
 
-    python -m tests.evaluation.ner_benchmark presidio
-    python -m tests.evaluation.ner_benchmark hf <model-id>
+    python -m tests.evaluation.ner_benchmark [model-id]
 
 Metrics are reported per entity because the trade-offs differ: for a masking
 proxy, missing a PERSON is a leak, while flagging an identifier inside code
@@ -152,14 +151,6 @@ async def evaluate(detector, backend: str, load_seconds: float) -> Report:
                   load_seconds, time.monotonic() - started, _peak_rss_mb())
 
 
-def build_presidio(skip_code: bool = False):
-    from securitymasker.detectors.presidio import PresidioDetector
-
-    started = time.monotonic()
-    detector = PresidioDetector(min_score=0.4, skip_code_contexts=skip_code)
-    return detector, time.monotonic() - started
-
-
 def build_hf(model: str, skip_code: bool = False):
     from securitymasker.detectors.japanese_ner import JapaneseNerDetector
 
@@ -170,20 +161,13 @@ def build_hf(model: str, skip_code: bool = False):
 
 
 def main(argv: list[str]) -> int:
-    if not argv or argv[0] not in ("presidio", "hf"):
-        print(__doc__)
-        return 2
+    from securitymasker.models_fetch import ADOPTED_MODEL
+
     # skip_code_contexts is disabled here on purpose: the benchmark must MEASURE
     # each backend's raw behaviour in code, not the policy that hides it.
-    if argv[0] == "presidio":
-        detector, load = build_presidio()
-        name = "presidio+ja_core_news_md"
-    else:
-        if len(argv) < 2:
-            print("usage: ner_benchmark hf <model-id>")
-            return 2
-        detector, load = build_hf(argv[1])
-        name = f"hf:{argv[1]}"
+    model = argv[0] if argv else ADOPTED_MODEL
+    detector, load = build_hf(model)
+    name = f"hf:{model}"
     if not getattr(detector, "available", False):
         print(f"{name}: NOT AVAILABLE (dependency or model missing)")
         return 1

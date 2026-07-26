@@ -1,7 +1,7 @@
 """中核data model（``doc/00-First-Order.md`` §29）。
 
 Kept dependency-free (stdlib only) so the masking core never imports LiteLLM,
-Presidio, or provider SDKs. Enums make the string taxonomies explicit and
+model libraries or provider SDKs. Enums make the string taxonomies explicit and
 ``mypy --strict`` checkable.
 """
 

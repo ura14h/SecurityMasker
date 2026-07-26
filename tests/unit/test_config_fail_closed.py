@@ -101,7 +101,7 @@ def test_out_of_range_priority_rejected(tmp_path) -> None:
 
 def test_out_of_range_min_score_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 1\npresidio:\n  min_score: 4.2\n")
+        _load_raw(tmp_path, "version: 1\nner:\n  min_score: 4.2\n")
 
 
 def test_parse_duration_units() -> None:
@@ -170,18 +170,11 @@ def test_ner_required_missing_dependency_fails_startup() -> None:
         JapaneseNerDetector(model="does-not-exist/model", required=True)
 
 
-def test_presidio_required_bad_model_fails_startup() -> None:
-    from securitymasker.detectors.presidio import PresidioDetector
-
-    with pytest.raises(ConfigError):
-        PresidioDetector(model_name="__no_such_spacy_model__", required=True)
-
-
 # --- P0-6: a runtime detector fault blocks (closed) / may skip fuzzy (open) ------
 
 
 class _Boom:
-    name = "presidio"  # a fail-open-eligible (fuzzy) detector name
+    name = "jp_ner"  # a fail-open-eligible (fuzzy) detector name
 
     async def detect(self, context: DetectionContext) -> list:
         raise DetectionError("simulated runtime fault")

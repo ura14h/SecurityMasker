@@ -159,24 +159,17 @@ def check_detectors(config: Any, detectors: Any = None) -> CheckResult:
 def check_ner_models(config: Any, detectors: Any = None) -> CheckResult:
     """構築済みpipelineからNER availabilityを報告する。
 
-    Constructing fresh detectors here would load spaCy/HF a second (and, with the
+    Constructing fresh detectors here would load HF NER a second (and, with the
     engine, a third) time — minutes of startup and a duplicated ~800MB for a
     diagnostic. So we inspect what was built rather than building again.
     """
     if config is None:
         return _skip("detectors.ner", "no config loaded")
-    if not config.presidio.enabled and not config.ner.model:
+    if not config.ner.model:
         return _ok("detectors.ner", "no NER configured (dictionary + deterministic only)")
 
     built = {getattr(d, "name", ""): d for d in (detectors or [])}
     notes = []
-    if config.presidio.enabled:
-        detector = built.get("presidio")
-        if detector is None or not getattr(detector, "available", False):
-            return _fail("detectors.ner",
-                         f"presidio enabled but model {config.presidio.model_name!r} "
-                         "is unavailable")
-        notes.append(f"presidio:{config.presidio.model_name}")
     if config.ner.model:
         detector = built.get("jp_ner")
         if detector is None or not getattr(detector, "available", False):

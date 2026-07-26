@@ -11,7 +11,8 @@
   （implemented / partial / 未実装 を明示）
 - 主要な設計判断: [ADR-0007 alias長](docs/adr/0007-alias-token-length.md) /
   [ADR-0008 tenant+user identity](docs/adr/0008-tenant-user-identity.md) /
-  [ADR-0009 日本語NER](docs/adr/0009-japanese-ner-backend.md)
+  [ADR-0009 日本語NER](docs/adr/0009-japanese-ner-backend.md) /
+  [ADR-0012 配布設計](docs/adr/0012-renew-package-design.md)
 
 > ⚠️ `SECURITYMASKER_CONFIG`（マスキング辞書）は**必須**です。未設定だと起動に失敗します
 > （fail-closed）。マスキングなしの開発モードは `SECURITYMASKER_DEV_TRANSPARENT=1` を明示した
@@ -83,11 +84,15 @@ securitymasker gateway --port 4000            # 透過マスキングプロキ�
 ## 開発環境セットアップ（pip + venv）
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-# 任意: 日本語 NER（Presidio + spaCy）
-pip install -e ".[presidio]" && python -m spacy download ja_core_news_md
+./scripts/setup
+source .venv/bin/activate
+pip install -e ".[dev]"  # 開発・テストを行う場合だけ
 ```
+
+標準setupは、固定した日本語NER依存とmodelを取得して全artifactを検証します。実行中に
+modelを暗黙downloadすることはなく、欠落・改変・load失敗時はGatewayを起動しません。
+modelの出典とライセンス確認は
+[`docs/model-licenses.md`](docs/model-licenses.md)を参照してください。
 
 固定バージョンは [`docs/compatibility.md`](docs/compatibility.md)、置いた前提は
 [`docs/adr/`](docs/adr/) を参照。

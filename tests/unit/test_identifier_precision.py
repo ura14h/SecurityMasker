@@ -182,6 +182,6 @@ def test_only_measured_builtin_rules_are_guarded() -> None:
     from securitymasker.detectors.identifiers import GUARDED_DETECTORS, is_guarded
 
     for never in ("dictionary", "user_regex", "secret_patterns", "existing_alias",
-                  "presidio", "jp_ner"):
+                  "jp_ner"):
         assert not is_guarded(never), f"{never} findings must never be suppressed"
     assert "jp_phone" in GUARDED_DETECTORS and "formats" in GUARDED_DETECTORS

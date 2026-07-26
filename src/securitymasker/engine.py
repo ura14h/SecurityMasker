@@ -43,7 +43,7 @@ REDACTION_MARK = "[REDACTED]"
 # a runtime error; every other detector (dictionary, secrets, regex, formats, My
 # Number, and anything new) always fails closed so critical secrets never leak on
 # a detector fault (doc/06 P0-6, §26).
-_FAIL_OPEN_ELIGIBLE = frozenset({"presidio", "jp_ner"})
+_FAIL_OPEN_ELIGIBLE = frozenset({"jp_ner"})
 
 
 def iter_strings(node: Any) -> Iterator[str]:

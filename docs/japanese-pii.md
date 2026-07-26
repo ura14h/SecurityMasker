@@ -1,10 +1,10 @@
 # 日本語PII検出方針（§14、§31）
 
-日本固有情報は Presidio 標準だけでは十分に検知できない前提で、三層構成にしています（§14）。
+日本固有情報を一つの検出方式だけで十分に扱えるとは仮定せず、三層構成にする（§14）。
 
 1. **ユーザー登録辞書**（最優先・最信頼） — 氏名・会社名・プロジェクト名など（`entities:`）。
 2. **形式・チェックサム・文脈語ベースの Recognizer**（決定論的） — 下表。
-3. **日本語 NER**（任意・モデル差し替え可） — `ner.model` 設定時のみ有効（§14.1、ハードコードしない）。
+3. **日本語 NER**（標準・既定ON） — 固定modelで未登録の一般的な固有表現を補う。
 
 ## 決定論的 Recognizer
 
@@ -27,38 +27,39 @@
 - `123-4567`（商品番号）→ 郵便番号にしない、`build_id` の数字列 → 電話にしない（文脈必須）。
 - チェックサム不一致のマイナンバー/カードは検知しない。
 
-## Presidio の位置づけ（§13, ADR-0004）
+## 標準日本語NER
 
-Presidio は**検出器**としてのみ利用（in-process、`presidio` extra）。alias 生成・可逆マッピング・
-復元・構造保持・ストリーミング復元は SecurityMasker が管理。Presidio 未インストール時は当該
-Detector が安全に no-op します。
-
-### 実モデルの導入（日本語 NER を有効化）
+`scripts/setup`は標準依存を固定lockから導入し、次のmodelを利用者のローカルcacheへ取得する。
 
 ```bash
-pip install -e ".[presidio]"
-python -m spacy download ja_core_news_md      # 約72MB、SudachiPy トークナイザ同梱
+./scripts/setup
 ```
 
-固定バージョン: `presidio-analyzer==2.2.364` / `spacy==3.8.14` / `ja_core_news_md==3.8.0`
-（[`../requirements-presidio.lock`](../requirements-presidio.lock)）。
-
-config で有効化:
+`securitymasker init`が生成するv2設定では既定ONである。
 
 ```yaml
-presidio:
+japanese_ner:
   enabled: true
-  language: ja
-  model_name: ja_core_news_md
-  min_score: 0.5
-  skip_code_contexts: true   # §17: コード領域では NER を無効化
+  model: tsmatz/xlm-roberta-ner-japanese
+  revision: aba094e118d5ffc622e9b25e07edc49f9dd85feb
+  min_score: 0.7
+  local_files_only: true
+  allow_unverified_model: false
 ```
 
-spaCy 日本語モデルの NER（PERSON/ORG/LOC）を Presidio 経由で取得します。**辞書未登録の氏名・
-組織・地名**を検出できます（例: 佐藤花子 → `PERSON`、未来創研株式会社 → `ORGANIZATION`）。
-NER は最も信頼度が低い層のため **priority=80**（辞書・決定論 Recognizer が重複時に優先、§40-10）、
-コード文脈では既定で無効（§17）。実モデルの検証テストは `tests/unit/test_presidio.py`
-（Presidio 未導入環境では自動 skip）。
+model ID、revision、weight/tokenizer/config全artifactのsizeとSHA-256をmanifestへ固定する。
+runtimeは検証済みsnapshotのローカルpathだけを`transformers`へ渡し、request処理中にnetwork
+へ到達しない。model欠落、digest不一致、load失敗、label schema不一致、offset取得不能、
+推論失敗は空結果へ変換せず、起動またはrequestをfail-closedで拒否する。
+
+NERは**辞書未登録の氏名・組織・地名**を検出できる。ただし組織固有のproject名や秘密語を
+推測できるとは保証しないため、利用者辞書が最優先の保護層である。NERはpriority 80とし、
+重複時は辞書・決定論的Recognizerを優先する。code文脈ではfuzzy NERだけを既定で無効にするが、
+辞書・secret pattern・形式検出は全contextで動作する。
+
+実modelを使うrelease gateは`SM_REQUIRE_MODEL=1`を設定し、
+`tests/unit/test_standard_ner.py`と`tests/unit/test_model_supply_chain.py`を実行する。
+出典と再配布条件は[model-licenses.md](model-licenses.md)を参照。
 
 ## 評価（§31）
 

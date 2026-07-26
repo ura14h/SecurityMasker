@@ -1,9 +1,8 @@
 """固定したHugging Face token-classification modelによる日本語NER（§14.1、ADR-0009）。
 
-Optional and OFF by default. The dictionary and the deterministic recognizers are
-the trusted layer; this exists only to catch what is not registered — an
-unfamiliar person, company or place name — and it never gets to be the reason we
-call something safe (invariant 9).
+標準構成では固定済みmodelをONにする。辞書と決定論的recognizerを信頼の基礎としつつ、
+未登録の氏名・法人名・地名を補う。NERの空振りだけを「安全」の根拠にはしない
+（不変条件9）。
 
 Safety properties that are not negotiable here, because a NER backend fails in
 ways that are silent:
@@ -133,7 +132,7 @@ class JapaneseNerDetector:
             if required:
                 raise ConfigError(
                     f"ner.model={model!r} is configured but 'transformers' is not "
-                    "installed (pip install -e '.[ner]')."
+                    "installed. Run the repository's scripts/setup first."
                 ) from exc
             return
 

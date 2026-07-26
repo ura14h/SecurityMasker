@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "SecurityMasker maintainers" }]
-keywords = ["pii", "masking", "security", "llm-proxy", "presidio", "pseudonymization"]
+keywords = ["pii", "masking", "security", "llm-proxy", "pseudonymization"]
 
 # The gateway is a purpose-built Starlette + httpx transparent proxy (ADR-0006);
 # there is no LiteLLM dependency. Runtime deps are range-pinned here and exactly
@@ -26,21 +26,12 @@ dependencies = [
     "uvicorn>=0.30",
     "structlog>=24.1,<26",
     "PyYAML>=6.0,<7",
-]
-
-[project.optional-dependencies]
-# Presidio-based detection (in-process). Pulls spaCy; JA model installed separately.
-presidio = [
-    "presidio-analyzer>=2.2.355,<3",
-]
-# Japanese NER for UNREGISTERED names/orgs/places (ADR-0009). Optional and OFF by
-# default: the dictionary and deterministic detectors are the trusted layer, and
-# this only widens recall. Pulls torch, so it is never a runtime dependency.
-ner = [
     "transformers>=4.40,<5",
     "torch>=2.2,<3",
     "sentencepiece>=0.2,<1",
 ]
+
+[project.optional-dependencies]
 # Redis-backed session store (Phase 5).
 redis = [
     "redis>=5.0,<9",
@@ -79,7 +70,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 # Secret-pattern table rows are naturally long (regex + metadata on one line).
 "src/securitymasker/detectors/secret_patterns.py" = ["E501"]
 # Entity/label mapping tables are naturally long (tuple rows on one line).
-"src/securitymasker/detectors/presidio.py" = ["E501"]
 "src/securitymasker/detectors/japanese_ner.py" = ["E501"]
 "src/securitymasker/detectors/formats.py" = ["E501"]
 # Proxy log handle is intentionally held open for the fixture lifetime.
@@ -91,10 +81,9 @@ strict = true
 packages = ["securitymasker"]
 mypy_path = "src"
 
-# Optional, import-guarded ML dependencies (presidio / transformers): the detectors
-# no-op when they are absent, so their missing stubs must not fail type-checking.
+# transformers ships incomplete type information for its dynamic factories.
 [[tool.mypy.overrides]]
-module = ["presidio_analyzer", "presidio_analyzer.*", "transformers", "transformers.*"]
+module = ["transformers", "transformers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

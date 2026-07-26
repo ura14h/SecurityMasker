@@ -47,8 +47,5 @@ japanese_pii:
   enabled: true
   my_number_restore_policy: block
 
-presidio:
-  enabled: false
-
 ner:
   model: null

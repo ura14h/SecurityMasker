@@ -183,7 +183,7 @@ async def test_both_settings_coexist_in_one_request() -> None:
 
 @pytest.mark.asyncio
 async def test_no_fuzzy_detector_means_no_fuzzy_limit() -> None:
-    """Presidio and NER are off by default, so the default build has none.
+    """v1互換設定ではNERが無効なので既定buildにfuzzy detectorはない。
 
     Rejecting a large request for exceeding a budget that governs work nobody
     asked for would fail closed against a threat that is not present.

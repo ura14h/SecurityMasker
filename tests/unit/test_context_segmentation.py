@@ -137,9 +137,9 @@ def test_code_like_covers_every_non_prose_code_kind() -> None:
 
 
 class _FuzzyStub:
-    """Stands in for Presidio/HF NER: opts out of code, records where it ran."""
+    """HF NERの代役としてcodeを除外し、実行箇所を記録する。"""
 
-    name = "presidio"
+    name = "jp_ner"
     skip_code_contexts = True
 
     def __init__(self) -> None:
@@ -430,7 +430,7 @@ async def test_detector_call_count_is_bounded_end_to_end() -> None:
     calls = {"n": 0}
 
     class _Counting:
-        name = "presidio"
+        name = "jp_ner"
         skip_code_contexts = True
 
         async def detect(self, context):

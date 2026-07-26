@@ -74,19 +74,8 @@ japanese_pii:
   enabled: true
   my_number_restore_policy: block   # マイナンバーは既定でブロック（§10）
 
-# Optional: Microsoft Presidio as an in-process detector (Japanese NER for
-# unregistered names/orgs/locations). Enable after:
-#   pip install -e ".[presidio]" && python -m spacy download ja_core_news_md
-# No-ops if not installed. NER is lowest-priority and skipped in code (§17).
-presidio:
-  enabled: false
-  language: ja
-  model_name: ja_core_news_md
-  min_score: 0.5
-  skip_code_contexts: true
-
-# Optional: Japanese NER. Set a Hugging Face token-classification model id to
-# enable (needs `transformers`). The model is never hardcoded (§14.1).
+# Legacy v1 example. The v2 starter created by `securitymasker init` enables the
+# pinned Japanese NER model by default.
 ner:
   model: null
   min_score: 0.85

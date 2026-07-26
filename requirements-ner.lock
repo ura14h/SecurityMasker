@@ -1,14 +1,14 @@
-# Exact lock for the OPTIONAL Japanese NER extra (ADR-0009/0010).
+# Exact lock for the standard Japanese NER layer (ADR-0009/0010/0012).
 # COMPLETE transitive closure of transformers/torch/sentencepiece, computed
 # from installed metadata rather than a hand-written name filter — which is
 # how huggingface-hub (a hard transformers dependency) went missing before.
-# Packages already pinned by requirements.lock are omitted: the ner stage
+# Packages already pinned by requirements.lock are omitted: the setup step
 # layers on top of it, so repeating them would create two sources of truth.
 #
 #   pip install -r requirements.lock -r requirements-ner.lock
 #
-# The ner Docker stage installs this with --no-deps, so anything missing here
-# fails the build rather than being resolved dynamically at build time.
+# `scripts/setup` installs this with --no-deps, so anything missing here fails
+# setup rather than being resolved dynamically.
 charset-normalizer==3.4.9
 filelock==3.32.0
 fsspec==2026.6.0

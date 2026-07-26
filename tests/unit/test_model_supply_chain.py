@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 
 from securitymasker.models_fetch import (
+    ADOPTED_MODEL,
+    ADOPTED_REVISION,
     MANIFESTS,
     UNSAFE_WEIGHT_SUFFIXES,
     Artifact,
@@ -34,8 +36,8 @@ from securitymasker.models_fetch import (
     verify_directory,
 )
 
-ADOPTED = "tsmatz/xlm-roberta-ner-japanese"
-ADOPTED_REV = "aba094e118d5ffc622e9b25e07edc49f9dd85feb"
+ADOPTED = ADOPTED_MODEL
+ADOPTED_REV = ADOPTED_REVISION
 
 
 def _manifest(tmp_path, contents: dict[str, bytes]) -> ModelManifest:
@@ -60,6 +62,24 @@ def test_adopted_model_has_a_manifest() -> None:
     assert "model.safetensors" in names
     assert "tokenizer.json" in names
     assert "sentencepiece.bpe.model" in names
+
+
+def test_adopted_model_manifest_records_provenance_and_licenses() -> None:
+    manifest = manifest_for(ADOPTED, ADOPTED_REV)
+    assert manifest is not None
+    assert manifest.license_id == "MIT"
+    assert manifest.base_model == "FacebookAI/xlm-roberta-base"
+    assert manifest.base_model_license_id == "MIT"
+    assert manifest.training_dataset == "stockmarkteam/ner-wikipedia-dataset"
+    assert manifest.training_dataset_license_id == "CC-BY-SA-3.0"
+    assert all(
+        value.startswith("https://")
+        for value in (
+            manifest.license_url,
+            manifest.base_model_license_url,
+            manifest.training_dataset_license_url,
+        )
+    )
 
 
 def test_no_manifest_lists_a_pickle_artifact() -> None:

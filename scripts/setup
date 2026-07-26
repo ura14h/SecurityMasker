@@ -16,8 +16,13 @@ fi
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     -r "$PROJECT_DIRECTORY/requirements.lock"
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
+    --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
+"$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     --no-deps -e "$PROJECT_DIRECTORY"
+"$VENV_DIRECTORY/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" models fetch \
+    --model tsmatz/xlm-roberta-ner-japanese \
+    --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
 
-printf '%s\n' "SecurityMasker source environment is ready."
+printf '%s\n' "SecurityMasker source environment and verified Japanese NER model are ready."
 printf '%s\n' "Initialize: $VENV_DIRECTORY/bin/python $PROJECT_DIRECTORY/securitymasker.py init"
 printf '%s\n' "Run:        $VENV_DIRECTORY/bin/python $PROJECT_DIRECTORY/securitymasker.py gateway"

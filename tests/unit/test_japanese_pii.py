@@ -92,18 +92,13 @@ async def test_date_of_birth_context_promotion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_optional_adapters_no_op_when_unavailable() -> None:
-    """Presidio/NER cleanly no-op when the ML extras/models are not installed (§13)."""
+async def test_unconfigured_legacy_ner_is_disabled() -> None:
+    """v1互換設定ではmodel未指定のNERが無効になる。"""
     from securitymasker.detectors.japanese_ner import JapaneseNerDetector
-    from securitymasker.detectors.presidio import PresidioDetector
 
-    ner = JapaneseNerDetector(model=None)  # no model -> disabled, never hardcoded
+    ner = JapaneseNerDetector(model=None)
     assert ner.available is False
     assert await ner.detect(ctx("山田太郎")) == []
-
-    presidio = PresidioDetector()
-    # Whether or not presidio is installed, detect must not raise.
-    assert await presidio.detect(ctx("山田太郎")) == [] or presidio.available
 
 
 @pytest.mark.asyncio

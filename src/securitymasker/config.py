@@ -36,6 +36,7 @@ from securitymasker.detectors.secret_patterns import build_secret_detector
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError
 from securitymasker.models import ReplacementProfile, RestorePolicy
+from securitymasker.models_fetch import ADOPTED_MODEL, ADOPTED_REVISION
 from securitymasker.normalization import NormForm
 from securitymasker.tool_trust import ToolTrustPolicy
 
@@ -218,18 +219,8 @@ class JapanesePiiConfig(BaseModel):
         return v
 
 
-class PresidioConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    language: str = "ja"
-    model_name: str = "ja_core_news_md"
-    min_score: float = Field(default=0.5, ge=0.0, le=1.0)
-    skip_code_contexts: bool = True
-
-
 class NerConfig(BaseModel):
-    """任意のHF日本語NER設定。``model``未指定時は無効（ADR-0009）。"""
+    """HF日本語NER設定。v1互換設定では``model``未指定時に無効。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -295,6 +286,20 @@ class JapaneseNerV2Config(NerConfig):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+    model: Literal["tsmatz/xlm-roberta-ner-japanese"] | None = ADOPTED_MODEL
+    revision: Literal["aba094e118d5ffc622e9b25e07edc49f9dd85feb"] | None = (
+        ADOPTED_REVISION
+    )
+    local_files_only: Literal[True] = True
+    allow_unverified_model: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _enabled_requires_standard_model(self) -> JapaneseNerV2Config:
+        if self.enabled and (self.model is None or self.revision is None):
+            raise ValueError(
+                "enabled japanese_ner requires the pinned standard model and revision"
+            )
+        return self
 
 
 class DetectorsV2Config(BaseModel):
@@ -355,7 +360,6 @@ class SecurityMaskerConfig(BaseModel):
     enable_secret_detector: bool = True
     enable_format_detectors: bool = True
     japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
-    presidio: PresidioConfig = Field(default_factory=PresidioConfig)
     ner: NerConfig = Field(default_factory=NerConfig)
     tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
     # v2だけが持つ利用者向けruntime/state metadata。engine側は従来fieldを使う。
@@ -634,20 +638,6 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
         detectors.append(JapaneseIdentifierDetector())
         if config.japanese_pii.corporate_number:
             detectors.append(JapaneseCorporateNumberDetector())
-    if config.presidio.enabled:
-        from securitymasker.detectors.presidio import PresidioDetector
-
-        # configで有効なら必須とし、load失敗時は黙ってskipせず起動を失敗させる。
-        # silently no-op (doc/06 P0-6).
-        detectors.append(
-            PresidioDetector(
-                language=config.presidio.language,
-                model_name=config.presidio.model_name,
-                min_score=config.presidio.min_score,
-                skip_code_contexts=config.presidio.skip_code_contexts,
-                required=True,
-            )
-        )
     if config.ner.model:
         from securitymasker.detectors.japanese_ner import JapaneseNerDetector
 
@@ -668,7 +658,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
 # fuzzyなmodel-backed detectorは誤検出で全requestをblockし得るため最終guardから除く。
 # scan structural/unknown fields too, where an NER false positive would block a
 # legitimate request. Every DETERMINISTIC detector is included (doc/06 P0-4).
-_FUZZY_DETECTOR_NAMES = frozenset({"presidio", "jp_ner", "existing_alias"})
+_FUZZY_DETECTOR_NAMES = frozenset({"jp_ner", "existing_alias"})
 
 
 def build_leak_scanners(
@@ -688,7 +678,7 @@ def build_leak_scanners(
     replacements (an email-shaped alias, a doc-range IPv4, ...) never self-trigger.
 
     Pass ``detectors`` to REUSE an already-built pipeline. Building a second one
-    would load spaCy/HF models a second time, roughly doubling startup time and
+    would load the HF model a second time, roughly doubling startup time and
     resident memory; the deterministic detectors here are stateless, so sharing
     the same instances is safe.
     """
@@ -701,7 +691,7 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         value for entity in config.entities for value in entity.resolved_values()
     )
     # pipelineは一度だけbuildしてleak scannerと共有し、modelの二重loadを防ぐ。
-    # build_detectors() would load the spaCy/HF models again (doc/06 P2 review).
+    # build_detectors() would load the HF model again (doc/06 P2 review).
     detectors = build_detectors(config)
     return MaskingEngine(
         detectors,

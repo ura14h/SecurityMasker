@@ -10,7 +10,7 @@ import pytest
 
 from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.bootstrap import initialize_layout
-from securitymasker.config import build_engine, load_config
+from securitymasker.config import load_config
 from securitymasker.engine import MaskingEngine
 from securitymasker.errors import ConfigError, SessionError
 from securitymasker.gateway.runtime import GatewayRuntime
@@ -157,7 +157,7 @@ async def test_v2_runtime_creates_database_on_first_gateway_start(
     monkeypatch.setenv("SECURITYMASKER_CONFIG", str(layout.config))
     monkeypatch.delenv("SECURITYMASKER_STORE", raising=False)
 
-    runtime = GatewayRuntime.from_env(engine=build_engine(config), config=config)
+    runtime = GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)
     assert isinstance(runtime.store, SQLiteSessionStore)
     assert config.state.database.is_file()
     assert runtime.product_mode == "claude"
@@ -175,7 +175,7 @@ async def test_cli_mode_override_is_bound_into_new_database_metadata(
     monkeypatch.setenv("SECURITYMASKER_CONFIG", str(layout.config))
     monkeypatch.setenv("SECURITYMASKER_PRODUCT_MODE", "claude")
 
-    runtime = GatewayRuntime.from_env(engine=build_engine(config), config=config)
+    runtime = GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)
     assert runtime.product_mode == "claude"
     runtime.store.close()
 
@@ -197,4 +197,4 @@ def test_v2_runtime_refuses_legacy_store_override(
     monkeypatch.setenv("SECURITYMASKER_STORE", "memory")
 
     with pytest.raises(ConfigError):
-        GatewayRuntime.from_env(engine=build_engine(config), config=config)
+        GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)

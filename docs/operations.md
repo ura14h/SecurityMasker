@@ -213,7 +213,7 @@ securitymasker doctor --config <dictionary.yaml> --json   # monitoring向け
 ```
 
 いずれかの check が `FAIL` なら非0で終了します。Python／dependency version、
-config load と engine build、全 `value_from_env`、detector pipeline、Presidio／HF
+config load と engine build、全 `value_from_env`、detector pipeline、固定HF
 model availability、fail mode、session TTL、store backend、Redis package／URL、
 master key の形式、AES-GCM round-trip、live store の write/read/delete probe と
 cleanup、identity mode と secret、upstream scheme／host、dev-transparent mode、

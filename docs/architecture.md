@@ -35,7 +35,7 @@ OpenAI／Anthropic／ChatGPT backend   （マスク済みデータだけを受�
 - **engine** — normalize → detect → policy resolve → alias → replace → leak re-scan
   というマスク処理と、alias → original という復元処理を統括します。
 - **detectors/** — `existing_alias`、`dictionary`、`regex`、`secret_patterns`、
-  `formats`、日本語 recognizer、任意の `presidio`／`japanese_ner`。
+  `formats`、日本語 recognizer、標準搭載の`japanese_ner`。
 - **aliases/** — replacement `profiles` と collision-safe な `factory`。
 - **sessions/** — `store` Protocol、`memory`、`redis`、`crypto`。Redisではowner token
   の確認と暗号化sessionの `SET`／`DEL` をLuaで一つのatomic操作にし、lease失効後の
@@ -101,5 +101,5 @@ client まで到達します。
 
 masking core（`engine`、`policy`、`aliases`、`detectors`、`normalization`）は
 `gateway`、`integrations`、`cli`、`doctor` を import しません。任意依存
-（torch、transformers、presidio、redis）は function 内で import し、最小構成では
-読み込みません。
+（torch、transformers、redis）は必要箇所で遅延importします。標準Gatewayは起動時に
+固定NER modelを検証してloadし、欠落時にNERなしで続行しません。

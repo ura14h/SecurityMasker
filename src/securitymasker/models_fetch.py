@@ -27,11 +27,15 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 from securitymasker.errors import ConfigError
 
 # load時に任意codeを実行するweight形式。常に拒否する。
 UNSAFE_WEIGHT_SUFFIXES = (".bin", ".pt", ".pth", ".ckpt", ".pkl")
+
+ADOPTED_MODEL: Final = "tsmatz/xlm-roberta-ner-japanese"
+ADOPTED_REVISION: Final = "aba094e118d5ffc622e9b25e07edc49f9dd85feb"
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,14 @@ class ModelManifest:
     model: str
     revision: str
     artifacts: tuple[Artifact, ...]
+    license_id: str = ""
+    license_url: str = ""
+    base_model: str = ""
+    base_model_license_id: str = ""
+    base_model_license_url: str = ""
+    training_dataset: str = ""
+    training_dataset_license_id: str = ""
+    training_dataset_license_url: str = ""
 
     @property
     def key(self) -> str:
@@ -65,10 +77,10 @@ class ModelManifest:
 # 固定値を公開するmodelのmanifest（ADR-0009）。配布byteからdigestを取得する。
 # the Hugging Face registry API at adoption time and are reproduced in the ADR.
 MANIFESTS: dict[str, ModelManifest] = {
-    "tsmatz/xlm-roberta-ner-japanese@aba094e118d5ffc622e9b25e07edc49f9dd85feb":
+    f"{ADOPTED_MODEL}@{ADOPTED_REVISION}":
         ModelManifest(
-            model="tsmatz/xlm-roberta-ner-japanese",
-            revision="aba094e118d5ffc622e9b25e07edc49f9dd85feb",
+            model=ADOPTED_MODEL,
+            revision=ADOPTED_REVISION,
             # weightだけでなくtransformersが読む全fileを固定する。
             # carries id2label — the label schema we validate against — and the
             # architecture; the tokenizer files decide how text is split. Altering
@@ -99,6 +111,21 @@ MANIFESTS: dict[str, ModelManifest] = {
                 Artifact("tokenizer_config.json",
                          "ae42ec38b1bce8cda1432566534c207e7bf573d4fd0178af8ae31ce8551d097c",
                          451),
+            ),
+            license_id="MIT",
+            license_url=(
+                "https://huggingface.co/tsmatz/xlm-roberta-ner-japanese/"
+                "blob/aba094e118d5ffc622e9b25e07edc49f9dd85feb/README.md"
+            ),
+            base_model="FacebookAI/xlm-roberta-base",
+            base_model_license_id="MIT",
+            base_model_license_url=(
+                "https://huggingface.co/FacebookAI/xlm-roberta-base"
+            ),
+            training_dataset="stockmarkteam/ner-wikipedia-dataset",
+            training_dataset_license_id="CC-BY-SA-3.0",
+            training_dataset_license_url=(
+                "https://github.com/stockmarkteam/ner-wikipedia-dataset"
             ),
         ),
 }
@@ -232,7 +259,7 @@ def fetch(
         from huggingface_hub import snapshot_download
     except ImportError as exc:
         raise ConfigError(
-            "fetching models needs the NER extra (pip install -e '.[ner]')"
+            "fetching models needs the standard NER dependencies; run scripts/setup"
         ) from exc
 
     directory = Path(snapshot_download(

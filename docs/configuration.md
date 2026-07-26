@@ -76,11 +76,8 @@ japanese_pii:
   enabled: true
   my_number_restore_policy: block
 
-presidio:                      # 任意、in-process。未導入なら無効
-  enabled: false
-  language: ja
-ner:                           # 任意の日本語 NER。model を hardcode しない（§14.1）
-  model: null                  # 例：HF token-classification model ID
+ner:                           # v1互換schema。v2では固定modelを既定ON
+  model: null
 ```
 
 ## 置換 profile（§9）
@@ -115,7 +112,7 @@ ner:                           # 任意の日本語 NER。model を hardcode し
 
 検出前に message body を prose、fenced／inline Markdown code、shell、JSON、YAML、
 diff の typed span へ分割します（§17）。code-like span を除外するのは
-`skip_code_contexts` を宣言する detector（Presidio と HF NER）だけです。
+`skip_code_contexts` を宣言する HF NER だけです。
 dictionary と全 deterministic detector はすべての context で動かします。code fence
 に貼られた秘密も秘密だからです。確実に分類できない text は、無効になる detector が
 最も少ない `prose` として扱います。
