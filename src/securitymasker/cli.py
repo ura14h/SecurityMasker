@@ -1,15 +1,19 @@
-"""SecurityMasker CLI（argparse、ADR-0003）。
+"""SecurityMaskerのコマンドラインインターフェース。
 
-Never prints original sensitive values by default (§12): ``preview`` shows the
-MASKED text and per-entity counts, not the originals. Subcommands:
+利用者の機密値は既定で表示しない。``preview``はマスク後の文字列とentity種別ごとの
+検出件数だけを表示し、元の値を列挙しない。主なコマンドは次のとおり。
 
     securitymasker init [--mode chatgpt|claude] [--port PORT]
+    securitymasker gateway [--config PATH] [--mode MODE] [--port PORT]
     securitymasker preview "<text>" [--config PATH]
     securitymasker client-config [--config PATH]
     securitymasker config validate [--config PATH]
-    securitymasker entities list   [--config PATH]
-    securitymasker entities test "<text>" [--config PATH]
-    securitymasker doctor          [--config PATH] [--json]
+    securitymasker entities list [--config PATH]
+    securitymasker doctor [--config PATH] [--json]
+    securitymasker models fetch [--config PATH]
+
+引数なし、またはGateway用optionから開始した場合は``gateway``を補い、設定ファイルに
+modeとportを持つ通常運用を短く記述できるようにする。
 """
 
 from __future__ import annotations
@@ -70,7 +74,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_entities_list(args: argparse.Namespace) -> int:
     config = _load(args.config)
     for e in config.entities:
-        # 値自体ではなくvariant件数だけを表示する（§12）。
+        # 機密値を端末履歴へ残さないよう、値ではなくvariant件数だけを表示する。
         print(f"{e.id}\t{e.type}\t{e.replacement_profile}\t{e.restore_policy}\tvariants={len(e.resolved_values())}")
     for p in config.patterns:
         print(f"{p.id}\t{p.type}\t{p.replacement_profile}\t{p.restore_policy}\t[regex]")
@@ -100,7 +104,7 @@ def cmd_preview(args: argparse.Namespace) -> int:
 
 
 def cmd_entities_test(args: argparse.Namespace) -> int:
-    """旧command名。``preview``と同じ実装を使う。"""
+    """後方互換の``entities test``を``preview``と同じ処理で実行する。"""
     return cmd_preview(args)
 
 
@@ -113,7 +117,7 @@ def cmd_client_config(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """read-only checkを実行し、一つでもFAILなら非0で終了する。"""
+    """read-only診断を実行し、一つでもFAILなら非0で終了する。"""
     from securitymasker import doctor as checks
 
     gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", "")
@@ -122,8 +126,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         config_path = str(resolve_config_path(args.config))
     except ConfigError:
         config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
-    # 明示指定したGatewayには到達できることをoperatorが期待している。
-    # so its absence is a failure rather than a pre-flight note.
+    # 明示指定したGatewayには到達できることを利用者が期待しているため、
+    # 到達不能を起動前の注意ではなく失敗として扱う。
     require_ready = args.require_ready or args.gateway is not None
     results, _ = checks.run_checks_with_engine(
         config_path=config_path, environ=dict(os.environ), gateway=gateway,
@@ -134,16 +138,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_models_fetch(args: argparse.Namespace) -> int:
-    """固定したNER modelを取得してdigestを検証する（ADR-0009）。
+    """固定したNER modelを取得してdigestを検証する。
 
-    Deliberately a separate step from serving: the runtime loads models offline,
-    so nothing a user types can ever trigger a download.
+    Gatewayとは別の明示操作にすることで、利用者が入力した文字列を契機とするdownloadを
+    防ぎ、実行時は検証済みのlocal artifactだけを読み込めるようにする。
     """
     from securitymasker.models_fetch import fetch
 
     model, revision = args.model, args.revision
     if not model or not revision:
-        # operatorの再入力を避けるため設定済みpinへfallbackする。
+        # 利用者の再入力を避けるため、設定済みの固定値へfallbackする。
         ner = _load(args.config).ner
         model, revision = model or ner.model, revision or ner.revision
     if not model or not revision:
@@ -160,7 +164,7 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
 
 
 def cmd_gateway(args: argparse.Namespace) -> int:
-    """`SECURITYMASKER_CONFIG`を使ってSecurityMasker proxyを起動する（ADR-0006）。"""
+    """解決済みconfigを環境へ固定してSecurityMasker proxyを起動する。"""
     import uvicorn
 
     from securitymasker.gateway.app import create_app
@@ -181,7 +185,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
         f"[securitymasker] gateway on http://{host}:{port} (masking/{product_mode})",
         file=sys.stderr,
     )
-    # create_app() -> GatewayRuntime.from_env() fails closed if unconfigured (P0-1).
+    # create_app()は必須設定を再検証し、不足時は外部へ接続せず起動を拒否する。
     uvicorn.run(create_app(), host=host, port=port, log_level="warning")
     return 0
 
