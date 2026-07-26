@@ -49,6 +49,17 @@ SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査�
 
 one-file artifact、model weight、build directoryはGitへcommitしません。
 
+## source release artifact
+
+version確定・commit後、clean worktreeからarchiveとchecksumを生成します。
+
+```console
+./scripts/package-source
+```
+
+`dist/securitymasker-<version>-source.tar.gz` と同名の `.sha256` を生成します。既存artifactは
+上書きしません。tagを作る場合は、そのtag名を第1引数として指定できます。
+
 ## test data
 
 - 実在人物、実際のsecret/API key/credentialをfixtureへ入れない。

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
+import shutil
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -84,6 +87,94 @@ def test_wrong_key_and_wrong_mode_fail_closed(tmp_path: Path) -> None:
     key.chmod(0o600)
     with pytest.raises(SessionError, match="do not match"):
         SQLiteSessionStore(database, key, mode="chatgpt")
+
+
+def test_missing_key_is_not_regenerated_for_existing_database(tmp_path: Path) -> None:
+    database, key = _paths(tmp_path)
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    store.close()
+    key.unlink()
+
+    with pytest.raises(SessionError, match="FileNotFoundError"):
+        SQLiteSessionStore(database, key, mode="chatgpt")
+    assert not key.exists()
+
+
+@pytest.mark.asyncio
+async def test_database_and_key_backup_pair_restores_alias_mapping(
+    tmp_path: Path,
+) -> None:
+    database, key = _paths(tmp_path / "original")
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    session = await store.get_or_create(RAW_SESSION_ID)
+    alias = _mapping(session)
+    await store.save(session)
+    store.close()
+
+    restored_state = tmp_path / "restored"
+    restored_state.mkdir()
+    restored_database = restored_state / "securitymasker.db"
+    restored_key = restored_state / "securitymasker.key"
+    shutil.copy2(database, restored_database)
+    shutil.copy2(key, restored_key)
+
+    restored = SQLiteSessionStore(
+        restored_database, restored_key, mode="chatgpt"
+    )
+    loaded = await restored.get(RAW_SESSION_ID)
+    assert loaded is not None
+    assert MaskingEngine([]).make_restorer(loaded)(alias) == SECRET
+    restored.close()
+
+
+def test_database_and_key_from_different_backup_sets_are_rejected(
+    tmp_path: Path,
+) -> None:
+    first_database, first_key = _paths(tmp_path / "first")
+    second_database, second_key = _paths(tmp_path / "second")
+    first = SQLiteSessionStore(first_database, first_key, mode="chatgpt")
+    second = SQLiteSessionStore(second_database, second_key, mode="chatgpt")
+    first.close()
+    second.close()
+
+    with pytest.raises(SessionError, match="do not match"):
+        SQLiteSessionStore(first_database, second_key, mode="chatgpt")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("idle_ttl", "absolute_ttl"),
+    [
+        (timedelta(milliseconds=20), timedelta(hours=1)),
+        (timedelta(hours=1), timedelta(milliseconds=20)),
+    ],
+)
+async def test_expired_session_stays_expired_after_restart(
+    tmp_path: Path,
+    idle_ttl: timedelta,
+    absolute_ttl: timedelta,
+) -> None:
+    database, key = _paths(tmp_path)
+    store = SQLiteSessionStore(
+        database,
+        key,
+        mode="chatgpt",
+        idle_ttl=idle_ttl,
+        absolute_ttl=absolute_ttl,
+    )
+    await store.get_or_create(RAW_SESSION_ID)
+    store.close()
+    await asyncio.sleep(0.05)
+
+    reopened = SQLiteSessionStore(
+        database,
+        key,
+        mode="chatgpt",
+        idle_ttl=idle_ttl,
+        absolute_ttl=absolute_ttl,
+    )
+    assert await reopened.get(RAW_SESSION_ID) is None
+    reopened.close()
 
 
 def test_duplicate_active_writer_is_refused(tmp_path: Path) -> None:

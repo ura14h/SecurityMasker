@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import securitymasker
 from securitymasker.cli import main
 from securitymasker.config import load_config, resolve_config_path
 from securitymasker.errors import ConfigError
@@ -229,6 +230,26 @@ def test_source_launcher_runs_from_unrelated_working_directory(tmp_path: Path) -
     )
     assert completed.returncode == 0
     assert "SecurityMasker CLI" in completed.stdout
+
+
+def test_release_version_is_consistent() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert securitymasker.__version__ == "0.1.0"
+    assert 'version = "0.1.0"' in pyproject
+    assert "## 0.1.0" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+
+def test_source_packaging_script_is_local_and_reproducible() -> None:
+    script = (ROOT / "scripts/package-source").read_text(encoding="utf-8")
+
+    assert "git -C" in script
+    assert "archive" in script
+    assert "gzip -n" in script
+    assert "sha256sum" in script
+    assert "shasum -a 256" in script
+    assert "curl" not in script
+    assert "gh " not in script
 
 
 def test_standard_setup_does_not_install_redis() -> None:

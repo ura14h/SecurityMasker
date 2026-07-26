@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
+PYTHON="$PROJECT_DIRECTORY/.venv/bin/python"
+REFERENCE=${1:-HEAD}
+
+if [ ! -x "$PYTHON" ]; then
+    printf '%s\n' "error: run scripts/setup first" >&2
+    exit 2
+fi
+if ! git -C "$PROJECT_DIRECTORY" diff --quiet ||
+   ! git -C "$PROJECT_DIRECTORY" diff --cached --quiet; then
+    printf '%s\n' "error: source archive requires a clean worktree" >&2
+    exit 2
+fi
+
+VERSION=$(
+    "$PYTHON" -c \
+        'from securitymasker import __version__; print(__version__)'
+)
+OUTPUT_DIRECTORY="$PROJECT_DIRECTORY/dist"
+ARCHIVE="$OUTPUT_DIRECTORY/securitymasker-$VERSION-source.tar.gz"
+CHECKSUM="$ARCHIVE.sha256"
+
+if [ -e "$ARCHIVE" ] || [ -e "$CHECKSUM" ]; then
+    printf '%s\n' "error: release artifact already exists for version $VERSION" >&2
+    exit 2
+fi
+
+mkdir -p "$OUTPUT_DIRECTORY"
+git -C "$PROJECT_DIRECTORY" archive \
+    --format=tar \
+    --prefix="securitymasker-$VERSION/" \
+    "$REFERENCE" |
+    gzip -n >"$ARCHIVE"
+
+if command -v sha256sum >/dev/null 2>&1; then
+    DIGEST=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+else
+    DIGEST=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+fi
+printf '%s  %s\n' "$DIGEST" "$(basename "$ARCHIVE")" >"$CHECKSUM"
+
+printf '%s\n' "Created $ARCHIVE"
+printf '%s\n' "Created $CHECKSUM"

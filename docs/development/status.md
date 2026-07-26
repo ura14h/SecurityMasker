@@ -18,7 +18,7 @@
 | 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
 | one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
 | 旧Redis/Docker/CI/multi-tenant/run撤去 | done | 製品code/artifact削除、文書再編、回帰test |
-| release candidate | pending | clean checkout gate、version/checksum/release note、owner操作 |
+| release candidate | partial | 0.1.0、release note、checksum生成、state scenarioを整備。owner操作は下記 |
 
 ## source版の判断
 
