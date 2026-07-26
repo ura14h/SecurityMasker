@@ -115,3 +115,73 @@ async def test_the_leak_gate_does_not_block_on_client_identifiers() -> None:
         "input": "hello",
     }
     await engine.assert_no_leak_in_payload(payload)   # must not raise
+
+
+# --- the guard must never override a rule the operator wrote ----------------------
+#
+# The first version of this guard applied to every detector. An operator who
+# registered a value that happened to sit inside a UUID got no detection, no
+# masking, and the final leak gate accepted the raw value — a precision fix turned
+# into a leak, against the invariant that user-supplied rules are the MOST trusted
+# signal. These pin the scope.
+
+INSIDE = "03-9210-9274"          # a proper substring of CODEX_SESSION_ID
+
+
+def _user_regex_engine():
+    return _engine(patterns=[{
+        "id": "key", "pattern": INSIDE, "type": "API_KEY",
+        "replacement_profile": "prose_identifier", "restore_policy": "literal",
+        "priority": 200,
+    }])
+
+
+def _dictionary_engine():
+    return _engine(entities=[{
+        "id": "key", "type": "API_KEY", "values": [INSIDE],
+        "replacement_profile": "prose_identifier", "restore_policy": "literal",
+    }])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("make_engine", [_user_regex_engine, _dictionary_engine],
+                         ids=["user_regex", "dictionary"])
+async def test_user_rules_fire_inside_an_identifier(make_engine) -> None:
+    found = await make_engine().detect(CODEX_SESSION_ID)
+    assert [r.entity_type for r in found] == ["API_KEY"], (
+        "a user-supplied rule was suppressed inside a UUID"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("make_engine", [_user_regex_engine, _dictionary_engine],
+                         ids=["user_regex", "dictionary"])
+async def test_user_rules_are_masked_inside_an_identifier(make_engine) -> None:
+    """Detection is not enough — the value has to actually be replaced."""
+    from securitymasker.sessions.store import new_session
+
+    result = await make_engine().mask_text(new_session("s"), CODEX_SESSION_ID)
+    assert INSIDE not in result.masked_text
+    assert "SM_" in result.masked_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("make_engine", [_user_regex_engine, _dictionary_engine],
+                         ids=["user_regex", "dictionary"])
+async def test_the_leak_gate_blocks_a_user_registered_value_inside_an_identifier(
+    make_engine,
+) -> None:
+    from securitymasker.errors import LeakageError
+
+    with pytest.raises(LeakageError):
+        await make_engine().assert_no_leak_in_payload({"input": CODEX_SESSION_ID})
+
+
+def test_only_measured_builtin_rules_are_guarded() -> None:
+    """The guarded set is an allowlist, and must never include a trusted source."""
+    from securitymasker.detectors.identifiers import GUARDED_DETECTORS, is_guarded
+
+    for never in ("dictionary", "user_regex", "secret_patterns", "existing_alias",
+                  "presidio", "jp_ner"):
+        assert not is_guarded(never), f"{never} findings must never be suppressed"
+    assert "jp_phone" in GUARDED_DETECTORS and "formats" in GUARDED_DETECTORS

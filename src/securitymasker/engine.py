@@ -21,7 +21,11 @@ from securitymasker import policy
 from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.context import Segment, coalesce_for_detection, is_code_like, segment
 from securitymasker.detectors.base import DetectionContext, SensitiveDataDetector
-from securitymasker.detectors.identifiers import identifier_spans, inside_identifier
+from securitymasker.detectors.identifiers import (
+    identifier_spans,
+    inside_identifier,
+    is_guarded,
+)
 from securitymasker.errors import DetectionError, LeakageError, MaskingError
 from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
@@ -92,7 +96,8 @@ def _drop_inside_identifiers(
     spans = identifier_spans(text)
     if not spans:
         return found
-    return [d for d in found if not inside_identifier(spans, d.start, d.end)]
+    return [d for d in found
+            if not (is_guarded(d.detector) and inside_identifier(spans, d.start, d.end))]
 
 
 def _is_fuzzy(detector: SensitiveDataDetector) -> bool:
@@ -486,7 +491,9 @@ class MaskingEngine:
                 for hit in await scanner.detect(ctx):
                     if hit.original_value in issued or hit.normalized_value in issued:
                         continue  # one of this session's own aliases
-                    if inside_identifier(spans, hit.start, hit.end):
+                    if is_guarded(hit.detector) and inside_identifier(
+                        spans, hit.start, hit.end
+                    ):
                         # Digits that happen to sit inside a UUID. This gate walks
                         # EVERY string, including the client's own session and
                         # thread ids, so without this a request is refused whenever

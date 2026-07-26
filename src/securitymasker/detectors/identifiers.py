@@ -24,6 +24,14 @@ The rule is narrow on purpose:
 
 So this only ever removes findings that are a proper substring of an identifier,
 which is the one case where the digits provably belong to something else.
+
+**And only for the built-in shape rules.** The first version of this guard applied
+to every detector, which silently defeated the dictionary and user regexes: an
+operator who registered `03-9210-9274` as an API_KEY got no detection, no masking,
+and the final leak gate accepted the value. Suppressing a rule the operator wrote
+by hand inverts invariant 9 — the user's own rules are the MOST trusted signal —
+and turns a precision fix into a leak. Those rules mean "this exact string is
+sensitive wherever it appears", and inside an identifier is a where.
 """
 
 from __future__ import annotations
@@ -37,6 +45,28 @@ _UUID = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     r"(?![0-9a-fA-F])"
 )
+
+
+# Built-in rules that match bare digit runs, which is what collides with the hex in
+# a UUID. Everything absent from this set — `dictionary`, `user_regex`,
+# `secret_patterns`, `existing_alias`, and the model-backed detectors — is never
+# suppressed. Adding a name here is a decision to accept slightly lower recall on
+# that rule in exchange for not refusing valid requests, and is only justified
+# where the false positives have actually been measured.
+GUARDED_DETECTORS = frozenset({
+    "jp_phone",             # measured: "03-9210-9274" inside a UUIDv7
+    "formats",              # measured: Luhn-valid 16-digit runs inside a UUID
+    "jp_my_number",         # measured: 12-digit runs inside a UUID
+    "jp_corporate_number",
+    "jp_identifiers",
+    "jp_postal_code",
+    "date_of_birth",
+})
+
+
+def is_guarded(detector: str) -> bool:
+    """Whether ``detector``'s findings may be suppressed inside an identifier."""
+    return detector in GUARDED_DETECTORS
 
 
 def identifier_spans(text: str) -> list[tuple[int, int]]:
