@@ -13,12 +13,13 @@ from __future__ import annotations
 DEFAULT_BASE_URL = "http://127.0.0.1:4000"
 
 
-def codex_config_toml(
-    base_url: str = DEFAULT_BASE_URL, model: str = "gpt-5.6-sol"
-) -> str:
-    """SecurityMasker proxy用のCodex ``config.toml`` snippetを返す。"""
+def codex_config_toml(base_url: str = DEFAULT_BASE_URL) -> str:
+    """SecurityMasker proxy用のChatGPT/Codex ``config.toml`` snippetを返す。
+
+    modelはclient側の選択なので固定しない。永続設定ではclient自身のconversation
+    headerとresponse bindingを使い、wrapper専用session環境変数も要求しない。
+    """
     return f"""\
-model = "{model}"
 model_provider = "securitymasker"
 
 [model_providers.securitymasker]
@@ -27,7 +28,4 @@ base_url = "{base_url}"
 wire_api = "responses"
 requires_openai_auth = true
 supports_websockets = false
-
-[model_providers.securitymasker.env_http_headers]
-X-SecurityMasker-Session-ID = "SECURITYMASKER_SESSION_ID"
 """

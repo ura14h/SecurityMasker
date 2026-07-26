@@ -212,12 +212,10 @@ securitymasker doctor --config <dictionary.yaml>          # 人間向け
 securitymasker doctor --config <dictionary.yaml> --json   # monitoring向け
 ```
 
-いずれかの check が `FAIL` なら非0で終了します。Python／dependency version、
-config load と engine build、全 `value_from_env`、detector pipeline、固定HF
-model availability、fail mode、session TTL、store backend、Redis package／URL、
-master key の形式、AES-GCM round-trip、live store の write/read/delete probe と
-cleanup、identity mode と secret、upstream scheme／host、dev-transparent mode、
-public bind、Gateway readiness、local client の routing 状態を検査します。
+いずれかの check が `FAIL` なら非0で終了します。v2ではPython／標準dependency、
+config loadとGateway同一engine build、辞書、state/key、固定HF model、fail mode、
+session TTL、configured port、AES-GCM round-trip、upstreamの構文、Gateway readiness、
+mode別client routingを検査する。
 
-`doctor` は master key、URL credential、dictionary value などの秘密を表示しません。
-provider へも接続せず、upstream は構文だけを検証します。
+`doctor`はmaster key、URL credential、dictionary valueなどの秘密を表示しない。
+providerへ接続せず、SQLiteやclient設定を作成・更新しない読み取り専用diagnosticである。

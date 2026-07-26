@@ -38,18 +38,16 @@ Codex / Claude Code ──▶ SecurityMasker Proxy ──▶ OpenAI / Anthropic 
 ## マスキングを試す（CLI・外部送信なし）
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install securitymasker
-securitymasker config init --output securitymasker.yaml
-export SECURITYMASKER_CONFIG="$PWD/securitymasker.yaml"
-securitymasker config validate
-securitymasker entities test "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
+./scripts/setup
+.venv/bin/python securitymasker.py init --mode chatgpt --port 4000
+.venv/bin/python securitymasker.py preview \
+  "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
 ```
 
-`config init` が書き出すのは合成値だけを含む自己完結したstarter設定です。既存ファイルは
-`--force` を明示しない限り上書きしません。実運用では辞書値を置き換え、API key・password・
-private key はファイルへ直書きせず `value_from_env` で参照してください。
+`init`は`securitymasker.config`、単一の`securitymasker.dict`、privateなstate directoryと
+master keyを作成する。既存fileは上書きしない。SQLite DBは最初のGateway起動時まで作らない。
+実運用では辞書値を置き換え、API key・password・private keyはファイルへ直書きせず
+`value_from_env`で参照する。
 
 出力例（alias は session 鍵に基づくため実行ごとに異なります）：
 
@@ -71,14 +69,14 @@ session が生成した `literal` alias だけをローカルで復元します�
 ## プロキシを起動して Codex/Claude Code をつなぐ
 
 ```bash
-export SECURITYMASKER_CONFIG="$PWD/securitymasker.yaml"
-securitymasker gateway --port 4000            # 透過マスキングプロキシ
+.venv/bin/python securitymasker.py client-config  # 手動設定snippetを表示
+.venv/bin/python securitymasker.py doctor          # 読み取り専用の事前診断
+.venv/bin/python securitymasker.py                 # configのmode/portで起動
 ```
 
-- **Codex**: `~/.codex/config.toml` に securitymasker プロバイダを追加（`base_url="http://127.0.0.1:4000"`,
-  `wire_api="responses"`, `requires_openai_auth=true`）。生成例は
-  `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`。
-- **Claude Code**: `ANTHROPIC_BASE_URL=http://127.0.0.1:4000` ＋ セッションヘッダ。
+- **ChatGPT/Codex**: 表示された`config.toml` snippetを手動で追記する。
+- **Claude Code/Desktop**: 表示された`ANTHROPIC_BASE_URL`を起動環境へ手動設定する。
+- `client-config`と`doctor`は利用者のclient設定を変更しない。
 - ラッパー: `securitymasker run codex` / `securitymasker run claude`（セッション UUID を発行して起動）。
 
 ## 開発環境セットアップ（pip + venv）

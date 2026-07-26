@@ -24,6 +24,7 @@ import sys
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -76,7 +77,17 @@ def check_python() -> CheckResult:
 def check_runtime_dependencies() -> CheckResult:
     from importlib.metadata import PackageNotFoundError, version
 
-    required = ("starlette", "uvicorn", "httpx", "pydantic", "cryptography", "PyYAML")
+    required = (
+        "starlette",
+        "uvicorn",
+        "httpx",
+        "pydantic",
+        "cryptography",
+        "PyYAML",
+        "transformers",
+        "torch",
+        "sentencepiece",
+    )
     found, missing = [], []
     for name in required:
         try:
@@ -201,6 +212,67 @@ def check_session_ttls(config: Any) -> CheckResult:
         return _fail("session.ttl", "idle TTL exceeds absolute TTL")
     return _ok("session.ttl", f"idle={config.defaults.session_idle_ttl}, "
                               f"absolute={config.defaults.session_absolute_ttl}")
+
+
+def check_v2_layout(config: Any) -> tuple[CheckResult, CheckResult]:
+    """v2の辞書・state/keyを、書込みを行わず確認する。"""
+    if config is None or config.version != 2:
+        return (
+            _skip("dictionary", "version 2 config not loaded"),
+            _skip("state", "version 2 config not loaded"),
+        )
+    dictionary = config.dictionary
+    if dictionary is None or not Path(dictionary).is_file():
+        dictionary_result = _fail("dictionary", "configured dictionary is missing")
+    else:
+        dictionary_result = _ok(
+            "dictionary",
+            f"private single file, {len(config.entities)} entities, "
+            f"{len(config.patterns)} patterns",
+        )
+
+    state = config.state
+    if state is None:
+        return dictionary_result, _fail("state", "state paths are not configured")
+    if not state.key.is_file() or state.key.stat().st_size != 32:
+        state_result = _fail("state", "master key is missing or not 32 bytes")
+    elif state.database.exists():
+        state_result = _ok("state", "private key and SQLite database present")
+    else:
+        state_result = _ok(
+            "state", "private key present; database will be created on first Gateway start"
+        )
+    return dictionary_result, state_result
+
+
+def check_runtime_port(config: Any) -> CheckResult:
+    """configured portを一時bindして利用可否を確認する。listenはしない。"""
+    if config is None or config.runtime is None:
+        return _skip("port", "version 2 runtime not loaded")
+    import errno
+    import socket
+
+    host = config.runtime.host
+    family = socket.AF_INET6 if host == "::1" else socket.AF_INET
+    bind_host = "127.0.0.1" if host == "localhost" else host
+    probe = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        probe.bind((bind_host, config.runtime.port))
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            return _warn(
+                "port",
+                f"{config.runtime.port} is already in use; expected if Gateway is running",
+            )
+        if isinstance(exc, PermissionError):
+            return _warn(
+                "port",
+                f"{config.runtime.port} could not be probed in this restricted environment",
+            )
+        return _fail("port", f"{config.runtime.port} cannot be bound ({type(exc).__name__})")
+    finally:
+        probe.close()
+    return _ok("port", f"{config.runtime.port} is available on loopback")
 
 
 # --- store ---------------------------------------------------------------------------
@@ -368,16 +440,55 @@ def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:
     return _fail("gateway", status.detail) if required else _warn("gateway", status.detail)
 
 
-def check_client_proxy_config(environ: dict[str, str]) -> CheckResult:
-    """local clientがrouting済みに見えるか報告する。助言情報でありfatalにしない。"""
-    notes = []
+def check_client_proxy_config(
+    environ: dict[str, str], config: Any = None
+) -> CheckResult:
+    """local client設定をread-onlyで確認する。助言情報でありfatalにしない。"""
     base = environ.get("ANTHROPIC_BASE_URL")
-    notes.append(f"claude: ANTHROPIC_BASE_URL={'set' if base else 'unset'}")
     direct = [n for n in ("ANTHROPIC_API_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE")
               if environ.get(n)]
     if direct:
         return _warn("clients", f"{', '.join(direct)} set — traffic would bypass the "
-                                f"proxy ({'; '.join(notes)})")
+                                "proxy")
+    if config is not None and config.runtime is not None:
+        from securitymasker.integrations.client_config import gateway_url
+
+        expected = gateway_url(config)
+        if config.runtime.mode == "claude":
+            if base == expected:
+                return _ok(
+                    "clients", "claude: ANTHROPIC_BASE_URL matches configured Gateway"
+                )
+            return _warn(
+                "clients",
+                "claude: ANTHROPIC_BASE_URL is unset or does not match configured Gateway",
+            )
+
+        import tomllib
+
+        home = Path(environ.get("HOME", str(Path.home())))
+        codex_home = Path(environ.get("CODEX_HOME", str(home / ".codex")))
+        path = codex_home / "config.toml"
+        if not path.is_file():
+            return _warn("clients", "chatgpt: config.toml not found; run client-config")
+        try:
+            parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return _warn("clients", "chatgpt: config.toml could not be read or parsed")
+        providers = parsed.get("model_providers", {})
+        provider = providers.get("securitymasker", {}) if isinstance(providers, dict) else {}
+        routed = (
+            parsed.get("model_provider") == "securitymasker"
+            and isinstance(provider, dict)
+            and provider.get("base_url") == expected
+            and provider.get("wire_api") == "responses"
+            and provider.get("requires_openai_auth") is True
+        )
+        if routed:
+            return _ok("clients", "chatgpt: config.toml routes Responses through Gateway")
+        return _warn("clients", "chatgpt: config.toml does not match generated settings")
+
+    notes = [f"claude: ANTHROPIC_BASE_URL={'set' if base else 'unset'}"]
     notes.append("codex: routed per-process by `securitymasker run`")
     return _ok("clients", "; ".join(notes))
 
@@ -405,9 +516,19 @@ def _run_checks(
     if captured is not None:
         captured["config"], captured["engine"] = config, engine
     yield config_result
+    gateway_target = gateway
+    if not gateway_target:
+        if config is not None and config.runtime is not None:
+            from securitymasker.integrations.client_config import gateway_url
+
+            gateway_target = gateway_url(config)
+        else:
+            from securitymasker.integrations.launcher import DEFAULT_GATEWAY
+
+            gateway_target = DEFAULT_GATEWAY
 
     # Reuse the pipeline check_config already built. Building another would load
-    # spaCy/HF a second time for a single diagnosis.
+    # HF NER a second time for a single diagnosis.
     detectors = engine.detectors if engine is not None else None
 
     yield check_env_references(config)
@@ -415,6 +536,17 @@ def _run_checks(
     yield check_ner_models(config, detectors)
     yield check_fail_mode(config)
     yield check_session_ttls(config)
+
+    if config is not None and config.version == 2:
+        dictionary_result, state_result = check_v2_layout(config)
+        yield dictionary_result
+        yield state_result
+        yield check_runtime_port(config)
+        yield check_session_crypto()
+        yield check_upstreams(environ)
+        yield check_gateway_ready(gateway_target, required=require_ready)
+        yield check_client_proxy_config(environ, config)
+        return
 
     yield check_store_backend(environ)
     yield check_master_key(environ)
@@ -424,8 +556,8 @@ def _run_checks(
     yield check_upstreams(environ)
     yield check_dev_transparent(environ)
     yield check_public_bind(environ)
-    yield check_gateway_ready(gateway, required=require_ready)
-    yield check_client_proxy_config(environ)
+    yield check_gateway_ready(gateway_target, required=require_ready)
+    yield check_client_proxy_config(environ, config)
 
 
 _SYMBOL: dict[Status, str] = {

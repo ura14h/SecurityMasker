@@ -1,12 +1,15 @@
 """SecurityMasker CLI（argparse、ADR-0003）。
 
-Never prints original sensitive values by default (§12): ``entities test`` shows the
+Never prints original sensitive values by default (§12): ``preview`` shows the
 MASKED text and per-entity counts, not the originals. Subcommands:
 
+    securitymasker init [--mode chatgpt|claude] [--port PORT]
+    securitymasker preview "<text>" [--config PATH]
+    securitymasker client-config [--config PATH]
     securitymasker config validate [--config PATH]
     securitymasker entities list   [--config PATH]
     securitymasker entities test "<text>" [--config PATH]
-    securitymasker doctor          [--config PATH]
+    securitymasker doctor          [--config PATH] [--json]
     securitymasker run <tool> [args...]      # session-scoped wrapper (§7)
     securitymasker sessions <list|inspect|revoke|purge>
 """
@@ -111,7 +114,8 @@ def cmd_entities_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_entities_test(args: argparse.Namespace) -> int:
+def cmd_preview(args: argparse.Namespace) -> int:
+    """Gatewayと同じpipelineで外部送信せずmask結果を確認する。"""
     config = _load(args.config)
     engine = build_engine(config)
 
@@ -132,11 +136,24 @@ def cmd_entities_test(args: argparse.Namespace) -> int:
     return asyncio.run(run())
 
 
+def cmd_entities_test(args: argparse.Namespace) -> int:
+    """旧command名。``preview``と同じ実装を使う。"""
+    return cmd_preview(args)
+
+
+def cmd_client_config(args: argparse.Namespace) -> int:
+    """mode別のclient設定を表示するだけで、実fileは変更しない。"""
+    from securitymasker.integrations.client_config import client_setup_snippet
+
+    print(client_setup_snippet(_load(args.config)), end="")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """全runtime checkを実行し、一つでもFAILなら非0で終了する（doc/06 P2-1）。"""
+    """read-only checkを実行し、一つでもFAILなら非0で終了する。"""
     from securitymasker import doctor as checks
 
-    gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
+    gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", "")
     config_path: str | None
     try:
         config_path = str(resolve_config_path(args.config))
@@ -145,27 +162,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # 明示指定したGatewayには到達できることをoperatorが期待している。
     # so its absence is a failure rather than a pre-flight note.
     require_ready = args.require_ready or args.gateway is not None
-    results, built = checks.run_checks_with_engine(
+    results, _ = checks.run_checks_with_engine(
         config_path=config_path, environ=dict(os.environ), gateway=gateway,
         require_ready=require_ready)
-    # store probeにはevent loopと構築済みruntimeが必要なため、ここで実行する。
-    # rather than inside the pure check sequence.
-    if config_path:
-        try:
-            from securitymasker.gateway.runtime import GatewayRuntime
-
-            # `--config` must drive the probe too, not just the pure checks.
-            os.environ["SECURITYMASKER_CONFIG"] = config_path
-            # checkが構築済みのengine／configを渡し、二重buildを防ぐ。
-            # them again would load the NER model a second time.
-            runtime = GatewayRuntime.from_env(engine=built.engine, config=built.config)
-            results.append(asyncio.run(checks.check_store_probe(runtime.store)))
-        except (SecurityMaskerError, OSError) as exc:
-            # 不正config、読取不能path、到達不能serviceなどoperator向け失敗を安全に報告する。
-            # store) must surface as a check result, never a traceback.
-            detail = getattr(exc, "strerror", None) or str(exc)
-            results.append(checks.CheckResult(
-                "store.probe", checks.Status.FAIL, f"runtime not constructible: {detail}"))
 
     print(checks.render_json(results) if args.json else checks.render(results))
     return 1 if any(r.failed for r in results) else 0
@@ -373,6 +372,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_test.add_argument("text")
     add_config(p_test)
     p_test.set_defaults(func=cmd_entities_test)
+
+    p_preview = sub.add_parser(
+        "preview", help="mask text locally with the Gateway pipeline (no external send)"
+    )
+    p_preview.add_argument("text")
+    add_config(p_preview)
+    p_preview.set_defaults(func=cmd_preview)
+
+    p_client_config = sub.add_parser(
+        "client-config", help="print the manual client settings for the configured mode"
+    )
+    add_config(p_client_config)
+    p_client_config.set_defaults(func=cmd_client_config)
 
     p_doctor = sub.add_parser("doctor", help="runtime, config and connectivity checks")
     p_doctor.add_argument("--json", action="store_true",
