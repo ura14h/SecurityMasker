@@ -284,3 +284,43 @@ def test_documented_redis_command_actually_switches_the_store() -> None:
         assert "docker-compose.redis.yml" in stripped, (
             f"documented Redis command does not apply the overlay: {stripped!r}"
         )
+
+
+def test_ci_fetches_a_model_that_is_actually_pinned() -> None:
+    """The release gate's fetch command must name a model we have a manifest for.
+
+    The gate exists to prove the shipped model verifies. A fetch command that
+    names something else — or, as it did once, no model at all, which exits 2 —
+    makes the whole job fail or prove the wrong thing.
+    """
+    from securitymasker.models_fetch import MANIFESTS
+
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    models = re.findall(r"--model\s+(\S+)", workflow)
+    revisions = re.findall(r"--revision\s+(\S+)", workflow)
+    assert models and revisions, "the release gate no longer fetches a model"
+
+    for model, revision in zip(models, revisions, strict=True):
+        assert f"{model}@{revision}" in MANIFESTS, (
+            f"CI fetches {model}@{revision}, which has no manifest"
+        )
+
+
+def test_release_gate_can_be_reached_by_a_tag_push() -> None:
+    """A job gated on refs/tags must have a workflow that tags actually start.
+
+    With only `branches:` under `push:`, a tag push does not trigger the workflow,
+    so the release gate's condition is never evaluated and the gate silently never
+    runs.
+    """
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    # PyYAML reads the bare key `on` as the boolean True.
+    triggers = workflow.get("on") or workflow.get(True)
+    gate = workflow["jobs"]["release-gate"]
+    if "refs/tags/" in str(gate.get("if", "")):
+        assert triggers["push"].get("tags"), (
+            "release-gate is conditioned on tags, but push.tags is not configured "
+            "so a tag push never starts this workflow"
+        )

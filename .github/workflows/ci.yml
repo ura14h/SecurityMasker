@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # Without this, a tag push does not start the workflow at all, so the
+    # release-gate job's `refs/tags/` condition could never be reached.
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -100,7 +103,14 @@ jobs:
           pip install --no-deps -e .
 
       - name: Fetch and verify the pinned model
-        run: securitymasker models fetch
+        # The pin must be explicit: `models fetch` with no arguments exits 2 rather
+        # than guessing, and the example config ships with ner.model=null. These
+        # values are checked against models_fetch.MANIFESTS by
+        # tests/unit/test_supply_chain.py, so they cannot drift from the manifest.
+        run: |
+          securitymasker models fetch \
+            --model tsmatz/xlm-roberta-ner-japanese \
+            --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
 
       - name: Model artifacts must be VERIFIED, not skipped
         # Without SM_REQUIRE_MODEL the manifest tests skip when the model is
