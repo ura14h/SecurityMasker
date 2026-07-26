@@ -7,9 +7,10 @@ over the per-turn ``previous_response_id``, which changes every turn and would
 otherwise fork the alias table each time:
 
     1. ``X-SecurityMasker-Session-ID`` (set by ``securitymasker run``)
-    2. a stable ``session-id`` / ``thread-id`` header
-    3. ``previous_response_id`` (only as a last resort before ephemeral)
-    4. a fresh ephemeral id
+    2. Claude Codeのstable ``x-claude-code-session-id`` header
+    3. a stable ``session-id`` / ``thread-id`` header
+    4. ``previous_response_id`` (only as a last resort before ephemeral)
+    5. a fresh ephemeral id
 
 Caller identity lives in ``gateway.identity``; this module only answers "which
 session", and the two are composed by ``namespaced_key``.
@@ -44,6 +45,12 @@ def resolve_session(
     explicit = h.get(SESSION_HEADER)
     if explicit:
         return ResolvedSession(explicit, stable=True)
+
+    claude_session = h.get("x-claude-code-session-id")
+    if claude_session:
+        return ResolvedSession(
+            f"x-claude-code-session-id:{claude_session}", stable=True
+        )
 
     for header in ("session-id", "thread-id"):
         value = h.get(header)

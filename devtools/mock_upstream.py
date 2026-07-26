@@ -226,6 +226,33 @@ async def messages(request: Request):
     )
 
 
+async def count_tokens(request: Request):
+    body = await _read(request)
+    # 正確なtokenizer emulationではなく、Gatewayがmask済みpayloadをこのendpointへ
+    # 転送したことをprotocol E2Eで確認するための決定論的な合成値。
+    text = _echo_user_text(body)
+    return JSONResponse({"input_tokens": max(1, len(text) // 4)})
+
+
+async def models(request: Request):
+    await _read(request)
+    return JSONResponse(
+        {
+            "data": [
+                {
+                    "id": "claude-synthetic",
+                    "type": "model",
+                    "display_name": "Synthetic Claude",
+                    "created_at": "2026-01-01T00:00:00Z",
+                }
+            ],
+            "has_more": False,
+            "first_id": "claude-synthetic",
+            "last_id": "claude-synthetic",
+        }
+    )
+
+
 async def health(request: Request):
     return JSONResponse({"ok": True, "ts": time.time()})
 
@@ -239,6 +266,8 @@ routes = [
     Route("/v1/responses", responses, methods=["POST"]),
     Route("/messages", messages, methods=["POST"]),
     Route("/v1/messages", messages, methods=["POST"]),
+    Route("/v1/messages/count_tokens", count_tokens, methods=["POST"]),
+    Route("/v1/models", models, methods=["GET"]),
 ]
 
 app = Starlette(routes=routes)

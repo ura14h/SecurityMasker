@@ -16,7 +16,7 @@ release target から外れた。最新の仕様と実装順は
 | 0. 判断固定・現行rule更新 | **done** | ADR-0004/0008/0009と本書をADR-0012へ整合 |
 | 1. config / dict / init / source実行 | **done** | v2 strict schema、単一辞書、隣接探索、private key生成、DB遅延作成、root script、setup |
 | 2. mode / route分離 | **done** | v2は`chatgpt` / `claude`の片方だけを公開、1 process・1 mode |
-| 3. protocol互換性 | not started | Claude `count_tokens` / session header、ChatGPT/Codex契約 |
+| 3. protocol互換性 | **partial** | Claude `count_tokens` / session header / models / HEAD実装済み。実CLI E2EはPhase 7で再構成 |
 | 4. SQLite session store | not started | DB-key 1:1、mode拘束、writer排他、migration |
 | 5. NER標準化 | not started | 既定ON、固定model、Presidio撤去、offline fail-closed |
 | 6. preview / setup / doctor | not started | 通常運用setupと安全なmask preview |

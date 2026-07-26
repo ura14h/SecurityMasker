@@ -70,25 +70,33 @@ async def test_mode_exposes_only_its_provider_route(
 
 
 @pytest.mark.asyncio
-async def test_claude_mode_does_not_expose_openai_models(
+async def test_claude_mode_models_use_only_anthropic_upstream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    called = False
+    calls: list[str] = []
 
-    async def forbidden(*args: object, **kwargs: object) -> Response:
-        nonlocal called
-        called = True
-        return Response(b"unexpected")
+    async def capture(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes,
+        processor: object = None,
+        on_complete: object = None,
+    ) -> Response:
+        calls.append(url)
+        return Response(b"ok")
 
-    monkeypatch.setattr(gateway_app, "forward_streaming", forbidden)
+    monkeypatch.setattr(gateway_app, "forward_streaming", capture)
     app = gateway_app.create_app(_runtime("claude"))
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://gateway"
     ) as client:
-        response = await client.get("/v1/models")
+        supported = await client.get("/v1/models")
+        openai_variant = await client.get("/models")
 
-    assert response.status_code == 404
-    assert not called
+    assert supported.status_code == 200
+    assert openai_variant.status_code == 404
+    assert calls == ["http://anthropic.invalid/v1/models"]
 
 
 def test_combined_product_mode_is_rejected() -> None:

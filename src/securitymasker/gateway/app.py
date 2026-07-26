@@ -104,9 +104,17 @@ def _is_openai_passthrough(name: str) -> bool:
     the fixed, structural headers above (doc/06 P0-4).
     """
     return name.startswith("x-codex-")
+
+
+def _is_anthropic_passthrough(name: str) -> bool:
+    """Anthropicが追加するfeature headerをprotocol namespace単位で透過する。"""
+    return name.startswith("anthropic-")
+
+
 _ANTHROPIC_HEADERS = frozenset({
     "authorization", "x-api-key", "anthropic-version", "anthropic-beta",
     "anthropic-dangerous-direct-browser-access",
+    "x-claude-code-session-id",
 })
 
 PROVIDER_HEADERS: dict[str, frozenset[str]] = {
@@ -138,7 +146,11 @@ def _client_headers(request: Request, provider: str) -> dict[str, str]:
     allowed = _COMMON_HEADERS | PROVIDER_HEADERS.get(provider, frozenset())
     return {
         k: v for k, v in request.headers.items()
-        if k.lower() in allowed or (provider == "openai" and _is_openai_passthrough(k.lower()))
+        if (
+            k.lower() in allowed
+            or (provider == "openai" and _is_openai_passthrough(k.lower()))
+            or (provider == "anthropic" and _is_anthropic_passthrough(k.lower()))
+        )
     }
 
 
@@ -221,6 +233,7 @@ async def _handle(
     ],
     restore_dict: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], None],
     stream_processor: Callable[..., Any],
+    streaming_allowed: bool = True,
 ) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
     telemetry = rt.telemetry
@@ -333,7 +346,14 @@ async def _handle(
         # wildcard一致する`x-codex-*`は自由text値を持つため個別scanする。
         # the narrow header scan is not enough — run the FULL deterministic set on
         # them, exactly as for a body field (doc/06 P0-4).
-        wildcard = {k: v for k, v in scannable.items() if _is_openai_passthrough(k.lower())}
+        wildcard = {
+            k: v
+            for k, v in scannable.items()
+            if (
+                (provider == "openai" and _is_openai_passthrough(k.lower()))
+                or (provider == "anthropic" and _is_anthropic_passthrough(k.lower()))
+            )
+        }
         if wildcard:
             await rt.engine.assert_no_leak_in_payload(
                 wildcard, session=session, request_id=store_key,
@@ -375,7 +395,7 @@ async def _handle(
         provider_name, summary.entity_counts, session_id=store_key
     )
     masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    if data.get("stream"):
+    if streaming_allowed and data.get("stream"):
         proc = stream_processor(rt.engine.literal_restorations(session),
                                 rt.engine.make_restorer(session),
                                 rt.engine.tool_trust)
@@ -441,13 +461,48 @@ async def handle_messages(request: Request) -> Response:
                          stream_processor=AnthropicStreamProcessor)
 
 
-async def handle_models(request: Request) -> Response:
-    """model listをマスクせず透過する安全なGET経路（doc/06 P0-3）。"""
+def _restore_nothing(
+    engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
+) -> None:
+    """token count responseには復元対象のuser textがない。"""
+
+
+async def handle_count_tokens(request: Request) -> Response:
+    """実送信と同じmask済みMessages payloadをAnthropicに数えさせる。"""
+    rt: GatewayRuntime = request.app.state.runtime
+    return await _handle(
+        request,
+        upstream=rt.anthropic_upstream,
+        path="/v1/messages/count_tokens",
+        provider="anthropic",
+        mask=anthropic_messages.mask_request,
+        restore_dict=_restore_nothing,
+        stream_processor=AnthropicStreamProcessor,
+        streaming_allowed=False,
+    )
+
+
+async def handle_openai_models(request: Request) -> Response:
+    """OpenAI model listをマスクせず透過する安全なGET経路。"""
     rt: GatewayRuntime = request.app.state.runtime
     url = f"{rt.openai_upstream}/models"
     return await forward_streaming(
         request.method, url, _client_headers(request, "openai"), await request.body()
     )
+
+
+async def handle_anthropic_models(request: Request) -> Response:
+    """Anthropic model listを対応するupstreamだけへ透過する。"""
+    rt: GatewayRuntime = request.app.state.runtime
+    url = f"{rt.anthropic_upstream}/v1/models"
+    return await forward_streaming(
+        request.method, url, _client_headers(request, "anthropic"), await request.body()
+    )
+
+
+async def handle_head_root(request: Request) -> Response:
+    """Claude CodeのGateway到達確認へbody無しで応答する。"""
+    return Response(status_code=200)
 
 
 def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
@@ -461,13 +516,23 @@ def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
         routes.extend([
             Route("/responses", handle_responses, methods=["POST"]),
             Route("/v1/responses", handle_responses, methods=["POST"]),
-            Route("/models", handle_models, methods=["GET"]),
-            Route("/v1/models", handle_models, methods=["GET"]),
+            Route("/models", handle_openai_models, methods=["GET"]),
+            Route("/v1/models", handle_openai_models, methods=["GET"]),
         ])
     if resolved_runtime.product_mode in {None, "claude"}:
         routes.extend([
             Route("/messages", handle_messages, methods=["POST"]),
             Route("/v1/messages", handle_messages, methods=["POST"]),
+            Route(
+                "/v1/messages/count_tokens",
+                handle_count_tokens,
+                methods=["POST"],
+            ),
+        ])
+    if resolved_runtime.product_mode == "claude":
+        routes.extend([
+            Route("/v1/models", handle_anthropic_models, methods=["GET"]),
+            Route("/", handle_head_root, methods=["HEAD"]),
         ])
     app = Starlette(
         routes=routes,
