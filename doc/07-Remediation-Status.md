@@ -220,11 +220,9 @@ SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可�
 ### なお `partial` / 未実装のまま
 
 - **`securitymasker run` の保証範囲** — 「実Codex CLIでparse検証済み」という第4次の記述は
-  **撤回する**。`--strict-config` は `login` / `mcp` では受け付けられず、`--version` / `--help` は
-  設定を構築する前に終了するため、**当時の検証手順は実際には何も検証していなかった**
-  （不明キーを与えても exit 0 になる）。現在の検証は「生成した各 `-c` 値が単体で妥当な TOML
-  代入であること」を `tomllib` で確認するところまでであり、実CLIプロセスの起動と
-  proxy経由通信の自動テストは、CIに実バイナリが無いため**未実施**のまま。
+  **撤回済み**（`--strict-config` は `login` / `mcp` で受け付けられず、`--version` / `--help` は
+  設定構築前に終了するため、当時の手順は何も検証していなかった）。
+  **第7回で実CLI E2Eを実装し、この項目は解消した**（下記）。
 - **供給網**: package hash検証・image署名/provenance・SBOM・CI脆弱性scan は引き続き**未実装**。
 - **日本固有識別子**: 公開チェックディジットが無いものは形式＋文脈語のみ。
 - **NER評価**: 合成コーパス上の値であり、実運用性能ではない。
@@ -290,3 +288,39 @@ SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # 明示許可�
 検証していなかった**。合成fixtureで作った manifest テストは、正しいモデルまで拒否する manifest を
 全件パスさせる。同様に「検出予算」は、コストの上限としては正しくても**攻撃者が分割方法を選べる**という
 前提を見落としていた。どちらも「テストが通る」ことと「製品が動く／守れる」ことの差である。
+
+## 第7回: 実CLI E2E の実装（未実施項目の解消）
+
+「CIに実バイナリが無いため未実施」と繰り返し書いていたが、**ローカルには codex 0.145.0 と
+claude 2.1.212 の両方が入っており、試していなかっただけだった**。実行し、テスト化した。
+
+`tests/integration/test_real_cli_e2e.py`（opt-in: `SM_RUN_CLI_E2E=1`、4件）:
+
+| 検証 | 結果 |
+|---|---|
+| 実 `codex exec` を `securitymasker run` 経由で起動 | rc=0。上流に届いた本文は `担当はSM_PERSON_20FB4CC7694Fです。sm-host-b7bfb4487b2e.example.invalid に接続する Python を書いて。` — **原文の氏名・ホスト名は不在、非機密部分は到達**（＝マスクされた結果であって欠落ではない） |
+| 実 `claude -p` を同様に起動 | rc=0、`/v1/messages` へ到達、同じくalias化。Codexは`-c`、Claudeは環境変数と**経路が別**なので独立に検証 |
+| 実CLIがセッションヘッダを実際に送るか | `X-SecurityMasker-Session-ID` が受信側に到達することを確認 |
+| `~/.codex` を書き換えないこと | 隔離した `CODEX_HOME` に `config.toml` が作られないことを確認。実 `~/.codex/config.toml` に生成物の痕跡が0件、mtimeも実行前のままであることを確認済み |
+
+**実provider不接触**: gateway の上流はローカルmock。ネットワークは loopback のみ。
+
+### この E2E が即座に見つけたこと
+
+第6回で修正した `http_headers` の TOML 記法バグを、**修正前の記法で実 codex に与えて再現**した:
+
+```
+Error loading config.toml: invalid type: string "{\"X-SecurityMasker-Session-ID\": ...}",
+expected a map in `model_providers.securitymasker.http_headers`
+```
+
+codex は `-c` の値を TOML として解釈し、失敗すると**生の文字列**として扱う仕様のため、
+JSON記法は文字列になり `http_headers` の型検査で弾かれる。**rc=1 で起動せず、リクエストを
+1件も送らない。** つまり `securitymasker run codex` は当時**完全に動作していなかった**。
+単体テストが全て通っていたにもかかわらず、である。
+
+### なお未検証
+
+- **実provider（OpenAI / Anthropic）側の挙動**。E2Eの上流は意図的にmockであり、
+  実providerへの送信は行わない方針を維持する。
+- 実CLIの**全サブコマンド・全機能**を網羅したわけではない（`exec` / `-p` の1ターン）。

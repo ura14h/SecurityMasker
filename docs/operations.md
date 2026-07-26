@@ -69,14 +69,20 @@ openssl rand -base64 32
   bypass it or if the tool is one it cannot route. It generates a session UUID and
   launches the tool.
 
-  **Scope of that claim.** What is covered by tests: the generated settings point
-  at the gateway and carry the session header, the overrides are valid TOML, the
-  user's real config is untouched, and nothing launches when the route cannot be
-  set up. What is **not** covered: that the launched binary honours those settings
-  for every request it makes. Confirming that needs the real CLI driving real
-  traffic, which CI does not have, so it is listed as outstanding in
-  `doc/07-Remediation-Status.md`. Treat `run` as "refuses to start an unprotected
-  tool", not as proof that a started tool stayed protected.
+  **Scope of that claim.** Unit tests cover the generated settings, the TOML
+  validity of the overrides, the fact that the user's real config is untouched,
+  and the refusal paths. On top of that, `tests/integration/test_real_cli_e2e.py`
+  launches the **real** `codex` and `claude` binaries through `run` against a mock
+  upstream and asserts that only aliases leave the process, that the session
+  header actually arrives, and that no `config.toml` is written into the tool's
+  home. It is opt-in because it spawns real processes:
+
+```bash
+SM_RUN_CLI_E2E=1 .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
+```
+
+  What remains uncovered is the provider itself: the E2E upstream is a local mock,
+  deliberately, so nothing here says how a real provider behaves.
 - The proxy passes the client's own credentials through and never stores/logs them (§25).
 
 ## CLI

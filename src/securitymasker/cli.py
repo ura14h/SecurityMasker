@@ -128,12 +128,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     What that does and does not establish, stated precisely because "guaranteed"
     was overclaiming it:
 
-    - Verified here: the settings handed to the child point at the gateway and
-      carry the session header; direct-provider environment variables and unknown
-      tools are refused; nothing launches unless /ready reports ready.
-    - NOT verified here: that the launched binary honours those settings for
-      every request. That needs the real CLI driving real traffic, which CI does
-      not have. See doc/07-Remediation-Status.md.
+    - Verified by unit tests: the settings handed to the child point at the
+      gateway and carry the session header; direct-provider environment variables
+      and unknown tools are refused; nothing launches unless /ready reports ready.
+    - Verified by tests/integration/test_real_cli_e2e.py (opt-in): the real codex
+      and claude binaries, launched this way, reach a mock upstream carrying only
+      aliases. That test exists because settings we consider well-formed can still
+      be rejected by the tool — as happened when http_headers was emitted as JSON
+      rather than TOML and codex refused to start at all.
+    - Still not covered: a real provider. The E2E upstream is a local mock, so
+      this says nothing about provider-side behaviour.
     """
     if not args.tool:
         print("usage: securitymasker run <tool> [args...]", file=sys.stderr)
