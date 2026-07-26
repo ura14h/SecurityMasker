@@ -24,13 +24,16 @@ class FakeRedis:
     """Minimal async Redis stand-in (get/set/delete/keys + NX)."""
 
     def __init__(self) -> None:
-        self.store: dict[str, bytes] = {}
+        self.store: dict[str, bytes | str] = {}
         self.renewals: list[str] = []
+        self.eval_calls: list[tuple[str, int]] = []
 
-    async def get(self, key: str) -> bytes | None:
+    async def get(self, key: str) -> bytes | str | None:
         return self.store.get(key)
 
-    async def set(self, key: str, value: bytes, *, ex: int | None = None, nx: bool = False) -> bool:
+    async def set(
+        self, key: str, value: bytes | str, *, ex: int | None = None, nx: bool = False
+    ) -> bool:
         if nx and key in self.store:
             return False
         self.store[key] = value
@@ -45,17 +48,23 @@ class FakeRedis:
         return [k for k in self.store if fnmatch.fnmatch(k, pattern)]
 
     async def eval(self, script: str, numkeys: int, *args: Any) -> int:
-        # Two scripts are used, both owner-checked: compare-and-delete (unlock)
-        # and compare-and-expire (renew).
-        key, token = args[0], args[1]
-        cur = self.store.get(key)
+        self.eval_calls.append((script, numkeys))
+        keys = args[:numkeys]
+        argv = args[numkeys:]
+        lock_key, token = keys[0], argv[0]
+        cur = self.store.get(lock_key)
         stored = cur.decode() if isinstance(cur, bytes) else cur
         if stored != token:
-            return 0
-        if "expire" in script:
-            self.renewals.append(key)
+            return -1 if numkeys == 2 and "del" in script else 0
+        if numkeys == 2 and "redis.call('set'" in script:
+            self.store[keys[1]] = argv[1]
             return 1
-        self.store.pop(key, None)
+        if numkeys == 2 and "redis.call('del'" in script:
+            return int(self.store.pop(keys[1], None) is not None)
+        if "expire" in script:
+            self.renewals.append(lock_key)
+            return 1
+        self.store.pop(lock_key, None)
         return 1
 
 
@@ -184,6 +193,58 @@ async def test_lock_loss_is_detected_by_the_holder(monkeypatch: pytest.MonkeyPat
             fake.store[lock_key] = b"someone-elses-token"
             await asyncio.sleep(0.08)   # let the watchdog notice
             held.check()                # must refuse to continue
+
+
+@pytest.mark.asyncio
+async def test_stale_lock_owner_cannot_overwrite_session() -> None:
+    """ownership確認とSETの間にleaseを奪われても古い状態を書けない。"""
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    data_key = "sm:t1:sess:s1"
+    lock_key = "sm:t1:lock:s1"
+
+    async with store.lock("s1", tenant_id="t1") as held:
+        session = await store.get_or_create("s1", tenant_id="t1", lock=held)
+        before = fake.store[data_key]
+        get_or_create_alias(
+            session,
+            original_value="山田太郎",
+            fingerprint_value="山田太郎",
+            entity_type="PERSON",
+            replacement_profile=ReplacementProfile.PROSE_IDENTIFIER.value,
+            restore_policy=RestorePolicy.LITERAL.value,
+        )
+        fake.store[lock_key] = "new-owner"
+        with pytest.raises(SessionError, match="fenced write"):
+            await store.save(session, lock=held)
+
+    assert fake.store[data_key] == before
+
+
+@pytest.mark.asyncio
+async def test_stale_lock_owner_cannot_delete_session() -> None:
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    data_key = "sm:t1:sess:s1"
+    lock_key = "sm:t1:lock:s1"
+
+    await store.create("s1", tenant_id="t1")
+    async with store.lock("s1", tenant_id="t1") as held:
+        fake.store[lock_key] = "new-owner"
+        with pytest.raises(SessionError, match="fenced delete"):
+            await store.delete("s1", tenant_id="t1", lock=held)
+
+    assert data_key in fake.store
+
+
+@pytest.mark.asyncio
+async def test_lock_for_another_session_cannot_fence_write() -> None:
+    fake = FakeRedis()
+    store = RedisSessionStore(fake, master_key=MASTER)
+    async with store.lock("first", tenant_id="t1") as held:
+        with pytest.raises(SessionError, match="not fenced"):
+            await store.create("second", tenant_id="t1", lock=held)
+    assert "sm:t1:sess:second" not in fake.store
 
 
 @pytest.mark.asyncio

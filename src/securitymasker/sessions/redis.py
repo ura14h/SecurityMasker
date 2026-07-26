@@ -51,6 +51,16 @@ _RENEW_LUA = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
     "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
 )
+# lock ownerの確認とsession書込みを一つのRedis実行へ閉じ込める。
+# verify()とSETを別round tripにすると、その間のlease失効でstale ownerが上書きできる。
+_SAVE_LUA = (
+    "if redis.call('get', KEYS[1]) ~= ARGV[1] then return 0 end "
+    "redis.call('set', KEYS[2], ARGV[2], 'EX', ARGV[3]) return 1"
+)
+_DELETE_LUA = (
+    "if redis.call('get', KEYS[1]) ~= ARGV[1] then return -1 end "
+    "return redis.call('del', KEYS[2])"
+)
 _LOCK_TTL_SECONDS = 30
 _LOCK_WAIT_SECONDS = 10.0
 _LOCK_POLL_SECONDS = 0.05
@@ -164,6 +174,9 @@ class RedisSessionStore:
     def _aad(self, session_id: str, tenant_id: str | None) -> bytes:
         return f"{tenant_id or '_'}:{session_id}".encode()
 
+    def _lock_key(self, session_id: str, tenant_id: str | None) -> str:
+        return f"{self._ns}:{tenant_id or '_'}:lock:{session_id}"
+
     async def get(
         self, session_id: str, tenant_id: str | None = None, *, user_id: str | None = None
     ) -> MaskingSession | None:
@@ -177,7 +190,8 @@ class RedisSessionStore:
             raise SessionError("session decryption failed (tampering or wrong master key)") from exc
         session = _deserialize(plaintext)
         if is_expired(session, self._idle_ttl):
-            await self.delete(session_id, tenant_id)
+            # Redis key自身にもidle TTLがある。ここで無条件deleteすると、読取後に
+            # 別workerが更新した新しい値まで消せるため、期限切れ値は返さずTTL回収へ任せる。
             return None
         # in-memory storeと同じdefence-in-depthでidentity不一致sessionを返さない。
         # whose recorded identity disagrees with the caller's (§8, doc/06 P0-9).
@@ -194,12 +208,22 @@ class RedisSessionStore:
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession:
+        if lock is None:
+            async with self.lock(session_id, tenant_id) as held:
+                return await self.create(
+                    session_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    client_type=client_type,
+                    lock=held,
+                )
         session = new_session(
             session_id, tenant_id=tenant_id, user_id=user_id,
             client_type=client_type, absolute_ttl=self._absolute_ttl,
         )
-        await self.save(session)
+        await self.save(session, lock=lock)
         return session
 
     async def get_or_create(
@@ -209,30 +233,96 @@ class RedisSessionStore:
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession:
+        if lock is None:
+            async with self.lock(session_id, tenant_id) as held:
+                return await self.get_or_create(
+                    session_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    client_type=client_type,
+                    lock=held,
+                )
         existing = await self.get(session_id, tenant_id, user_id=user_id)
         if existing is not None:
             return existing
         return await self.create(
-            session_id, tenant_id=tenant_id, user_id=user_id, client_type=client_type
+            session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            client_type=client_type,
+            lock=lock,
         )
 
-    async def save(self, session: MaskingSession) -> None:
+    async def save(
+        self, session: MaskingSession, *, lock: LockHandle | None = None
+    ) -> None:
+        if lock is None:
+            async with self.lock(session.session_id, session.tenant_id) as held:
+                await self.save(session, lock=held)
+            return
         session.last_used_at = datetime.now(UTC)
         sealed = encrypt(
             self._master_key, _serialize(session),
             aad=self._aad(session.session_id, session.tenant_id),
         )
         ttl = int(self._idle_ttl.total_seconds())
-        await self._redis.set(self._key(session.session_id, session.tenant_id), sealed, ex=ttl)
+        lock_key = self._lock_key(session.session_id, session.tenant_id)
+        token = lock.fence_token_for(lock_key)
+        saved = await self._redis.eval(
+            _SAVE_LUA,
+            2,
+            lock_key,
+            self._key(session.session_id, session.tenant_id),
+            token,
+            sealed,
+            str(ttl),
+        )
+        if not saved:
+            raise SessionError(
+                "session lock was lost before the fenced write; refusing stale state"
+            )
 
-    async def delete(self, session_id: str, tenant_id: str | None = None) -> None:
-        await self._redis.delete(self._key(session_id, tenant_id))
+    async def delete(
+        self,
+        session_id: str,
+        tenant_id: str | None = None,
+        *,
+        lock: LockHandle | None = None,
+    ) -> None:
+        if lock is None:
+            async with self.lock(session_id, tenant_id) as held:
+                await self.delete(session_id, tenant_id, lock=held)
+            return
+        lock_key = self._lock_key(session_id, tenant_id)
+        token = lock.fence_token_for(lock_key)
+        deleted = await self._redis.eval(
+            _DELETE_LUA,
+            2,
+            lock_key,
+            self._key(session_id, tenant_id),
+            token,
+        )
+        if deleted is None or int(deleted) < 0:
+            raise SessionError(
+                "session lock was lost before the fenced delete; refusing stale mutation"
+            )
 
-    async def touch(self, session_id: str, tenant_id: str | None = None) -> None:
+    async def touch(
+        self,
+        session_id: str,
+        tenant_id: str | None = None,
+        *,
+        lock: LockHandle | None = None,
+    ) -> None:
+        if lock is None:
+            async with self.lock(session_id, tenant_id) as held:
+                await self.touch(session_id, tenant_id, lock=held)
+            return
         session = await self.get(session_id, tenant_id)
         if session is not None:
-            await self.save(session)
+            await self.save(session, lock=lock)
 
     async def list_ids(self) -> list[str]:
         keys = await self._redis.keys(f"{self._ns}:*:sess:*")
@@ -265,7 +355,7 @@ class RedisSessionStore:
         the caller never runs the critical section unlocked; releases atomically so
         it can only delete a lock it still owns (never another owner's after TTL).
         """
-        lock_key = f"{self._ns}:{tenant_id or '_'}:lock:{session_id}"
+        lock_key = self._lock_key(session_id, tenant_id)
         token = secrets.token_hex(16)
         deadline = time.monotonic() + _LOCK_WAIT_SECONDS
         acquired = False
@@ -315,7 +405,12 @@ class RedisSessionStore:
 
         watchdog = asyncio.create_task(_renew())
         try:
-            yield LockHandle(lost, _still_mine)
+            yield LockHandle(
+                lost,
+                _still_mine,
+                fence_key=lock_key,
+                fence_token=token,
+            )
         finally:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError):

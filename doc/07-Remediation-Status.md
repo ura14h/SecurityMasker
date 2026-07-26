@@ -19,7 +19,7 @@
 | 実CLI E2E（codex / claude） | done（**Linux namespace 内でのみ実行**） | 両CLIで「送信は alias のみ」「CLI出力に氏名・ホスト名が復元」「送信した alias が出力に残らない」を検査。**非loopback interface と default route が無いことを構造的に確認**できない限り実行しない（import時にネットワークへ触れない）。CIは namespace 内で実行し skip を失敗として扱う |
 | 検出精度（識別子の誤検出） | done | UUID内部の**built-in形状ルールのみ**抑止（実測 0.5% → 0%）。dictionary / user_regex / secret_patterns は抑止対象外 |
 | CI 配線 | done（**未実行**） | `test` / `cli-e2e` / `release-gate` の3ジョブ。`release-gate` は tag push でも起動する。定義とコマンドの妥当性はテストで固定したが、**CI上での実行は未確認** |
-| Redis 排他 | **partial** | owner token・所有権再確認まで。fencing token 未実装 |
+| Redis 排他 | done | owner token確認＋session SET/DELをLuaでatomic化。stale write/deleteを実Redisで拒否 |
 | 日本固有識別子（旅券・免許 等） | **partial** | 公開チェックディジットが無いものは形式＋文脈語のみ |
 | metrics / audit の網羅配線 | **partial** | 安全labelのlogのみ |
 | 供給網（hash検証・署名・SBOM・CI scan） | **未実装** | `docs/operations.md` に明記 |
@@ -66,7 +66,7 @@
 | P0-8 tool-argument trust（既定未信頼、allowlistのみliteral復元、stream両対応） | done | `tool_trust.py`, 両adapter, 両stream |
 | P0-9 テナント/ユーザー分離 | **done**（第2次で完了） | `tenant` / `tenant_user` の2モード。ADR-0008 |
 | P1-1 session選択の安定化＋alias有・stable無でblock | done | `gateway/session.py`, `test_multiturn_session.py` |
-| P1-9 Redis配線＋lock | **partial** | owner token・bounded wait・atomic release・TTL更新・書き込み前の所有権再確認まで実装。**fencing tokenによる完全な原子性は未実装**（下記「残存リスク」） |
+| P1-9 Redis配線＋lock | done | owner token・bounded wait・atomic release・TTL更新に加え、owner確認＋session SET/DELをLuaでatomic化。fake＋実Redisでstale mutation拒否を検証 |
 
 ## Milestone D — 検出・構造保持
 
@@ -459,3 +459,18 @@ CI では skip 自体を失敗として扱う。
 
 CI についても同じ問題がある: **定義しただけでは実行の証明にならない。**
 本書では `done（未実行）` と書き分けた。
+
+## リリース是正 — Redis session fencing
+
+書込み直前の `LockHandle.verify()` とRedis `SET` が別round tripだったため、その間に
+leaseが失効して別workerがlockを取得すると、旧ownerが新ownerのsessionを上書きできる
+小さな競合窓が残っていた。
+
+- lock owner tokenの比較と暗号化sessionの `SET`／`DEL` をLuaで一つのatomic操作にした。
+- lock未指定の `create`／`get_or_create`／`save`／`touch`／`delete` はstore自身がlockを
+  取得する。Gatewayは取得済みhandleを明示的に渡し、二重lockを避ける。
+- handleと対象sessionのlock keyが一致しない場合もfail-closedで拒否する。
+- fake Redisの回帰試験に加え、digest固定の実Redisでstale write拒否と2 worker相当の
+  alias割当直列化を検証するintegration testを追加し、CIへ配線した。
+
+ローカル実測: `tests/integration/test_real_redis_fencing.py` 1件成功。

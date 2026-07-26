@@ -261,16 +261,19 @@ async def _handle(
     try:
         # get／create／mask／saveを一つの排他区間に置くため最初にlockする。
         # workers can't fork the same session's alias table (doc/06 P1-9).
-        async with rt.store.lock(store_key) as held:
+        async with rt.store.lock(store_key, tenant_id=identity.tenant) as held:
             session = await rt.store.get_or_create(
-                store_key, tenant_id=identity.tenant, user_id=identity.user)
+                store_key,
+                tenant_id=identity.tenant,
+                user_id=identity.user,
+                lock=held,
+            )
             await mask(rt.engine, session, data)
-            # masking中のlock失効に備え、書き込み直前にownershipを再確認する。
-            # long enough for a distributed lock to expire and be taken over, and
-            # a non-owner write would corrupt the other holder's alias table
-            # (doc/06 P1-9). Verifying after the save would be too late.
+            # masking中のlock失効を早期検出する。Redis save自身もowner確認とSETを
+            # 同じLua実行へ閉じ込めるため、verify後にleaseが失効してもstale writeは
+            # fail-closedになる（doc/06 P1-9）。
             await held.verify()
-            await rt.store.save(session)
+            await rt.store.save(session, lock=held)
             held.check()
         # マスク済みpayload全体への最終block-only guard（doc/06 P0-4）。
         # registered secret in an unknown/structural field must never be forwarded.

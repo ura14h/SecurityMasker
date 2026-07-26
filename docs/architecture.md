@@ -36,7 +36,9 @@ OpenAI／Anthropic／ChatGPT backend   （マスク済みデータだけを受�
 - **detectors/** — `existing_alias`、`dictionary`、`regex`、`secret_patterns`、
   `formats`、日本語 recognizer、任意の `presidio`／`japanese_ner`。
 - **aliases/** — replacement `profiles` と collision-safe な `factory`。
-- **sessions/** — `store` Protocol、`memory`、`redis`、`crypto`。
+- **sessions/** — `store` Protocol、`memory`、`redis`、`crypto`。Redisではowner token
+  の確認と暗号化sessionの `SET`／`DEL` をLuaで一つのatomic操作にし、lease失効後の
+  stale workerが別workerのalias tableを上書き・削除できないようfenceします。
 - **streaming/** — `text_replacer`（carry buffer）、`tool_arguments`、
   `openai_responses_stream`、`anthropic_messages_stream`。
 - **policy / normalization / models / config / cli / logging / metrics**。

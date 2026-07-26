@@ -68,7 +68,10 @@ class InMemorySessionStore:
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession:
+        if lock is not None:
+            lock.check()
         session = new_session(
             session_id,
             tenant_id=tenant_id,
@@ -86,28 +89,57 @@ class InMemorySessionStore:
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession:
+        if lock is not None:
+            lock.check()
         async with self._guard:
             existing = await self.get(session_id, tenant_id=tenant_id, user_id=user_id)
             if existing is not None:
                 return existing
             return await self.create(
-                session_id, tenant_id=tenant_id, user_id=user_id, client_type=client_type
+                session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                client_type=client_type,
+                lock=lock,
             )
 
-    async def save(self, session: MaskingSession) -> None:
+    async def save(
+        self, session: MaskingSession, *, lock: LockHandle | None = None
+    ) -> None:
+        if lock is not None:
+            lock.check()
         # in-memory sessionはin-place更新されるためsaveはidle timeだけ更新する。
         session.last_used_at = _now()
         self._sessions[session.session_id] = session
 
-    async def delete(self, session_id: str) -> None:
+    async def delete(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str | None = None,
+        lock: LockHandle | None = None,
+    ) -> None:
+        del tenant_id
+        if lock is not None:
+            lock.check()
         # sessionだけを削除し、独立したlifetimeを持つlockは残す。
         # it here (e.g. when an expired session is reaped from inside get()) would
         # let a concurrent request build a second lock for the same id and enter
         # the critical section in parallel (doc/06 P1-9).
         self._sessions.pop(session_id, None)
 
-    async def touch(self, session_id: str) -> None:
+    async def touch(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str | None = None,
+        lock: LockHandle | None = None,
+    ) -> None:
+        del tenant_id
+        if lock is not None:
+            lock.check()
         session = self._sessions.get(session_id)
         if session is not None:
             session.last_used_at = _now()
@@ -132,7 +164,10 @@ class InMemorySessionStore:
             return None
         return session_key
 
-    def lock(self, session_id: str) -> AbstractAsyncContextManager[LockHandle]:
+    def lock(
+        self, session_id: str, tenant_id: str | None = None
+    ) -> AbstractAsyncContextManager[LockHandle]:
+        del tenant_id
         lock = self._locks.get(session_id)
         if lock is None:
             lock = asyncio.Lock()

@@ -12,6 +12,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +49,12 @@ jobs:
 
       - name: Live gateway integration (proxy + mock upstream)
         run: SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q
+
+      - name: Real Redis fencing integration
+        env:
+          SM_RUN_REDIS: "1"
+          SECURITYMASKER_REDIS_TEST_URL: redis://127.0.0.1:6379/15
+        run: pytest tests/integration/test_real_redis_fencing.py -q
 
   # The real CLIs, driven end to end, with egress actually blocked. Kept separate
   # from `test` because it installs external binaries and runs inside a network

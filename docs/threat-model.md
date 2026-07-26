@@ -20,6 +20,7 @@
 |---|---|
 | 元の機密情報が外部 LLM へ送られる | 呼び出し前のマスク、各テキストの再検査、dict key・未知フィールド・構造フィールドを含む全文字列に対する最終 payload-wide block-only guard、fail-closed（§18、§26、doc/06 P0-4）、live leakage test |
 | セッション／テナント間の漏えい | セッションごとの HMAC 鍵、そのセッションが発行した alias だけを復元、テナント名前空間と master key で保護した Redis（§7、§8） |
+| Redis lock失効後のstale workerがsessionを上書きする | owner token確認と暗号化sessionのSET／DELを一つのLua実行にし、別owner・消失済みlockからのmutationをfail-closedで拒否。実Redis integration testで検証 |
 | provider がセッションをまたいで利用者を相関する | 同じ秘密でもセッションごとに独立した alias を生成（§6） |
 | モデルが alias を変形する（大文字小文字、分割、翻訳） | そのセッションが発行した完全一致の alias だけを復元し、近似復元は行わない（§24、doc/06 P0-7） |
 | client が proxy を完全に迂回する | `securitymasker run` は `/ready` が ready であり、対象 tool を routing できる場合だけ起動する。provider 直通の環境変数は拒否（doc/06 P2-1） |

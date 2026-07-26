@@ -25,21 +25,27 @@ class LockHandle:
     confirm it still owns the lock before mutating the protected state.
 
     - ``check()`` is a cheap, non-blocking read of what the watchdog last saw.
-    - ``verify()`` actively re-reads ownership from the store; call it immediately
-      BEFORE writing, so a lost lock aborts the request *before* a non-owner write
-      lands (doc/06 P1-9).
-
-    Residual risk: even ``verify()`` leaves a small window between the ownership
-    read and the write. Closing it fully needs the write itself to be conditional
-    on the token (a fencing token, or a Lua script that checks the lock and writes
-    the session in one round trip); that is recorded in doc/07 as not implemented.
+    - ``verify()`` actively re-reads ownership from the store.
+    - Redis handles additionally carry opaque fencing credentials. The Redis
+      store checks those credentials and writes the session in one Lua execution,
+      so a lease that expires after ``verify()`` cannot leave a stale write
+      (doc/06 P1-9).
     """
 
-    __slots__ = ("_lost", "_verifier")
+    __slots__ = ("_fence_key", "_fence_token", "_lost", "_verifier")
 
-    def __init__(self, lost: Any = None, verifier: Any = None) -> None:
+    def __init__(
+        self,
+        lost: Any = None,
+        verifier: Any = None,
+        *,
+        fence_key: str | None = None,
+        fence_token: str | None = None,
+    ) -> None:
         self._lost = lost
         self._verifier = verifier
+        self._fence_key = fence_key
+        self._fence_token = fence_token
 
     @property
     def lost(self) -> bool:
@@ -55,6 +61,17 @@ class LockHandle:
                 and self._lost is not None):
             self._lost.set()
         self.check()
+
+    def fence_token_for(self, expected_key: str) -> str:
+        """指定されたlock用のopaque tokenを返し、取り違えはfail-closedにする。"""
+        self.check()
+        if self._fence_key != expected_key or self._fence_token is None:
+            from securitymasker.errors import SessionError
+
+            raise SessionError(
+                "session write is not fenced by the lock for this session"
+            )
+        return self._fence_token
 
     def _raise(self) -> None:
         from securitymasker.errors import SessionError
@@ -108,6 +125,7 @@ class SessionStore(Protocol):
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession: ...
     async def get_or_create(
         self,
@@ -116,12 +134,27 @@ class SessionStore(Protocol):
         tenant_id: str | None = None,
         user_id: str | None = None,
         client_type: str = "unknown",
+        lock: LockHandle | None = None,
     ) -> MaskingSession: ...
-    async def save(self, session: MaskingSession) -> None: ...
-    async def delete(self, session_id: str) -> None: ...
-    async def touch(self, session_id: str) -> None: ...
+    async def save(self, session: MaskingSession, *, lock: LockHandle | None = None) -> None: ...
+    async def delete(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str | None = None,
+        lock: LockHandle | None = None,
+    ) -> None: ...
+    async def touch(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str | None = None,
+        lock: LockHandle | None = None,
+    ) -> None: ...
     async def list_ids(self) -> list[str]: ...
-    def lock(self, session_id: str) -> AbstractAsyncContextManager[LockHandle]: ...
+    def lock(
+        self, session_id: str, tenant_id: str | None = None
+    ) -> AbstractAsyncContextManager[LockHandle]: ...
 
     # Response-id -> session-key binding (doc/06 P1-1). OpenAI's
     # ``previous_response_id`` changes every turn, so it cannot itself identify a

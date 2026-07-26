@@ -137,11 +137,14 @@ structured JSON log と process 内 counter（`securitymasker.metrics`）が公�
 ```bash
 pytest tests/unit tests/evaluation -q                            # 高速test
 SM_RUN_LIVE=1 pytest tests/integration/test_live_gateway.py -q   # proxy + mock
+SM_RUN_REDIS=1 SECURITYMASKER_REDIS_TEST_URL=redis://127.0.0.1:6379/15 \
+  pytest tests/integration/test_real_redis_fencing.py -q         # 実Redisのfencing
 python -m tests.evaluation.benchmark                             # latency benchmark
 ```
 
 CI（`.github/workflows/ci.yml`）は ruff、mypy `--strict`、test suite、live Gateway
-integration test を実行します。
+integration test に加え、実Redis上でlock owner確認とsession書込みがatomicであること、
+複数worker相当のstoreがalias割当を直列化することを実行します。
 
 ## 固定したbase imageの更新
 

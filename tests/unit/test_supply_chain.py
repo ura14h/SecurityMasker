@@ -79,6 +79,18 @@ def test_every_compose_image_is_digest_pinned() -> None:
         assert _DIGEST.search(image), f"service {name} uses an unpinned image: {image}"
 
 
+def test_every_ci_service_image_is_digest_pinned() -> None:
+    for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("image:"):
+                continue
+            image = stripped.split(":", 1)[1].strip()
+            assert _DIGEST.search(image), (
+                f"{workflow.name} has an unpinned service image: {image}"
+            )
+
+
 def test_pinned_digests_keep_their_tag_for_readability() -> None:
     # tag@digest, not bare digest: the tag tells a human which line they are on.
     text = DOCKERFILE.read_text(encoding="utf-8") + COMPOSE.read_text(encoding="utf-8")
