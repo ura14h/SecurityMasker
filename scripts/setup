@@ -5,7 +5,18 @@ SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
 VENV_DIRECTORY="$PROJECT_DIRECTORY/.venv"
 
-PYTHON_COMMAND=${PYTHON_COMMAND:-python3}
+if [ -z "${PYTHON_COMMAND:-}" ]; then
+    if command -v python3 >/dev/null 2>&1 &&
+       python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 12))'; then
+        PYTHON_COMMAND=python3
+    elif command -v python3.12 >/dev/null 2>&1; then
+        PYTHON_COMMAND=python3.12
+    else
+        printf '%s\n' \
+            "error: Python 3.12+ was not found (set PYTHON_COMMAND explicitly)" >&2
+        exit 2
+    fi
+fi
 
 "$PYTHON_COMMAND" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else "SecurityMasker requires Python 3.12+")'
 
@@ -18,7 +29,7 @@ fi
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
-    --no-deps -e "$PROJECT_DIRECTORY"
+    --no-build-isolation --no-deps -e "$PROJECT_DIRECTORY"
 "$VENV_DIRECTORY/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" models fetch \
     --model tsmatz/xlm-roberta-ner-japanese \
     --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb

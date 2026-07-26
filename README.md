@@ -10,7 +10,8 @@ SecurityMasker は、ローカルの ChatGPT/Codex または Claude Code と外�
 ## 5分で試す（source版）
 
 必要条件は Python 3.12 以上です。setup時だけ依存パッケージと固定済み日本語NER modelを
-取得します。prompt処理中にmodelをdownloadすることはありません。
+取得します。`python3` が古くても `python3.12` がPATHにあれば自動選択します。prompt処理中に
+modelをdownloadすることはありません。
 
 ```console
 git clone <repository-url> SecurityMasker

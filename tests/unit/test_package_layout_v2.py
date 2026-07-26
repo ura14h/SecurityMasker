@@ -261,6 +261,8 @@ def test_standard_setup_does_not_install_redis() -> None:
     assert "requirements-dev.lock" not in setup
     assert "pytest" not in setup
     assert "\nredis==" not in f"\n{standard_lock}"
+    assert "python3.12" in setup
+    assert "--no-build-isolation --no-deps -e" in setup
 
 
 def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> None:
