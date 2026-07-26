@@ -24,8 +24,9 @@ OpenAI／Anthropic／ChatGPT backend   （マスク済みデータだけを受�
 
 - **gateway/** — proxy 本体。`app`（route）、`forwarder`（httpx による透過転送と
   認証 pass-through）、`session`（session ID 解決）、`identity`（tenant+user
-  binding）、`runtime`（engine／store と upstream 設定）を所有します。SSE の復元は
-  ここではなく `streaming/` が所有します。
+  binding）、`runtime`（engine／store と upstream 設定）、`telemetry`（最終 stream
+  chunk までの request／latency／error 観測）を所有します。SSE の復元はここではなく
+  `streaming/` が所有します。
 - **integrations/** — `codex`／`claude_code` の client 設定 helper。LiteLLM には
   依存しません。
 - **protocols/** — `openai_responses`、`anthropic_messages`、`sse`、
@@ -42,6 +43,8 @@ OpenAI／Anthropic／ChatGPT backend   （マスク済みデータだけを受�
 - **streaming/** — `text_replacer`（carry buffer）、`tool_arguments`、
   `openai_responses_stream`、`anthropic_messages_stream`。
 - **policy / normalization / models / config / cli / logging / metrics**。
+  `metrics` は provider、block 理由、store 操作などを固定 enum に閉じ、任意 audit
+  field や高 cardinality label を Gateway から受け付けません。
 
 ## データフロー（request）
 

@@ -17,7 +17,7 @@ from typing import Any
 
 from securitymasker.engine import MaskingEngine
 from securitymasker.models import ContextKind, MaskingSession
-from securitymasker.protocols.base import ALIAS_INSTRUCTION, MaskTransform
+from securitymasker.protocols.base import ALIAS_INSTRUCTION, MaskingSummary, MaskTransform
 from securitymasker.protocols.structured_walker import (
     transform_all_string_values,
     transform_all_string_values_sync,
@@ -35,11 +35,14 @@ def is_anthropic_request(data: dict[str, Any]) -> bool:
 
 async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
-) -> None:
+) -> MaskingSummary:
     """Anthropic Messages requestをin-placeでマスクする。"""
+    summary = MaskingSummary()
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
-        return (await engine.mask_text(session, text, context_kind=kind)).masked_text
+        result = await engine.mask_text(session, text, context_kind=kind)
+        summary.add(result.detections)
+        return result.masked_text
 
     await _mask_system(data, mask)
 
@@ -55,6 +58,7 @@ async def mask_request(
 
     if engine.inject_alias_instruction and session.mappings_by_alias:
         _prepend_instruction(data)
+    return summary
 
 
 def _prepend_instruction(data: dict[str, Any]) -> None:

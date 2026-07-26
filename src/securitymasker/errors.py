@@ -20,6 +20,10 @@ class DetectionError(SecurityMaskerError):
     """detectorの失敗。元のrequestを転送せずfail-closedにする。"""
 
 
+class DetectorTimeoutError(DetectionError):
+    """detectorが設定済みの待機時間上限を超えた。"""
+
+
 class MaskingError(SecurityMaskerError):
     """安全にマスクできない値（安全な置換形式がない場合など）。"""
 

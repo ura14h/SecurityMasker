@@ -21,7 +21,7 @@
 | CI 配線 | done（**未実行**） | `test` / `cli-e2e` / `release-gate` の3ジョブ。`release-gate` は tag push でも起動する。定義とコマンドの妥当性はテストで固定したが、**CI上での実行は未確認** |
 | Redis 排他 | done | owner token確認＋session SET/DELをLuaでatomic化。stale write/deleteを実Redisで拒否 |
 | 日本固有識別子（旅券・免許 等） | **partial** | 公開チェックディジットが無いものは形式＋文脈語のみ |
-| metrics / audit の網羅配線 | **partial** | 安全labelのlogのみ |
+| metrics / audit の網羅配線 | done | request／mask／block／timeout／store／stream／latencyを固定schemaでGatewayへ配線 |
 | 供給網（hash検証・署名・SBOM・CI scan） | **未実装** | `docs/operations.md` に明記 |
 | 実provider送信の検証 | **行わない方針** | E2Eの上流はmock。方針として維持 |
 
@@ -91,7 +91,7 @@
 | P1-5 session mapping上限（fail-closed） | done | `aliases/factory.py` |
 | P1-5 detector timeout / ReDoS対策 | **done**（第2次で完了） | `detectors/safety.py` ＋ 検出器ごとの時間予算 |
 | P2-1 doctor実設定検証・CLI sessions honesty | done | `sessions`コマンドは未実装として非0終了 |
-| P2-2 metrics/audit のGateway接続 | **partial** | 安全labelのlogは有。網羅的metrics/audit配線は未 |
+| P2-2 metrics/audit のGateway接続 | done | request／mask／block／timeout／store／stream／latency。固定enumとsession fingerprintのみ |
 | P2-3 再現ビルド | **done** | runtime/demo段分離、lock分離、**base image digest固定＋静的検査**|
 | P2-4 ドキュメント整合 | done（本書＋主要doc修正） | 設定なし=透過等の誤記を修正 |
 
@@ -474,3 +474,21 @@ leaseが失効して別workerがlockを取得すると、旧ownerが新ownerのs
   alias割当直列化を検証するintegration testを追加し、CIへ配線した。
 
 ローカル実測: `tests/integration/test_real_redis_fencing.py` 1件成功。
+
+## リリース是正 — Gateway metrics／audit
+
+process内registryと安全なlog helperは存在したが、Gatewayの実経路へ網羅的に接続されて
+おらず、任意fieldを渡せるaudit APIも残っていた。
+
+- HTTP middlewareがrequest数、最終status、最終stream chunkまでのlatencyを記録する。
+- protocol adapterがmask結果のentity countを返し、Gatewayが固定entity labelで集計する。
+- request format／identity／session解決／detector timeout／検出障害／store／leak guard／
+  maskingのblock理由、readiness／request／response bindingのstore障害、stream処理障害を
+  それぞれ固定enumで記録する。
+- audit入力を`AuditRecord`の固定schemaに限定し、sessionは一方向fingerprintだけを残す。
+  未知entity名は`CUSTOM`へ畳み込み、cardinalityを入力から増やせないようにした。
+- exporterは追加せず、既定では外部公開しない。接続時の信頼境界は`docs/operations.md`に
+  記載した。
+
+Gateway実経路の成功、不正JSON、detector timeout、readiness store障害、response開始後の
+stream障害を`tests/unit/test_gateway_telemetry.py`で検証する。

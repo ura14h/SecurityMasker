@@ -26,7 +26,12 @@ from securitymasker.detectors.identifiers import (
     inside_identifier,
     is_guarded,
 )
-from securitymasker.errors import DetectionError, LeakageError, MaskingError
+from securitymasker.errors import (
+    DetectionError,
+    DetectorTimeoutError,
+    LeakageError,
+    MaskingError,
+)
 from securitymasker.models import ContextKind, DetectionResult, MaskingSession, RestorePolicy
 from securitymasker.normalization import NormForm, normalize, normalize_value
 from securitymasker.sessions.crypto import decrypt
@@ -354,7 +359,7 @@ class MaskingEngine:
                     found.extend(await detector.detect(ctx))
             except TimeoutError as exc:
                 name = getattr(detector, "name", "detector")
-                raise DetectionError(
+                raise DetectorTimeoutError(
                     f"detector {name!r} exceeded its {self._detector_timeout}s budget"
                 ) from exc
             except DetectionError:

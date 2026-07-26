@@ -31,7 +31,7 @@
 | 外部／MCP tool に実値を復元する | tool arguments は既定で非信頼。allowlist 登録済み local tool だけ実値を受け取り、それ以外には alias を渡す（doc/06 P0-8） |
 | モデル出力による prompt injection | 出力は data として扱い、alias→原文の置換だけを行い、構造を再検証（§19） |
 | alias collision | 衝突を検出して token を延長し、空間枯渇時は例外（§7） |
-| log／error／telemetry への漏えい | 安全な field だけを記録し、error に秘密を含めず、verbose logging を無効化（§25） |
+| log／error／telemetry への漏えい | metrics label と audit record を固定 schema／enum に限定し、未知entityは`CUSTOM`へ集約。sessionは一方向fingerprintだけを記録し、原文・alias対応・資格情報・full promptを観測APIへ渡さない。error に秘密を含めず verbose logging を無効化（§25） |
 | cache／Redis／memory の開示 | AES-GCM で暗号化し、鍵を Redis に置かない。local／trusted network で運用し、swap と core dump を制限（§8、§33） |
 | 巨大入力による DoS | scan に上限を設け、ほぼ線形の pipeline（clustered overlap resolution、重複除去済み leak scan）と size cap を使用（§32） |
 | regex の catastrophic backtracking | anchor／上限付き pattern と scan length cap（§32） |

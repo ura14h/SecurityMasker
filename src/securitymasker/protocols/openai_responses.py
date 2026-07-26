@@ -21,6 +21,7 @@ from securitymasker.models import ContextKind, MaskingSession
 from securitymasker.protocols.base import (
     ALIAS_INSTRUCTION,
     TEXT_KEYS,
+    MaskingSummary,
     MaskTransform,
     RestoreTransform,
 )
@@ -36,11 +37,14 @@ def is_responses_request(data: dict[str, Any]) -> bool:
 
 async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
-) -> None:
+) -> MaskingSummary:
     """Responses／Chat Completions requestをin-placeでマスクする。"""
+    summary = MaskingSummary()
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
-        return (await engine.mask_text(session, text, context_kind=kind)).masked_text
+        result = await engine.mask_text(session, text, context_kind=kind)
+        summary.add(result.detections)
+        return result.masked_text
 
     if isinstance(data.get("instructions"), str):
         data["instructions"] = await mask(data["instructions"])
@@ -61,6 +65,7 @@ async def mask_request(
     # placeholders verbatim (doc/06 inject_alias_instruction).
     if engine.inject_alias_instruction and session.mappings_by_alias:
         _prepend_instruction(data)
+    return summary
 
 
 def _prepend_instruction(data: dict[str, Any]) -> None:

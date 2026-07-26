@@ -7,8 +7,12 @@ engine's async ``mask_text``; for restoration it is the engine's sync restorer.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Protocol
+
+from securitymasker.models import DetectionResult
 
 
 class MaskTransform(Protocol):
@@ -18,6 +22,16 @@ class MaskTransform(Protocol):
 
 
 RestoreTransform = Callable[[str], str]
+
+
+@dataclass
+class MaskingSummary:
+    """一request内で実際にmask対象として検出したentity件数。"""
+
+    entity_counts: Counter[str] = field(default_factory=Counter)
+
+    def add(self, detections: list[DetectionResult]) -> None:
+        self.entity_counts.update(item.entity_type for item in detections)
 
 # OpenAI／Anthropic message構造でuser textを保持するcontent-part key。
 TEXT_KEYS = frozenset({"text", "input_text", "output_text"})

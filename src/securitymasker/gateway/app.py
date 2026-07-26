@@ -21,20 +21,38 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from securitymasker.detectors.existing_alias import contains_alias_shape
 from securitymasker.engine import MaskingEngine, iter_strings
-from securitymasker.errors import SecurityMaskerError
+from securitymasker.errors import (
+    DetectionError,
+    DetectorTimeoutError,
+    LeakageError,
+    MaskingError,
+    SecurityMaskerError,
+    SessionError,
+)
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
 from securitymasker.gateway.identity import Identity, IdentityError, resolve_identity
 from securitymasker.gateway.runtime import GatewayRuntime
 from securitymasker.gateway.session import namespaced_key, resolve_session
+from securitymasker.gateway.telemetry import (
+    GatewayTelemetryMiddleware,
+    ResponseBindingStreamError,
+)
 from securitymasker.logging import get_logger
+from securitymasker.metrics import (
+    BlockReason,
+    Provider,
+    StoreOperation,
+)
 from securitymasker.models import MaskingSession
 from securitymasker.protocols import anthropic_messages, openai_responses
+from securitymasker.protocols.base import MaskingSummary
 from securitymasker.streaming.anthropic_messages_stream import AnthropicStreamProcessor
 from securitymasker.streaming.openai_responses_stream import ResponsesStreamProcessor
 
@@ -109,6 +127,12 @@ _TRANSPORT_HEADERS = frozenset({
 })
 
 
+def _is_store_transport_error(exc: Exception) -> bool:
+    """任意依存をimportせずRedis client由来のtransport障害だけを識別する。"""
+    module = type(exc).__module__
+    return module == "redis.exceptions" or module.startswith("redis.")
+
+
 def _client_headers(request: Request, provider: str) -> dict[str, str]:
     """``provider``ごとのallowlist済みheaderを返し、それ以外は破棄する。"""
     allowed = _COMMON_HEADERS | PROVIDER_HEADERS.get(provider, frozenset())
@@ -179,6 +203,7 @@ async def ready(request: Request) -> JSONResponse:
         await rt.store.get_or_create(probe)
         await rt.store.delete(probe)
     except Exception as exc:  # noqa: BLE001 - any store fault means not ready
+        rt.telemetry.store_error(Provider.ADMIN, StoreOperation.READINESS)
         _log.warning("sm_not_ready", reason=type(exc).__name__)
         return JSONResponse({"ready": False, "reason": "session store unavailable"},
                             status_code=503)
@@ -191,11 +216,15 @@ async def _handle(
     upstream: str,
     path: str,
     provider: str,
-    mask: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], Awaitable[None]],
+    mask: Callable[
+        [MaskingEngine, MaskingSession, dict[str, Any]], Awaitable[MaskingSummary]
+    ],
     restore_dict: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], None],
     stream_processor: Callable[..., Any],
 ) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
+    telemetry = rt.telemetry
+    provider_name = Provider(provider)
     url = f"{upstream}{path}"
     headers = _client_headers(request, provider)
 
@@ -205,6 +234,7 @@ async def _handle(
 
     data, err = await _read_json_object(request)
     if err is not None or data is None:
+        telemetry.blocked(provider_name, BlockReason.REQUEST_FORMAT)
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
     try:
@@ -222,6 +252,7 @@ async def _handle(
         # what this boundary exists to prevent (doc/06 P0-9). The message never
         # echoes the presented proof or claimed identity (§25).
         _log.warning("sm_block_identity", path=path, reason=str(exc))
+        telemetry.blocked(provider_name, BlockReason.IDENTITY)
         return _error(403, "identity_required", str(exc))
 
     resolved = resolve_session(request.headers, data)
@@ -231,14 +262,22 @@ async def _handle(
         # previous_response_id changes every turn, so it is a lookup handle only:
         # continue the session that actually produced that response (doc/06 P1-1).
         # 保存値はすでにtenant namespaceを含む完全なstore key。
-        bound = await rt.store.resolve_response(
-            namespaced_key(identity, resolved.previous_response_id)
-        )
-        if bound is not None and await rt.store.get(bound) is None:
-            # binding元sessionが期限切れ・revoke・purge済みなら新sessionを作らない。
-            # a fresh one here would silently re-mask the client's existing aliases
-            # onto a new table, which is exactly the drift we block for (P1-1).
-            bound = None
+        try:
+            bound = await rt.store.resolve_response(
+                namespaced_key(identity, resolved.previous_response_id)
+            )
+            if bound is not None and await rt.store.get(bound) is None:
+                # binding元sessionが期限切れ・revoke・purge済みなら新sessionを作らない。
+                # a fresh one here would silently re-mask the client's existing aliases
+                # onto a new table, which is exactly the drift we block for (P1-1).
+                bound = None
+        except Exception as exc:  # noqa: BLE001 - store障害は安全な503へ畳み込む
+            telemetry.store_error(provider_name, StoreOperation.REQUEST)
+            telemetry.blocked(provider_name, BlockReason.STORE)
+            _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+            return _error(
+                503, "session_store_unavailable", "Session store unavailable."
+            )
         if bound is None:
             # 対応sessionを特定できないconversation継続は拒否する。
             # another tenant's, or never ours). Refuse unconditionally: the body
@@ -247,6 +286,7 @@ async def _handle(
             # indistinguishable from ordinary data, and such a request would be
             # silently re-masked onto a new table (doc/06 P1-1).
             _log.warning("sm_block_unknown_previous_response", path=path)
+            telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
             return _error(409, "session_unresolved",
                           "previous_response_id does not match a known session.")
         store_key, stable = bound, True
@@ -255,6 +295,7 @@ async def _handle(
         # 前turnのaliasがあるのに安定sessionがなければ、新規作成せずblockする。
         # of silently starting a fresh session and corrupting the turn (P1-1).
         _log.warning("sm_block_unresolved_session", path=path)
+        telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
         return _error(409, "session_unresolved",
                       "Request references prior aliases but no stable session id was provided.")
 
@@ -268,7 +309,7 @@ async def _handle(
                 user_id=identity.user,
                 lock=held,
             )
-            await mask(rt.engine, session, data)
+            summary = await mask(rt.engine, session, data)
             # masking中のlock失効を早期検出する。Redis save自身もowner確認とSETを
             # 同じLua実行へ閉じ込めるため、verify後にleaseが失効してもstale writeは
             # fail-closedになる（doc/06 P1-9）。
@@ -297,10 +338,42 @@ async def _handle(
             await rt.engine.assert_no_leak_in_payload(
                 wildcard, session=session, request_id=store_key,
             )
+    except SessionError as exc:
+        telemetry.store_error(provider_name, StoreOperation.REQUEST)
+        telemetry.blocked(
+            provider_name, BlockReason.STORE, session_id=store_key
+        )
+        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+        return _error(503, "session_store_unavailable", "Session store unavailable.")
     except SecurityMaskerError as exc:
+        if isinstance(exc, DetectorTimeoutError):
+            reason = BlockReason.DETECTOR_TIMEOUT
+        elif isinstance(exc, DetectionError):
+            reason = BlockReason.DETECTOR_FAILURE
+        elif isinstance(exc, LeakageError):
+            reason = BlockReason.LEAK_GUARD
+        elif isinstance(exc, MaskingError):
+            reason = BlockReason.MASKING
+        else:
+            reason = BlockReason.MASKING
+        telemetry.blocked(provider_name, reason, session_id=store_key)
         _log.warning("sm_block", path=path)
         return _error(400, "securitymasker_blocked", str(exc))
+    except Exception as exc:
+        # Redis clientは接続障害をSecurityMaskerErrorへ変換しない。masking coreの
+        # programming errorまでstore障害へ誤分類しないよう、transport型だけを扱う。
+        if not _is_store_transport_error(exc):
+            raise
+        telemetry.store_error(provider_name, StoreOperation.REQUEST)
+        telemetry.blocked(
+            provider_name, BlockReason.STORE, session_id=store_key
+        )
+        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+        return _error(503, "session_store_unavailable", "Session store unavailable.")
 
+    telemetry.masked(
+        provider_name, summary.entity_counts, session_id=store_key
+    )
     masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
     if data.get("stream"):
         proc = stream_processor(rt.engine.literal_restorations(session),
@@ -312,8 +385,15 @@ async def _handle(
 
         async def _bind_stream(p: Any, key: str = store_key,
                                ident: Identity = bound_identity) -> None:
-            for rid in getattr(p, "response_ids", ()):
-                await rt.store.bind_response(namespaced_key(ident, rid), key)
+            try:
+                for rid in getattr(p, "response_ids", ()):
+                    await rt.store.bind_response(namespaced_key(ident, rid), key)
+            except Exception:
+                telemetry.store_error(provider_name, StoreOperation.RESPONSE_BINDING)
+                # middlewareがresponse開始後の例外を一度だけstream errorとして数える。
+                raise ResponseBindingStreamError(
+                    "stream response binding failed"
+                ) from None
 
         return await forward_streaming(request.method, url, headers, masked, proc,
                                        on_complete=_bind_stream)
@@ -330,7 +410,13 @@ async def _handle(
         # previous_response_id resolves back here (doc/06 P1-1).
         rid = resp.get("id")
         if isinstance(rid, str) and rid:
-            await rt.store.bind_response(namespaced_key(identity, rid), store_key)
+            try:
+                await rt.store.bind_response(
+                    namespaced_key(identity, rid), store_key
+                )
+            except Exception:
+                telemetry.store_error(provider_name, StoreOperation.RESPONSE_BINDING)
+                raise
         restore_dict(rt.engine, session, resp)
         return Response(json.dumps(resp, ensure_ascii=False), status_code=status,
                         media_type="application/json")
@@ -376,6 +462,15 @@ def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
         Route("/models", handle_models, methods=["GET"]),
         Route("/v1/models", handle_models, methods=["GET"]),
     ]
-    app = Starlette(routes=routes)
-    app.state.runtime = runtime or GatewayRuntime.from_env()
+    resolved_runtime = runtime or GatewayRuntime.from_env()
+    app = Starlette(
+        routes=routes,
+        middleware=[
+            Middleware(
+                GatewayTelemetryMiddleware,
+                telemetry=resolved_runtime.telemetry,
+            )
+        ],
+    )
+    app.state.runtime = resolved_runtime
     return app

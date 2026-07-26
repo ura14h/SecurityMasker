@@ -21,6 +21,7 @@ from securitymasker.gateway.identity import (
     VALID_MODES,
     normalize_mode,
 )
+from securitymasker.metrics import GatewayTelemetry
 from securitymasker.sessions.memory import InMemorySessionStore
 from securitymasker.sessions.store import SessionStore
 
@@ -79,6 +80,7 @@ class GatewayRuntime:
         tenant_auth_secret: str | None = None,
         max_clock_skew_seconds: int = DEFAULT_MAX_SKEW_SECONDS,
         require_assertion_timestamp: bool = True,
+        telemetry: GatewayTelemetry | None = None,
     ) -> None:
         self.engine = engine
         self.store = store
@@ -94,6 +96,7 @@ class GatewayRuntime:
         # 取得済みproofの無期限replayを防ぐためtimestampを既定で必須にする。
         # replayable for the lifetime of the secret (ADR-0008).
         self.require_assertion_timestamp = require_assertion_timestamp
+        self.telemetry = telemetry or GatewayTelemetry()
 
     @classmethod
     def from_env(cls, *, engine: MaskingEngine | None = None,

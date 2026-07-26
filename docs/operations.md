@@ -128,9 +128,25 @@ idle TTL（既定4時間）と absolute TTL（既定24時間）は dictionary �
 
 ## 可観測性
 
-structured JSON log と process 内 counter（`securitymasker.metrics`）が公開するのは
-安全な field だけです（§25）。proxy は資格情報と元の値をログに残しません。安全性を
-検証できるまで外部 log sink を接続しないでください。
+Gateway は全 HTTP request を最終 response body（SSE の最終 chunk を含む）まで観測し、
+次の process 内 counter（`securitymasker.metrics.METRICS`）を更新します。
+
+- `gateway_requests_total{provider}`
+- `gateway_responses_total{provider,outcome}`
+- `gateway_request_duration_{ms_sum,count}{provider,outcome}`
+- `gateway_masked_entities_total{provider,entity}`
+- `gateway_blocks_total{provider,reason}`
+- `gateway_detector_timeouts_total{provider}`
+- `gateway_store_errors_total{provider,operation}`
+- `gateway_stream_errors_total{provider,reason}`
+
+label は enum の固定集合です。未知の entity 名は `CUSTOM` へ畳み込み、path、session ID、
+tenant／user ID、例外文、入力値は label にしません。audit も任意 field の辞書ではなく
+`AuditRecord` の固定 schema だけを受け取り、session は一方向 fingerprint のみを記録します。
+元の値、alias 対応表、資格情報、full prompt は metrics／audit のどちらにも渡しません（§25）。
+
+既定では exporter／外部 sink を公開しません。`Metrics.snapshot()` を収集基盤へ接続する場合は
+Gateway と同じ信頼領域内に置き、公開範囲と保持期間を別途レビューしてください。
 
 ## test／CI
 
