@@ -1,2 +1,0 @@
-# Transitional Redis backend only. Standard source setup does not install this file.
-redis==8.0.1

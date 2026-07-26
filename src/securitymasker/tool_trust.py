@@ -1,4 +1,4 @@
-"""tool argument復元のtrust policy（threat-model、doc/06 P0-8）。
+"""tool argument復元のtrust policy（docs/design/threat-model.md）。
 
 Response *text* is restored for display to the user, which is safe. Tool
 *arguments*, by contrast, are handed to a tool for execution — if that tool is an

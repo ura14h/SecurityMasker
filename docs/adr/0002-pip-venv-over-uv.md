@@ -5,8 +5,7 @@
 
 ## 背景
 
-`doc/00-First-Order.md` §36 は `uv` を推奨するが「合理的な理由があれば変更可」と明記。
-本環境には `uv` 未導入・システム Python 3.9.6 のみ。ユーザーは pip + venv を選択。
+初期案の`uv`に対し、追加toolを要求しないpip + venvをownerが選択した。
 
 ## 決定
 
@@ -22,4 +21,4 @@
 ## 影響
 
 - lock は `requirements.lock`（`pip freeze`）で管理。extras 追加時は再 freeze が必要。
-- CI でも同じ手順（venv + pip install + lock 検証）を再現する。
+- local setup/release gateでも同じ手順（venv + pip install + lock検証）を再現する。

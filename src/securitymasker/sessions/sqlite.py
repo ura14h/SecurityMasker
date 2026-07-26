@@ -256,9 +256,7 @@ class SQLiteSessionStore:
         finally:
             connection.close()
 
-    async def get(
-        self, session_id: str, *, tenant_id: str | None = None, user_id: str | None = None
-    ) -> MaskingSession | None:
+    async def get(self, session_id: str) -> MaskingSession | None:
         try:
             text = self._read_record("session", session_id)
         except sqlite3.Error as exc:
@@ -271,18 +269,12 @@ class SQLiteSessionStore:
         if is_expired(session, self._idle_ttl):
             await self.delete(session_id)
             return None
-        if tenant_id is not None and session.tenant_id != tenant_id:
-            raise SessionError("session does not belong to the requesting tenant")
-        if user_id is not None and session.user_id != user_id:
-            raise SessionError("session does not belong to the requesting user")
         return session
 
     async def create(
         self,
         session_id: str,
         *,
-        tenant_id: str | None = None,
-        user_id: str | None = None,
         client_type: str = "unknown",
         lock: LockHandle | None = None,
     ) -> MaskingSession:
@@ -290,16 +282,12 @@ class SQLiteSessionStore:
             async with self.lock(session_id) as held:
                 return await self.create(
                     session_id,
-                    tenant_id=tenant_id,
-                    user_id=user_id,
                     client_type=client_type,
                     lock=held,
                 )
         lock.check()
         session = new_session(
             session_id,
-            tenant_id=tenant_id,
-            user_id=user_id,
             client_type=client_type,
             absolute_ttl=self._absolute_ttl,
         )
@@ -310,8 +298,6 @@ class SQLiteSessionStore:
         self,
         session_id: str,
         *,
-        tenant_id: str | None = None,
-        user_id: str | None = None,
         client_type: str = "unknown",
         lock: LockHandle | None = None,
     ) -> MaskingSession:
@@ -319,17 +305,13 @@ class SQLiteSessionStore:
             async with self.lock(session_id) as held:
                 return await self.get_or_create(
                     session_id,
-                    tenant_id=tenant_id,
-                    user_id=user_id,
                     client_type=client_type,
                     lock=held,
                 )
         lock.check()
-        existing = await self.get(session_id, tenant_id=tenant_id, user_id=user_id)
+        existing = await self.get(session_id)
         return existing or await self.create(
             session_id,
-            tenant_id=tenant_id,
-            user_id=user_id,
             client_type=client_type,
             lock=lock,
         )
@@ -356,10 +338,8 @@ class SQLiteSessionStore:
         self,
         session_id: str,
         *,
-        tenant_id: str | None = None,
         lock: LockHandle | None = None,
     ) -> None:
-        del tenant_id
         if lock is None:
             async with self.lock(session_id) as held:
                 await self.delete(session_id, lock=held)
@@ -375,10 +355,9 @@ class SQLiteSessionStore:
         self,
         session_id: str,
         *,
-        tenant_id: str | None = None,
         lock: LockHandle | None = None,
     ) -> None:
-        session = await self.get(session_id, tenant_id=tenant_id)
+        session = await self.get(session_id)
         if session is not None:
             await self.save(session, lock=lock)
 
@@ -425,10 +404,7 @@ class SQLiteSessionStore:
                 f"SQLite response lookup failed: {type(exc).__name__}"
             ) from None
 
-    def lock(
-        self, session_id: str, tenant_id: str | None = None
-    ) -> AbstractAsyncContextManager[LockHandle]:
-        del tenant_id
+    def lock(self, session_id: str) -> AbstractAsyncContextManager[LockHandle]:
         lock = self._locks.setdefault(session_id, asyncio.Lock())
         self._lock_refs[session_id] = self._lock_refs.get(session_id, 0) + 1
 

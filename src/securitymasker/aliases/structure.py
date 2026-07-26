@@ -1,4 +1,4 @@
-"""URLとfile pathの構造保持alias（§9.7、§9.8、doc/06 P1-6）。
+"""URLとfile pathの構造保持alias（不変条件3）。
 
 Invariant 3 says masking must not break syntax. Replacing a whole URL or path with
 an opaque ``SM_VALUE_ABC123`` token satisfies confidentiality but destroys it: the
@@ -23,7 +23,7 @@ every query VALUE, and the fragment.
 
 If a value cannot be rebuilt safely (an unparseable URL, a scheme-less string), we
 raise ``MaskingError`` so the request is blocked rather than silently mangled —
-never a half-masked URL that still leaks part of the original (doc/06 P1-6).
+never a half-masked URL that still leaks part of the original.
 
 All sub-tokens derive deterministically from the caller's fingerprint token, so the
 same original always yields the same alias within a session, and the collision

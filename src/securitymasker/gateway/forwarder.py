@@ -47,7 +47,7 @@ async def forward_streaming(
 
     ``on_complete`` runs once the upstream stream ends, giving the caller an async
     point to persist what the processor observed (e.g. binding the response id to
-    this session, doc/06 P1-1) — the processor itself is sync and cannot await.
+    this session) — the processor itself is sync and cannot await.
     """
     client = httpx.AsyncClient(timeout=_TIMEOUT)
     upstream = await client.send(

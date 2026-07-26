@@ -69,7 +69,6 @@ class Provider(StrEnum):
 
 class BlockReason(StrEnum):
     REQUEST_FORMAT = "request_format"
-    IDENTITY = "identity"
     SESSION_UNRESOLVED = "session_unresolved"
     DETECTOR_TIMEOUT = "detector_timeout"
     DETECTOR_FAILURE = "detector_failure"

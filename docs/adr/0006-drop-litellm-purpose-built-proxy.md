@@ -2,13 +2,12 @@
 
 - 状態：採用
 - 日付：2026-07-25
-- 関連: [ADR-0001](0001-litellm-guardrail-integration.md)（撤回）/ `doc/00-First-Order.md` §3-4, §40 /
-  [compatibility.md](../compatibility.md)（Codex 実 E2E 知見）
+- 関連: [ADR-0001](0001-litellm-guardrail-integration.md)（撤回）/
+  [現行compatibility](../development/compatibility.md)
 
 ## 背景
 
-`doc/00-First-Order.md` は**初期命令（ブリーフ・方針）**であり、変更不能な制約宣言ではない（冒頭が
-「安全側の前提を置き ADR に明記せよ」と工学判断を招いている）。その二層を区別する:
+初期briefの手段と製品の不変条件を区別する:
 
 - **不変（製品の目的・ツール非依存）**: 機密を外部へ出さない / セッション・テナントを混ぜない /
   構造を壊さない / fail-closed（§40-1..4）/ ログに秘密を残さない（§25）/ 合成データのみ（§30）/
@@ -38,7 +37,7 @@ policy/normalization/protocols/streaming はそのまま再利用可）。
   Codex は自分の **ChatGPT OAuth JWT（Bearer, len≈1812, `eyJ...`）＋ `chatgpt-account-id`** を
   カスタムエンドポイントの `/v1/models`・`/v1/responses` へ送る。プロキシは Authorization を素通し
   するだけでよい（保存・復号・ログなし＝§25 準拠）。
-- **マスクは実バックエンドで実証済み**: chatgpt.com への実送信ボディに登録機密 0 件（[compatibility.md]）。
+- **マスクは実バックエンドで実証済み**: chatgpt.com への実送信ボディに登録機密 0 件。
 
 ## 検討した代替案
 

@@ -278,8 +278,27 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
     binary_test = (ROOT / "scripts/test-binary").read_text(encoding="utf-8")
     assert "tests/integration/test_binary_release.py" in binary_test
     assert 'SM_BINARY="$BINARY"' in binary_test
-    for excluded in ("devtools", "pytest", "redis", "presidio_analyzer", "spacy"):
+    for excluded in ("devtools", "pytest", "presidio_analyzer", "spacy"):
         assert f'"{excluded}"' in spec
+    for removed in (
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.redis.yml",
+        "requirements-redis.lock",
+        ".github/workflows/ci.yml",
+        "src/securitymasker/resources/securitymasker.example.yaml",
+    ):
+        assert not (ROOT / removed).exists()
+
+    help_result = subprocess.run(
+        [sys.executable, str(ROOT / "securitymasker.py"), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert help_result.returncode == 0
+    assert "\n    run " not in help_result.stdout
+    assert "\n    sessions " not in help_result.stdout
 
 
 @pytest.mark.parametrize(

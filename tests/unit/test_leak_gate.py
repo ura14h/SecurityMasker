@@ -26,7 +26,7 @@ EMAIL = "taro@example.co.jp"
 JP_PHONE = "090-1234-5678"
 
 
-def _runtime(mode: str = "local") -> GatewayRuntime:
+def _runtime(product_mode: str = "chatgpt") -> GatewayRuntime:
     config = SecurityMaskerConfig.model_validate({
         "version": 1,
         "entities": [
@@ -39,11 +39,21 @@ def _runtime(mode: str = "local") -> GatewayRuntime:
     })
     return GatewayRuntime(build_engine(config), InMemorySessionStore(),
                           openai_upstream="http://oai.test",
-                          anthropic_upstream="http://anthropic.test", mode=mode)
+                          anthropic_upstream="http://anthropic.test",
+                          product_mode=product_mode)
 
 
 @pytest.fixture
 def app_and_calls(monkeypatch):
+    return _client_and_calls(monkeypatch, "chatgpt")
+
+
+@pytest.fixture
+def claude_app_and_calls(monkeypatch):
+    return _client_and_calls(monkeypatch, "claude")
+
+
+def _client_and_calls(monkeypatch, product_mode: str):
     calls: list[dict] = []
 
     async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
@@ -56,7 +66,8 @@ def app_and_calls(monkeypatch):
 
     monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)
     monkeypatch.setattr(gwapp, "forward_buffered", fake_buffered)
-    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(_runtime())),
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gwapp.create_app(_runtime(product_mode))),
                                base_url="http://gw")
     return client, calls
 
@@ -130,8 +141,8 @@ async def test_anthropic_api_key_not_sent_to_openai(app_and_calls) -> None:
 
 
 @pytest.mark.asyncio
-async def test_openai_headers_not_sent_to_anthropic(app_and_calls) -> None:
-    client, calls = app_and_calls
+async def test_openai_headers_not_sent_to_anthropic(claude_app_and_calls) -> None:
+    client, calls = claude_app_and_calls
     async with client:
         await client.post("/v1/messages", json={"max_tokens": 1, "messages": []},
                           headers={"chatgpt-account-id": "acct-123",
@@ -142,8 +153,8 @@ async def test_openai_headers_not_sent_to_anthropic(app_and_calls) -> None:
 
 
 @pytest.mark.asyncio
-async def test_provider_auth_reaches_its_own_upstream(app_and_calls) -> None:
-    client, calls = app_and_calls
+async def test_provider_auth_reaches_its_own_upstream(claude_app_and_calls) -> None:
+    client, calls = claude_app_and_calls
     async with client:
         await client.post("/v1/messages", json={"max_tokens": 1, "messages": []},
                           headers={"x-api-key": "anthropic-key", "anthropic-version": "2023-06-01"})

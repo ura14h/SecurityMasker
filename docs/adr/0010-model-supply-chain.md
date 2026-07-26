@@ -2,7 +2,7 @@
 
 - 状態：採用
 - 日付：2026-07-26
-- 関連：ADR-0009（日本語NER backend）、doc/06 §P2-3
+- 関連：ADR-0009（日本語NER backend）
 
 ## 背景
 
@@ -66,4 +66,4 @@ manifest の誤りには、不正 model を受理する方向と正規 model を
   model を commit しない明示指示に反するため不採用。
 - **signature／provenance検証（sigstore、model signing）**：digest より強く、将来
   採用すべき方式です。必要 infrastructure がないため未実装とし、
-  `docs/operations.md` に supply chain gap として明記します。
+  [development status](../development/status.md) にgapとして明記します。

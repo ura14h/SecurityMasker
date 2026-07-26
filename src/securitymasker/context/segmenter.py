@@ -1,4 +1,4 @@
-"""message bodyをtyped spanへ分割する（§17、doc/06 P1-7、ADR-0011）。
+"""message bodyをtyped spanへ分割する（ADR-0011）。
 
 A chat message is rarely one kind of text. It is prose *around* a fenced code
 block, a shell transcript, a pasted diff, a JSON blob. Treating the whole body as
@@ -279,7 +279,7 @@ def coalesce_for_detection(segments: list[Segment]) -> list[Segment]:
 
 
 def is_code_like(kind: str) -> bool:
-    """fuzzy NERを信頼できないcontextならTrue（§17、doc/06 P1-7）。"""
+    """fuzzy NERを信頼できないcontextならTrue。"""
     return kind in _CODE_LIKE_KINDS
 
 

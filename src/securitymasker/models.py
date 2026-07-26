@@ -1,4 +1,4 @@
-"""中核data model（``doc/00-First-Order.md`` §29）。
+"""SecurityMaskerの中核data model。
 
 Kept dependency-free (stdlib only) so the masking core never imports LiteLLM,
 model libraries or provider SDKs. Enums make the string taxonomies explicit and
@@ -153,8 +153,6 @@ class MaskingSession:
     session_id: str
     session_index_key: bytes
     aead_key: bytes
-    tenant_id: str | None
-    user_id: str | None
     client_type: str
     created_at: datetime
     last_used_at: datetime

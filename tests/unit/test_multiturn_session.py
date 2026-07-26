@@ -45,7 +45,9 @@ def chain(monkeypatch):
                       "replacement_profile": "prose_identifier", "restore_policy": "literal"}],
     })
     rt = GatewayRuntime(build_engine(config), InMemorySessionStore(),
-                        openai_upstream="http://oai.test", anthropic_upstream="http://an.test")
+                        openai_upstream="http://oai.test",
+                        anthropic_upstream="http://an.test",
+                        product_mode="chatgpt")
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(rt)),
                                base_url="http://gw")
     return client, sent
@@ -115,7 +117,8 @@ def bindings(monkeypatch):
     store = InMemorySessionStore()
     rt = GatewayRuntime(build_engine(SecurityMaskerConfig.model_validate({"version": 1})),
                         store, openai_upstream="http://oai.test",
-                        anthropic_upstream="http://an.test")
+                        anthropic_upstream="http://an.test",
+                        product_mode="chatgpt")
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=gwapp.create_app(rt)),
                                base_url="http://gw")
     return client, calls, store

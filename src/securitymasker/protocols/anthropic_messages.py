@@ -114,7 +114,7 @@ def restore_response(
     """非streamingのAnthropic responseをin-placeで復元する（§19）。
 
     ``text`` blocks are restored for display; ``tool_use.input`` is restored only
-    for allowlisted trusted-local tools, else left aliased (doc/06 P0-8).
+    for allowlisted trusted-local tools, else left aliased.
     """
     restore = engine.make_restorer(session)
     trust = engine.tool_trust

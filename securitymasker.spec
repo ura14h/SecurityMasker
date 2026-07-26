@@ -70,7 +70,6 @@ hiddenimports = [
 excludes = [
     "devtools",
     "pytest",
-    "redis",
     "presidio_analyzer",
     "spacy",
     "tensorflow",

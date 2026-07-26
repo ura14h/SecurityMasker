@@ -401,6 +401,13 @@ PYTHON_COMMAND=python3.12 ./scripts/build-binary
 - READMEのsource/binary commandをclean環境で機械実行できる
 - 通常運用とtest setup、localとremote、Desktop実証とCLI代替を混同しない
 
+#### Phase 9 実施結果（2026-07-26）
+
+Redis backend、Docker/Compose、GitHub Actions、multi-tenant/public-bind、`securitymasker run`、
+旧v1 config生成commandを製品とtestから撤去した。通常運用は暗号化SQLiteだけとなり、
+`docs/user`、`docs/design`、`docs/development`へ現行情報を再編した。旧 `doc/00..07` は
+必要な不変条件・status・運用情報を移したうえで削除した。
+
 ### Phase 10 — release candidate
 
 - clean checkout/clean machineでsource gateとbinary gateを再実行

@@ -2,12 +2,11 @@
 
 - 状態：適用範囲変更（[ADR-0012](0012-renew-package-design.md)）
 - 日付：2026-07-25
-- 関連：ADR-0005（sessionごとの鍵）、ADR-0006（専用proxy）、ADR-0012、doc/06 P0-9
+- 関連：ADR-0005（sessionごとの鍵）、ADR-0006（専用proxy）、ADR-0012
 
 > この ADR は従来の multi-tenant 構成を安全にした判断記録として残す。ADR-0012 の
 > 標準製品は loopback 上の単一利用者・1 process・1 mode・1 worker に限定するため、
-> `tenant` / `tenant_user` は release target から外れる。移行完了までは実装が repository に
-> 残るが、新しい標準設定・SQLite schema・利用手順には持ち込まない。
+> `tenant` / `tenant_user` は release targetから外れ、実装からも撤去済みである。
 
 ## 背景
 

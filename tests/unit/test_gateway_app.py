@@ -35,7 +35,8 @@ def _runtime() -> GatewayRuntime:
                                   ReplacementProfile.HOSTNAME.value, LITERAL, 150)], name="host"),
     ])
     return GatewayRuntime(engine, InMemorySessionStore(),
-                          openai_upstream="http://up.test", anthropic_upstream="http://up.test")
+                          openai_upstream="http://up.test", anthropic_upstream="http://up.test",
+                          product_mode="chatgpt")
 
 
 @pytest.fixture
@@ -98,22 +99,3 @@ async def test_responses_stream_mask_and_restore(app_client) -> None:
                 deltas += ev["delta"]
     assert PERSON in deltas and HOST in deltas         # streaming restoration reaches client
     assert PERSON.encode() not in captured["body"]
-
-
-@pytest.mark.asyncio
-async def test_transparent_when_no_engine(monkeypatch) -> None:
-    captured: dict[str, bytes] = {}
-
-    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
-        captured["body"] = body
-        return Response(b"ok")
-
-    monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)
-    rt = GatewayRuntime(None, InMemorySessionStore(),
-                        openai_upstream="http://up.test", anthropic_upstream="http://up.test")
-    app = gwapp.create_app(rt)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:
-        r = await c.post("/responses", json={"input": PERSON})
-    # No engine -> transparent forward, body unchanged.
-    assert json.loads(captured["body"])["input"] == PERSON
-    assert r.status_code == 200

@@ -97,7 +97,7 @@ def alias_for(
         return f"${{{ENV_SECRET_PREFIX}{hexup}}}"
 
     # URL／FILE_PATHは有効な構文を保つためcomponent単位で再構築する。
-    # parseable URL or a resolvable-looking path (invariant 3, doc/06 P1-6).
+    # parseable URL or a resolvable-looking path (invariant 3).
     # A value that cannot be rebuilt safely raises MaskingError -> request blocked.
     if p is ReplacementProfile.URL:
         return url_alias(token, original)

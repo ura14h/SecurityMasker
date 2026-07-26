@@ -1,4 +1,4 @@
-"""``run``と``doctor``が共有するGateway readiness probe（doc/06 P2-1）。
+"""``doctor``が利用するGateway readiness probe。
 
 One implementation, so the wrapper and the diagnostic can never disagree about
 whether the gateway is usable. The probe is deliberately strict: an HTTP 200 is

@@ -30,7 +30,7 @@ class NormalizedText:
     # in ``original`` of the chunk that produced it. A chunk is a base code point
     # plus its following combining marks, so canonical composition across code
     # points (か + U+3099 -> が) is captured while spans still round out to whole
-    # original chunks (doc/06 P0-7). Both tuples have length == len(normalized).
+    # original chunks. Both tuples have length == len(normalized).
     _src: tuple[int, ...]
     _end: tuple[int, ...]
 

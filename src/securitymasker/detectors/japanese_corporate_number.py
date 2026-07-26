@@ -1,4 +1,4 @@
-"""法人番号（JP corporate number）recognizer（doc/06 §5.7）。
+"""法人番号（JP corporate number）recognizer。
 
 13 digits: a 12-digit base plus a leading check digit. Unlike My Number, the
 corporate number is public, registered information, so masking is opt-in and its

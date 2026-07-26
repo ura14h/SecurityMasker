@@ -6,24 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from securitymasker.bootstrap import initialize_layout
 from securitymasker.cli import main
-
-CONFIG = """
-version: 1
-entities:
-  - id: person
-    type: PERSON
-    values: ["山田太郎"]
-    replacement_profile: prose_identifier
-    restore_policy: literal
-"""
 
 
 @pytest.fixture
 def config_path(tmp_path: Path) -> str:
-    p = tmp_path / "c.yaml"
-    p.write_text(CONFIG, encoding="utf-8")
-    return str(p)
+    return str(initialize_layout(tmp_path, mode="chatgpt", port=49154).config)
 
 
 def test_config_validate_ok(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
@@ -35,35 +24,6 @@ def test_config_validate_bad_returns_error(tmp_path: Path, capsys: pytest.Captur
     bad = tmp_path / "b.yaml"
     bad.write_text("version: 1\nentities:\n  - id: x\n    type: PERSON\n    replacement_profile: nope\n", encoding="utf-8")
     assert main(["config", "validate", "--config", str(bad)]) == 1
-
-
-def test_config_init_creates_self_contained_valid_starter(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    output = tmp_path / "securitymasker.yaml"
-    assert main(["config", "init", "--output", str(output)]) == 0
-    assert output.is_file()
-    assert main(["config", "validate", "--config", str(output)]) == 0
-    captured = capsys.readouterr()
-    assert "created" in captured.out
-    assert "OK: config valid" in captured.out
-
-
-def test_config_init_refuses_to_overwrite_without_force(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    output = tmp_path / "securitymasker.yaml"
-    output.write_text("sentinel\n", encoding="utf-8")
-    assert main(["config", "init", "--output", str(output)]) == 2
-    assert output.read_text(encoding="utf-8") == "sentinel\n"
-    assert "--force" in capsys.readouterr().err
-
-
-def test_config_init_force_replaces_existing_file(tmp_path: Path) -> None:
-    output = tmp_path / "securitymasker.yaml"
-    output.write_text("sentinel\n", encoding="utf-8")
-    assert main(["config", "init", "--output", str(output), "--force"]) == 0
-    assert "version: 1" in output.read_text(encoding="utf-8")
 
 
 def test_entities_test_masks_and_hides_original(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
@@ -78,9 +38,11 @@ def test_entities_list_shows_counts_not_values(config_path: str, capsys: pytest.
     assert main(["entities", "list", "--config", config_path]) == 0
     out = capsys.readouterr().out
     assert "山田太郎" not in out
-    assert "variants=1" in out
+    assert "variants=2" in out
+    assert "variants=3" in out
 
 
-def test_doctor_runs(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["doctor", "--config", config_path]) == 0
-    assert "securitymasker" in capsys.readouterr().out
+def test_doctor_runs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49152)
+    assert main(["doctor", "--config", str(layout.config)]) == 0
+    assert "[ok  ] config:" in capsys.readouterr().out

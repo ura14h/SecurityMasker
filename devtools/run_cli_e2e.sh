@@ -10,16 +10,12 @@
 # which starts down; bringing it up gives us loopback and nothing else. The test's
 # own egress probe then fails, which is what lets the suite run at all.
 #
-# Linux only。macOSでは両CLIを備えたtest image/containerを別途用意する:
-#
-#   docker run --rm --network none -v "$PWD:/w" -w /w <image> devtools/run_cli_e2e.sh
-#
+# Linux network namespace専用。macOSではこの境界を同等に証明できないためrelease gateを実行しない。
 # release gateではcodex/claudeの両方を必須とし、欠落や境界未確認を成功扱いしない。
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Linux" ]]; then
-    echo "error: needs Linux network namespaces. On macOS use a --network none" >&2
-    echo "       container, or accept the skip." >&2
+    echo "error: needs a Linux network namespace for the complete E2E stack" >&2
     exit 2
 fi
 

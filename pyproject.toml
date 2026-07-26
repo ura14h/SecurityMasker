@@ -15,8 +15,7 @@ keywords = ["pii", "masking", "security", "llm-proxy", "pseudonymization"]
 
 # The gateway is a purpose-built Starlette + httpx transparent proxy (ADR-0006);
 # there is no LiteLLM dependency. Runtime deps are range-pinned here and exactly
-# pinned in requirements.lock, which CI and Docker install from for reproducible
-# builds (see docs/compatibility.md).
+# pinned in requirements.lock for reproducible source setup.
 dependencies = [
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3,<3",
@@ -32,10 +31,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Redis-backed session store (Phase 5).
-redis = [
-    "redis>=5.0,<9",
-]
 dev = [
     "pytest>=8.2,<9",
     "pytest-asyncio>=0.23,<0.25",

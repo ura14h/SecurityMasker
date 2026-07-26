@@ -36,7 +36,9 @@ def _runtime() -> GatewayRuntime:
         leak_scanners=[build_secret_detector()],
     )
     return GatewayRuntime(engine, InMemorySessionStore(),
-                          openai_upstream="http://oai.test", anthropic_upstream="http://anthropic.test")
+                          openai_upstream="http://oai.test",
+                          anthropic_upstream="http://anthropic.test",
+                          product_mode="chatgpt")
 
 
 @pytest.fixture
@@ -131,11 +133,13 @@ async def test_internal_session_header_not_forwarded(app_and_calls) -> None:
 
 
 @pytest.mark.asyncio
-async def test_messages_uses_anthropic_upstream(app_and_calls) -> None:
+async def test_chatgpt_mode_does_not_expose_messages(app_and_calls) -> None:
     client, calls = app_and_calls
     async with client:
-        await _post(client, "/v1/messages", json_body={"max_tokens": 1, "messages": []})
-    assert len(calls) == 1 and calls[0]["url"].startswith("http://anthropic.test")
+        response = await _post(
+            client, "/v1/messages", json_body={"max_tokens": 1, "messages": []}
+        )
+    assert response.status_code == 404 and calls == []
 
 
 # --- P0-5: oversized body must not be forwarded ---------------------------------
@@ -223,7 +227,9 @@ async def test_oversized_field_fails_closed(monkeypatch) -> None:
                     ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value)],
         name="user")])
     rt = GatewayRuntime(engine, InMemorySessionStore(),
-                        openai_upstream="http://oai.test", anthropic_upstream="http://anthropic.test")
+                        openai_upstream="http://oai.test",
+                        anthropic_upstream="http://anthropic.test",
+                        product_mode="chatgpt")
     app = gwapp.create_app(rt)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:
         r = await c.post("/responses", json={"input": "x" * 200 + PERSON})
@@ -240,24 +246,9 @@ async def test_readiness_ok_with_engine(app_and_calls) -> None:
         assert (await client.get("/ready")).status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_readiness_fails_without_engine(monkeypatch) -> None:
-    async def fake_streaming(method, url, headers, body, processor=None, on_complete=None):
-        raise AssertionError("must not forward")
-
-    monkeypatch.setattr(gwapp, "forward_streaming", fake_streaming)
-    rt = GatewayRuntime(None, InMemorySessionStore(),
-                        openai_upstream="http://oai.test", anthropic_upstream="http://anthropic.test")
-    app = gwapp.create_app(rt)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:
-        assert (await c.get("/health")).status_code == 200   # liveness up
-        assert (await c.get("/ready")).status_code == 503     # not ready (no engine)
-
-
 def test_from_env_requires_config(monkeypatch) -> None:
     from securitymasker.errors import ConfigError
 
     monkeypatch.delenv("SECURITYMASKER_CONFIG", raising=False)
-    monkeypatch.delenv("SECURITYMASKER_DEV_TRANSPARENT", raising=False)
     with pytest.raises(ConfigError):
         GatewayRuntime.from_env()

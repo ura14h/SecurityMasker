@@ -66,6 +66,7 @@ def _runtime(
         store or InMemorySessionStore(),
         openai_upstream="http://up.test",
         anthropic_upstream="http://up.test",
+        product_mode="chatgpt",
         telemetry=telemetry,
     )
 
@@ -202,12 +203,10 @@ class _BrokenReadinessStore(InMemorySessionStore):
         self,
         session_id: str,
         *,
-        tenant_id: str | None = None,
-        user_id: str | None = None,
         client_type: str = "unknown",
         lock: Any = None,
     ) -> Any:
-        del session_id, tenant_id, user_id, client_type, lock
+        del session_id, client_type, lock
         raise SessionError("synthetic store failure")
 
 
@@ -237,22 +236,16 @@ async def test_readiness_store_failure_records_store_metric() -> None:
     )
 
 
-class _SyntheticRedisError(RuntimeError):
-    __module__ = "redis.exceptions"
-
-
 class _BrokenRequestStore(InMemorySessionStore):
     @asynccontextmanager
-    async def lock(
-        self, session_id: str, tenant_id: str | None = None
-    ) -> Any:
-        del session_id, tenant_id
-        raise _SyntheticRedisError("synthetic Redis transport failure")
+    async def lock(self, session_id: str) -> Any:
+        del session_id
+        raise SessionError("synthetic SQLite failure")
         yield LockHandle()  # pragma: no cover - async context managerの型を固定する
 
 
 @pytest.mark.asyncio
-async def test_request_redis_transport_failure_is_safe_503_and_store_metric() -> None:
+async def test_request_store_failure_is_safe_503_and_store_metric() -> None:
     telemetry, metrics, records = _telemetry()
     app = gwapp.create_app(_runtime(telemetry, store=_BrokenRequestStore()))
 
@@ -273,7 +266,7 @@ async def test_request_redis_transport_failure_is_safe_503_and_store_metric() ->
         == 1
     )
     assert snapshot["gateway_blocks_total{provider=openai,reason=store}"] == 1
-    assert "synthetic Redis transport failure" not in response.text
+    assert "synthetic SQLite failure" not in response.text
     assert any(
         record.event is AuditEvent.STORE_ERROR
         and record.reason is StoreOperation.REQUEST

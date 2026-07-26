@@ -1,7 +1,6 @@
 """永続client設定を使う実Codex/Claude Code CLI E2E（ADR-0012 Phase 7）。
 
 通常運用と同じv2 config/dict/state/key、`client-config`と同じ生成元の永続設定を使う。
-`securitymasker run`のprocess overrideは使わない。
 
 **Egress.** Pointing a CLI at a local URL is a routing choice, not a containment
 boundary: both tools have update checks, analytics and crash reporting that do not
@@ -10,7 +9,7 @@ the internet rather than fail. Dummy credentials do not change that.
 
 So containment is **checked structurally**: the host must have no non-loopback
 interface and no default route. That is a property of the network stack, and it is
-what a namespace or a ``--network none`` container actually produces.
+what a fresh network namespace produces.
 
 An earlier version instead tried to connect to 1.1.1.1 and 8.8.8.8 and treated
 failure as safety. That is not a proof of anything: a network can drop those two

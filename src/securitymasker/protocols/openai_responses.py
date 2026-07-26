@@ -62,7 +62,7 @@ async def mask_request(
             await _mask_tool_definition(tool, mask)
 
     # 一つ以上のaliasを生成した場合、modelへ保持指示を任意で追加する。
-    # placeholders verbatim (doc/06 inject_alias_instruction).
+    # placeholders verbatim.
     if engine.inject_alias_instruction and session.mappings_by_alias:
         _prepend_instruction(data)
     return summary
@@ -150,7 +150,7 @@ def restore_response(engine: MaskingEngine, session: MaskingSession, data: dict[
     """非streamingのResponses／Chat responseをin-placeで復元する（§19）。
 
     Response text is restored for display; tool-call ``arguments`` are restored to
-    real values only for allowlisted trusted-local tools (doc/06 P0-8).
+    real values only for allowlisted trusted-local tools.
     """
     restore = engine.make_restorer(session)
     reasm = ToolArgumentReassembler(restore)
@@ -182,7 +182,7 @@ def _restore_output_item(
                     if isinstance(part.get(key), str):
                         part[key] = restore(part[key])
     # tool argumentは実行対象なので、信頼済みlocal toolだけ実値へ復元する。
-    # otherwise leave the aliases in place (doc/06 P0-8).
+    # otherwise leave the aliases in place.
     if isinstance(item.get("arguments"), str) and trust.restores_arguments(item.get("name")):
         item["arguments"] = reasm.restore_arguments(item["arguments"])
 

@@ -2,7 +2,7 @@
 
 - 状態：採用（ADR-0006により撤回）
 - 日付：2026-07-24
-- 関連: `doc/00-First-Order.md` §4, §37 / [compatibility.md](../compatibility.md)
+- 関連: [ADR-0006](0006-drop-litellm-purpose-built-proxy.md)（本ADRを撤回）
 
 ## 背景
 
@@ -17,7 +17,7 @@ SecurityMasker は LiteLLM 本体を fork せず、リクエスト直前のマ�
 LiteLLM 依存は `src/securitymasker/integrations/litellm.py` の 1 ファイルに閉じ込め、
 masking core からは LiteLLM を import しない。
 
-採用フック（1.93.0 で確認、[compatibility.md](../compatibility.md)）:
+採用フック（1.93.0 で確認）:
 
 - `async_pre_call_hook` — 送信前マスキング（fail-closed）
 - `async_post_call_success_hook` — 非ストリーム復元

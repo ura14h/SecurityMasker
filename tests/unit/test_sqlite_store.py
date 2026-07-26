@@ -12,7 +12,7 @@ from securitymasker.aliases.factory import get_or_create_alias
 from securitymasker.bootstrap import initialize_layout
 from securitymasker.config import load_config
 from securitymasker.engine import MaskingEngine
-from securitymasker.errors import ConfigError, SessionError
+from securitymasker.errors import SessionError
 from securitymasker.gateway.runtime import GatewayRuntime
 from securitymasker.models import ReplacementProfile, RestorePolicy
 from securitymasker.sessions.sqlite import SQLiteSessionStore
@@ -155,8 +155,6 @@ async def test_v2_runtime_creates_database_on_first_gateway_start(
     assert config.state is not None
     assert not config.state.database.exists()
     monkeypatch.setenv("SECURITYMASKER_CONFIG", str(layout.config))
-    monkeypatch.delenv("SECURITYMASKER_STORE", raising=False)
-
     runtime = GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)
     assert isinstance(runtime.store, SQLiteSessionStore)
     assert config.state.database.is_file()
@@ -185,16 +183,3 @@ async def test_cli_mode_override_is_bound_into_new_database_metadata(
             config.state.key,
             mode="chatgpt",
         )
-
-
-def test_v2_runtime_refuses_legacy_store_override(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    layout = initialize_layout(tmp_path, mode="chatgpt", port=4000)
-    config = load_config(layout.config)
-    monkeypatch.setenv("SECURITYMASKER_CONFIG", str(layout.config))
-    monkeypatch.setenv("SECURITYMASKER_STORE", "memory")
-
-    with pytest.raises(ConfigError):
-        GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)

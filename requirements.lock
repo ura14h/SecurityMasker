@@ -1,5 +1,4 @@
-# Standard source runtime lock. Redis and dev/test tooling are intentionally excluded.
-# The transitional Docker/Redis implementation adds requirements-redis.lock separately.
+# Standard source runtime lock. Development and test tooling are excluded.
 PyYAML==6.0.3
 annotated-types==0.8.0
 anyio==4.14.2

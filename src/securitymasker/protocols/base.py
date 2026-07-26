@@ -37,7 +37,7 @@ class MaskingSummary:
 TEXT_KEYS = frozenset({"text", "input_text", "output_text"})
 
 # modelがplaceholderをverbatimに保持するよう任意で注入する指示。
-# restoration fidelity (doc/06 P1-2 inject_alias_instruction). Contains no secrets.
+# restoration fidelity. Contains no secrets.
 ALIAS_INSTRUCTION = (
     "Note: tokens such as SM_PERSON_XXXXXX, sm-host-xxxxxx.example.invalid, and "
     "${SECURITYMASKER_SECRET_XXXXXX} are placeholders inserted by a security proxy. "

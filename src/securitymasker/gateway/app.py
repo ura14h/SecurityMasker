@@ -1,4 +1,4 @@
-"""SecurityMasker proxy ASGI app（ADR-0006、doc/06-Issue.md P0で堅牢化）。
+"""SecurityMasker proxy ASGI app（ADR-0006、ADR-0012）。
 
 Routes Codex (OpenAI Responses) and Claude Code (Anthropic Messages) through the
 masking core. Security gates (external-send is only allowed after masking):
@@ -37,9 +37,8 @@ from securitymasker.errors import (
     SessionError,
 )
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
-from securitymasker.gateway.identity import Identity, IdentityError, resolve_identity
 from securitymasker.gateway.runtime import GatewayRuntime
-from securitymasker.gateway.session import namespaced_key, resolve_session
+from securitymasker.gateway.session import resolve_session
 from securitymasker.gateway.telemetry import (
     GatewayTelemetryMiddleware,
     ResponseBindingStreamError,
@@ -58,7 +57,7 @@ from securitymasker.streaming.openai_responses_stream import ResponsesStreamProc
 
 _log = get_logger(component="securitymasker.gateway")
 
-# マスク前に受理するrequest bodyの最大値（doc/06 P0-5）。testから変更できるmodule値。
+# マスク前に受理するrequest bodyの最大値。testから変更できるmodule値。
 # tuned/overridden; a hard cap protects the detectors and the event loop (§32).
 MAX_BODY_BYTES = 10 * 1024 * 1024
 _INTERNAL_HEADER_PREFIX = "x-securitymasker-"
@@ -76,17 +75,17 @@ def _payload_has_alias_shape(data: dict[str, Any]) -> bool:
 
 # 全upstreamへ転送可能なheader。deny-by-defaultで未記載項目を拒否する。
 # in the provider set below) is dropped, so a custom header can neither leak a
-# secret nor smuggle data past the masker (doc/06 P0-4).
+# secret nor smuggle data past the masker.
 _COMMON_HEADERS = frozenset({
     "accept", "accept-encoding", "accept-language", "content-type", "content-length",
     "user-agent",
 })
 
 # provider固有header。Anthropicの`x-api-key`をOpenAIへ送ってはならない。
-# `openai-*`/`chatgpt-*` are OpenAI's and must never reach Anthropic (doc/06 P0-3).
+# `openai-*`/`chatgpt-*` are OpenAI's and must never reach Anthropic.
 # `authorization` is Bearer for BOTH providers, so it is forwarded only to the
 # upstream the client's own route selected — never copied across providers.
-# 実Codex sessionで確認したCodex固有request header（doc/05-Phase6-Design.md）。
+# 実Codex sessionで確認したCodex固有request header。
 # Codex session). `session-id`/`thread-id` are the correct spellings — Codex sends
 # them and the session resolver reads them, so they must reach the upstream too.
 _OPENAI_HEADERS = frozenset({
@@ -101,7 +100,7 @@ def _is_openai_passthrough(name: str) -> bool:
 
     Because the NAME is not known in advance, the VALUE is untrusted free text and
     is scanned with the full deterministic detector set before forwarding — unlike
-    the fixed, structural headers above (doc/06 P0-4).
+    the fixed, structural headers above.
     """
     return name.startswith("x-codex-")
 
@@ -135,12 +134,6 @@ _TRANSPORT_HEADERS = frozenset({
 })
 
 
-def _is_store_transport_error(exc: Exception) -> bool:
-    """任意依存をimportせずRedis client由来のtransport障害だけを識別する。"""
-    module = type(exc).__module__
-    return module == "redis.exceptions" or module.startswith("redis.")
-
-
 def _client_headers(request: Request, provider: str) -> dict[str, str]:
     """``provider``ごとのallowlist済みheaderを返し、それ以外は破棄する。"""
     allowed = _COMMON_HEADERS | PROVIDER_HEADERS.get(provider, frozenset())
@@ -158,7 +151,7 @@ async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JS
     """request bodyを検証してJSON objectへparseし、失敗時はlocal errorを返す。
 
     Refuses (no forward) on unsupported Content-Encoding/Type, oversized bodies,
-    malformed JSON, or non-object JSON (doc/06 P0-2/P0-5).
+    malformed JSON, or non-object JSON.
     """
     encoding = request.headers.get("content-encoding", "").strip().lower()
     if encoding and encoding != "identity":
@@ -169,7 +162,7 @@ async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JS
         return None, _error(415, "unsupported_media_type",
                             "Only application/json request bodies are supported.")
     # 宣言lengthで先に拒否し、stream受信中にも上限を強制する。
-    # oversized (or lying) body is never fully materialised in memory (doc/06 P1-5).
+    # oversized (or lying) body is never fully materialised in memory.
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         return None, _error(413, "payload_too_large",
@@ -198,20 +191,10 @@ async def health(request: Request) -> JSONResponse:
 
 
 async def ready(request: Request) -> JSONResponse:
-    """readiness：masking engineとsession storeの両方が利用可能か示す（doc/06 P0-1）。
-
-    Probes the store for real — a configured-but-unreachable Redis (or a bad master
-    key) must not report ready, since every request depends on it (finding 8).
-    """
+    """readiness：masking engineとSQLiteの両方が利用可能か実probeする。"""
     rt: GatewayRuntime = request.app.state.runtime
-    if rt.engine is None:
-        return JSONResponse({"ready": False, "reason": "masking engine not configured"},
-                            status_code=503)
     try:
-        # Redis storeのnamespaceを一致させるため、同じargumentで作成・削除する。
-        # tenant, so creating with a tenant and deleting without one wrote one key
-        # and removed another, leaking a probe session on every check.
-        probe = namespaced_key("_readiness", "__securitymasker_readiness__")
+        probe = "__securitymasker_readiness__"
         await rt.store.get_or_create(probe)
         await rt.store.delete(probe)
     except Exception as exc:  # noqa: BLE001 - any store fault means not ready
@@ -241,44 +224,19 @@ async def _handle(
     url = f"{upstream}{path}"
     headers = _client_headers(request, provider)
 
-    if rt.engine is None:
-        # 開発専用のtransparent mode。既定ではconfig必須（runtime参照）。
-        return await forward_streaming(request.method, url, headers, await request.body())
-
     data, err = await _read_json_object(request)
     if err is not None or data is None:
         telemetry.blocked(provider_name, BlockReason.REQUEST_FORMAT)
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
-    try:
-        # cryptoとheader canonicalizationはhandlerではなくidentity moduleで検証する。
-        # parsing stay out of request orchestration (§ architecture).
-        identity = resolve_identity(
-            rt.mode, request.headers,
-            auth_secret=rt.tenant_auth_secret,
-            max_skew_seconds=rt.max_clock_skew_seconds,
-            require_timestamp=rt.require_assertion_timestamp,
-            tenant_header=rt.tenant_header,
-        )
-    except IdentityError as exc:
-        # caller間のalias table共有を防ぐためfail-closedにする。
-        # what this boundary exists to prevent (doc/06 P0-9). The message never
-        # echoes the presented proof or claimed identity (§25).
-        _log.warning("sm_block_identity", path=path, reason=str(exc))
-        telemetry.blocked(provider_name, BlockReason.IDENTITY)
-        return _error(403, "identity_required", str(exc))
-
     resolved = resolve_session(request.headers, data)
-    store_key = namespaced_key(identity, resolved.session_id)
+    store_key = resolved.session_id
     stable = resolved.stable
     if not stable and resolved.previous_response_id:
         # previous_response_id changes every turn, so it is a lookup handle only:
-        # continue the session that actually produced that response (doc/06 P1-1).
-        # 保存値はすでにtenant namespaceを含む完全なstore key。
+        # continue the session that actually produced that response.
         try:
-            bound = await rt.store.resolve_response(
-                namespaced_key(identity, resolved.previous_response_id)
-            )
+            bound = await rt.store.resolve_response(resolved.previous_response_id)
             if bound is not None and await rt.store.get(bound) is None:
                 # binding元sessionが期限切れ・revoke・purge済みなら新sessionを作らない。
                 # a fresh one here would silently re-mask the client's existing aliases
@@ -293,11 +251,10 @@ async def _handle(
             )
         if bound is None:
             # 対応sessionを特定できないconversation継続は拒否する。
-            # another tenant's, or never ours). Refuse unconditionally: the body
-            # may carry aliases we can neither recognise nor restore. Shape
+            # 自プロセスの既知responseでない場合は一律拒否する。Shape
             # heuristics are NOT enough here — a numeric or uuid alias is
             # indistinguishable from ordinary data, and such a request would be
-            # silently re-masked onto a new table (doc/06 P1-1).
+            # silently re-masked onto a new table.
             _log.warning("sm_block_unknown_previous_response", path=path)
             telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
             return _error(409, "session_unresolved",
@@ -314,27 +271,20 @@ async def _handle(
 
     try:
         # get／create／mask／saveを一つの排他区間に置くため最初にlockする。
-        # workers can't fork the same session's alias table (doc/06 P1-9).
-        async with rt.store.lock(store_key, tenant_id=identity.tenant) as held:
-            session = await rt.store.get_or_create(
-                store_key,
-                tenant_id=identity.tenant,
-                user_id=identity.user,
-                lock=held,
-            )
+        # concurrent requests can't fork the same session's alias table.
+        async with rt.store.lock(store_key) as held:
+            session = await rt.store.get_or_create(store_key, lock=held)
             summary = await mask(rt.engine, session, data)
-            # masking中のlock失効を早期検出する。Redis save自身もowner確認とSETを
-            # 同じLua実行へ閉じ込めるため、verify後にleaseが失効してもstale writeは
-            # fail-closedになる（doc/06 P1-9）。
+            # 保存前にlock ownershipを再確認する。
             await held.verify()
             await rt.store.save(session, lock=held)
             held.check()
-        # マスク済みpayload全体への最終block-only guard（doc/06 P0-4）。
+        # マスク済みpayload全体への最終block-only guard。
         # registered secret in an unknown/structural field must never be forwarded.
         await rt.engine.assert_no_leak_in_payload(data, session=session, request_id=store_key)
         # allowlist対象だけでなく全incoming non-auth headerにも同じguardを適用する。
         # subset — so a secret placed in a header is refused outright rather than
-        # silently dropped (doc/06 P0-4). Provider auth headers are excluded: they
+        # silently dropped. Provider auth headers are excluded: they
         # are the client's own credential for this upstream and must never be
         # scanned into an error or log (§25). Transport headers are excluded too:
         # they are generated by the client/proxy, not user content.
@@ -345,7 +295,7 @@ async def _handle(
         )
         # wildcard一致する`x-codex-*`は自由text値を持つため個別scanする。
         # the narrow header scan is not enough — run the FULL deterministic set on
-        # them, exactly as for a body field (doc/06 P0-4).
+        # them, exactly as for a body field.
         wildcard = {
             k: v
             for k, v in scannable.items()
@@ -379,18 +329,6 @@ async def _handle(
         telemetry.blocked(provider_name, reason, session_id=store_key)
         _log.warning("sm_block", path=path)
         return _error(400, "securitymasker_blocked", str(exc))
-    except Exception as exc:
-        # Redis clientは接続障害をSecurityMaskerErrorへ変換しない。masking coreの
-        # programming errorまでstore障害へ誤分類しないよう、transport型だけを扱う。
-        if not _is_store_transport_error(exc):
-            raise
-        telemetry.store_error(provider_name, StoreOperation.REQUEST)
-        telemetry.blocked(
-            provider_name, BlockReason.STORE, session_id=store_key
-        )
-        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
-        return _error(503, "session_store_unavailable", "Session store unavailable.")
-
     telemetry.masked(
         provider_name, summary.entity_counts, session_id=store_key
     )
@@ -400,14 +338,11 @@ async def _handle(
                                 rt.engine.make_restorer(session),
                                 rt.engine.tool_trust)
         # stream内response IDをこのsessionへbindingし、次turnで再利用する。
-        # turn's previous_response_id continues it (doc/06 P1-1).
-        bound_identity = identity
-
-        async def _bind_stream(p: Any, key: str = store_key,
-                               ident: Identity = bound_identity) -> None:
+        # turn's previous_response_id continues it.
+        async def _bind_stream(p: Any, key: str = store_key) -> None:
             try:
                 for rid in getattr(p, "response_ids", ()):
-                    await rt.store.bind_response(namespaced_key(ident, rid), key)
+                    await rt.store.bind_response(rid, key)
             except Exception:
                 telemetry.store_error(provider_name, StoreOperation.RESPONSE_BINDING)
                 # middlewareがresponse開始後の例外を一度だけstream errorとして数える。
@@ -427,13 +362,11 @@ async def _handle(
         resp = None
     if resp is not None:
         # 次turnがsessionを解決できるよう、復元前にresponse IDをbindingする。
-        # previous_response_id resolves back here (doc/06 P1-1).
+        # previous_response_id resolves back here.
         rid = resp.get("id")
         if isinstance(rid, str) and rid:
             try:
-                await rt.store.bind_response(
-                    namespaced_key(identity, rid), store_key
-                )
+                await rt.store.bind_response(rid, store_key)
             except Exception:
                 telemetry.store_error(provider_name, StoreOperation.RESPONSE_BINDING)
                 raise
@@ -512,14 +445,14 @@ def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
         Route("/ready", ready, methods=["GET"]),
     ]
     resolved_runtime = runtime or GatewayRuntime.from_env()
-    if resolved_runtime.product_mode in {None, "chatgpt"}:
+    if resolved_runtime.product_mode == "chatgpt":
         routes.extend([
             Route("/responses", handle_responses, methods=["POST"]),
             Route("/v1/responses", handle_responses, methods=["POST"]),
             Route("/models", handle_openai_models, methods=["GET"]),
             Route("/v1/models", handle_openai_models, methods=["GET"]),
         ])
-    if resolved_runtime.product_mode in {None, "claude"}:
+    if resolved_runtime.product_mode == "claude":
         routes.extend([
             Route("/messages", handle_messages, methods=["POST"]),
             Route("/v1/messages", handle_messages, methods=["POST"]),

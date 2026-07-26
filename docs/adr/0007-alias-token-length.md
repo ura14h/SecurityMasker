@@ -2,7 +2,7 @@
 
 - 状態：採用
 - 日付：2026-07-25
-- 置換対象：なし。ADR-0005（alias HMAC／AES-GCM）、doc/06 P1-8 に関連。
+- 関連：ADR-0005（alias HMAC／AES-GCM）
 
 ## 背景
 

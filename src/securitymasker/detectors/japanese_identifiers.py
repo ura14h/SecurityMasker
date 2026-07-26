@@ -1,4 +1,4 @@
-"""日本の公的・業務identifier（doc/06 §5.7）。
+"""日本の公的・業務identifier。
 
 These numbers share a problem: their raw formats collide with ordinary numbers
 (an order id, a build number, a customer reference). Detecting them on shape alone

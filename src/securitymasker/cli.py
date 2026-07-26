@@ -10,21 +10,16 @@ MASKED text and per-entity counts, not the originals. Subcommands:
     securitymasker entities list   [--config PATH]
     securitymasker entities test "<text>" [--config PATH]
     securitymasker doctor          [--config PATH] [--json]
-    securitymasker run <tool> [args...]      # session-scoped wrapper (§7)
-    securitymasker sessions <list|inspect|revoke|purge>
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import os
 import sys
 import uuid
 from collections import Counter
-from importlib import resources
-from pathlib import Path
 
 from securitymasker import __version__
 from securitymasker.config import (
@@ -35,14 +30,6 @@ from securitymasker.config import (
     resolve_config_path,
 )
 from securitymasker.errors import ConfigError, SecurityMaskerError
-from securitymasker.integrations.launcher import (
-    DEFAULT_GATEWAY,
-    LaunchRefused,
-    build_plan,
-    describe_manual_setup,
-    new_session_id,
-)
-from securitymasker.integrations.readiness import check_readiness
 from securitymasker.sessions.memory import InMemorySessionStore
 
 
@@ -52,6 +39,8 @@ def _load(path: str | None) -> SecurityMaskerConfig:
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
     config = _load(args.config)
+    if config.version != 2:
+        raise ConfigError("version 2 securitymasker.config is required")
     runtime = (
         f", mode={config.runtime.mode}, port={config.runtime.port}"
         if config.runtime is not None
@@ -63,32 +52,6 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
         f"{config.enable_secret_detector}, normalization={config.defaults.normalization}"
         f"{runtime}"
     )
-    return 0
-
-
-def cmd_config_init(args: argparse.Namespace) -> int:
-    """配布物内の合成値だけを含むstarter設定を安全に書き出す。"""
-    output = Path(args.output)
-    template = resources.files("securitymasker.resources").joinpath(
-        "securitymasker.example.yaml"
-    ).read_text(encoding="utf-8")
-    try:
-        if args.force:
-            output.write_text(template, encoding="utf-8")
-        else:
-            with output.open("x", encoding="utf-8") as stream:
-                stream.write(template)
-    except FileExistsError:
-        print(
-            f"error: {output} already exists; pass --force to replace it",
-            file=sys.stderr,
-        )
-        return 2
-    except OSError as exc:
-        detail = exc.strerror or exc.__class__.__name__
-        print(f"error: cannot write {output}: {detail}", file=sys.stderr)
-        return 1
-    print(f"created {output}")
     return 0
 
 
@@ -170,64 +133,6 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if any(r.failed for r in results) else 0
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    """proxy経由に設定したtoolだけを起動し、設定不能なら何も起動しない（§7）。
-
-    Fail-closed: if the gateway is not ready, or we cannot route this particular
-    tool, the child process is never started — reporting success while the tool
-    talks straight to the provider would be the worst possible outcome.
-
-    What that does and does not establish, stated precisely because "guaranteed"
-    was overclaiming it:
-
-    - Verified by unit tests: the settings handed to the child point at the
-      gateway and carry the session header; direct-provider environment variables
-      and unknown tools are refused; nothing launches unless /ready reports ready.
-    - Verified by tests/integration/test_real_cli_e2e.py (opt-in): the real codex
-      and claude binaries, launched this way, reach a mock upstream carrying only
-      aliases. That test exists because settings we consider well-formed can still
-      be rejected by the tool — as happened when http_headers was emitted as JSON
-      rather than TOML and codex refused to start at all.
-    - Still not covered: a real provider. The E2E upstream is a local mock, so
-      this says nothing about provider-side behaviour.
-    """
-    if not args.tool:
-        print("usage: securitymasker run <tool> [args...]", file=sys.stderr)
-        return 2
-
-    gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
-
-    status = check_readiness(gateway)
-    if not status.ok:
-        print(f"error: {status.detail}. Refusing to launch "
-              f"{Path(args.tool[0]).name!r} unprotected.", file=sys.stderr)
-        print(describe_manual_setup(gateway), file=sys.stderr)
-        return 3
-
-    session_id = new_session_id()
-    try:
-        plan = build_plan(list(args.tool), gateway=gateway, session_id=session_id,
-                          allow_unknown_tool=args.unsafe_unknown_tool)
-    except LaunchRefused as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        print(describe_manual_setup(gateway), file=sys.stderr)
-        return 3
-
-    # executable名、session ID fingerprint、routeだけをlogへ記録する。
-    # never the command line (it routinely carries tokens as flags), the raw
-    # session id, or any credential (§25).
-    digest = hashlib.sha256(session_id.encode()).hexdigest()[:12]
-    for warning in plan.warnings:
-        print(f"[securitymasker] WARNING: {warning}", file=sys.stderr)
-    print(
-        f"[securitymasker] session {digest}… — launching {Path(plan.argv[0]).name} "
-        f"({len(args.tool) - 1} arg(s) not shown) via {plan.route_note}",
-        file=sys.stderr,
-    )
-    os.execvpe(plan.argv[0], plan.argv, plan.env)  # replaces this process
-    return 0  # unreachable
-
-
 def cmd_models_fetch(args: argparse.Namespace) -> int:
     """固定したNER modelを取得してdigestを検証する（ADR-0009）。
 
@@ -265,62 +170,20 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     os.environ["SECURITYMASKER_CONFIG"] = str(config_path)
 
     runtime = config.runtime
-    host = args.host or (runtime.host if runtime is not None else "127.0.0.1")
-    port = args.port or (runtime.port if runtime is not None else 4000)
-    product_mode = args.mode or (runtime.mode if runtime is not None else None)
-    if product_mode is not None:
-        os.environ["SECURITYMASKER_PRODUCT_MODE"] = product_mode
+    if config.version != 2 or runtime is None:
+        raise ConfigError("Gateway requires a version 2 securitymasker.config")
+    host = args.host or runtime.host
+    port = args.port or runtime.port
+    product_mode = args.mode or runtime.mode
+    os.environ["SECURITYMASKER_PRODUCT_MODE"] = product_mode
 
-    # A non-loopback bind exposes the proxy — and the client credentials flowing
-    # through it — to the network. Refuse unless the operator explicitly accepts
-    # it AND has put an authenticator in front (doc/06 P0-9).
-    from securitymasker.gateway.runtime import LOOPBACK_HOSTS
-
-    if host not in LOOPBACK_HOSTS:
-        from securitymasker.gateway.identity import isolates_callers
-
-        acknowledged = os.environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
-        # legacy名だけでなくcallerを分離する全modeを対象とする。
-        # `tenant`/`tenant_user` deployments got the single-tenant warning.
-        multitenant = isolates_callers(os.environ.get("SECURITYMASKER_MODE", "local"))
-        if not acknowledged:
-            print(
-                f"error: refusing to bind {host} (non-loopback). The proxy has no "
-                "built-in authentication; put a trusted authenticator in front and set "
-                "SECURITYMASKER_ALLOW_PUBLIC_BIND=1 to acknowledge.",
-                file=sys.stderr,
-            )
-            return 2
-        if not multitenant:
-            print(
-                "warning: public bind in single-tenant 'local' mode — every caller "
-                "shares one alias table. Set SECURITYMASKER_MODE=tenant_user to "
-                "separate callers by tenant AND user, or =tenant for tenant only.",
-                file=sys.stderr,
-            )
-
-    mode_label = f"masking/{product_mode}" if product_mode else "masking/legacy"
     print(
-        f"[securitymasker] gateway on http://{host}:{port} ({mode_label})",
+        f"[securitymasker] gateway on http://{host}:{port} (masking/{product_mode})",
         file=sys.stderr,
     )
     # create_app() -> GatewayRuntime.from_env() fails closed if unconfigured (P0-1).
     uvicorn.run(create_app(), host=host, port=port, log_level="warning")
     return 0
-
-
-def cmd_sessions(args: argparse.Namespace) -> int:
-    # 未実装commandなので正直に非0終了する（doc/06 P2-1）。
-    # in-memory store lives inside the gateway process and is not reachable here;
-    # a CLI that manages sessions requires the shared Redis store to be wired to
-    # this process too. Do NOT exit 0 as if it succeeded.
-    print(
-        f"sessions {args.subaction}: not implemented. The session store lives in the "
-        "gateway process; CLI session management needs a shared (Redis) store. "
-        "This command is a placeholder and intentionally exits non-zero.",
-        file=sys.stderr,
-    )
-    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -352,17 +215,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate = config_sub.add_parser("validate", help="validate the config")
     add_config(p_validate)
     p_validate.set_defaults(func=cmd_config_validate)
-    p_init = config_sub.add_parser(
-        "init", help="write a safe starter config containing synthetic values"
-    )
-    p_init.add_argument(
-        "--output", default="securitymasker.yaml", help="destination YAML path"
-    )
-    p_init.add_argument(
-        "--force", action="store_true", help="replace an existing destination"
-    )
-    p_init.set_defaults(func=cmd_config_init)
-
     p_entities = sub.add_parser("entities", help="entity dictionary operations")
     entities_sub = p_entities.add_subparsers(dest="subaction", required=True)
     p_list = entities_sub.add_parser("list", help="list configured entities (no values)")
@@ -399,7 +251,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gateway = sub.add_parser("gateway", help="run the SecurityMasker proxy")
     p_gateway.add_argument("--mode", choices=["chatgpt", "claude"], default=None)
-    p_gateway.add_argument("--host", default=None)
+    p_gateway.add_argument(
+        "--host", choices=["127.0.0.1", "::1", "localhost"], default=None
+    )
     p_gateway.add_argument("--port", type=int, default=None)
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
@@ -413,21 +267,6 @@ def build_parser() -> argparse.ArgumentParser:
                          help="DANGEROUS: accept a model with no artifact manifest")
     add_config(p_fetch)
     p_fetch.set_defaults(func=cmd_models_fetch)
-
-    p_run = sub.add_parser(
-        "run", help="launch codex/claude configured to route via the proxy "
-                    "(refuses to start if the route cannot be set up)")
-    p_run.add_argument("--gateway", default=None,
-                       help=f"gateway base URL (default {DEFAULT_GATEWAY})")
-    p_run.add_argument("--unsafe-unknown-tool", action="store_true",
-                       help="launch an unroutable tool UNPROTECTED (not recommended)")
-    p_run.add_argument("tool", nargs=argparse.REMAINDER, help="tool and args, e.g. codex")
-    p_run.set_defaults(func=cmd_run)
-
-    p_sessions = sub.add_parser("sessions", help="session management")
-    p_sessions.add_argument("subaction", choices=["list", "inspect", "revoke", "purge"])
-    p_sessions.add_argument("session_id", nargs="?")
-    p_sessions.set_defaults(func=cmd_sessions)
 
     return parser
 

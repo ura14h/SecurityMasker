@@ -133,17 +133,3 @@ async def test_waiters_keep_the_lock_entry_alive() -> None:
 
     await asyncio.gather(holder(), waiter())
     assert second.is_set()   # the waiter used the SAME lock, no double entry
-
-
-@pytest.mark.asyncio
-async def test_lock_handle_raises_when_lost() -> None:
-    """A lock lost mid-turn (Redis expiry, failover) must abort, not continue."""
-    from securitymasker.errors import SessionError
-    from securitymasker.sessions.store import LockHandle
-
-    lost = asyncio.Event()
-    handle = LockHandle(lost)
-    handle.check()          # still owned: no raise
-    lost.set()
-    with pytest.raises(SessionError):
-        handle.check()

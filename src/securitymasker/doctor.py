@@ -1,15 +1,9 @@
-"""列挙可能なruntime診断（doc/06 P2-1）。
-
-`doctor` used to check the config and stop there, which meant it could report a
-healthy system while Redis was unreachable, the master key was malformed, or the
-proxy was about to bind publicly without an authenticator. Every check below is a
-separate unit with a name and a verdict, so what was actually verified is
-explicit — "fully wired" is not a claim anyone can check.
+"""ローカルGatewayを変更せずに検査する列挙可能なruntime診断。
 
 Two rules shape the output:
 
 - **No secrets, ever.** Not the master key, not URL credentials, not dictionary
-  values, not session mappings, not an identity proof. Checks report shape and
+  values, not session mappings. Checks report shape and
   reachability; they quote configuration keys, never configuration values (§25).
 - **Never talk to a real provider.** Upstreams are validated syntactically —
   scheme, host, loopback-ness. `doctor` sends no request body anywhere.
@@ -124,6 +118,8 @@ def check_config(path: str | None) -> tuple[CheckResult, Any, Any]:
         # An unreadable path is an ordinary operator mistake and must produce a
         # diagnostic, not a traceback. errno text names the path only.
         return _fail("config", f"cannot read {path!r}: {exc.strerror}"), None, None
+    if config.version != 2:
+        return _fail("config", "version 2 configuration is required"), config, None
     try:
         # Env references, detector models, regex safety — the startup checks.
         engine = build_engine(config)
@@ -275,43 +271,6 @@ def check_runtime_port(config: Any) -> CheckResult:
     return _ok("port", f"{config.runtime.port} is available on loopback")
 
 
-# --- store ---------------------------------------------------------------------------
-
-
-def check_store_backend(environ: dict[str, str]) -> CheckResult:
-    backend = environ.get("SECURITYMASKER_STORE", "memory").lower()
-    if backend == "memory":
-        return _ok("store", "memory (single process; not shared across workers)")
-    if backend != "redis":
-        return _fail("store", f"unknown backend {backend!r}")
-    try:
-        import redis  # noqa: F401
-    except ImportError:
-        return _fail("store", "redis selected but the 'redis' package is not installed")
-    if not environ.get("SECURITYMASKER_REDIS_URL"):
-        return _fail("store", "redis selected but SECURITYMASKER_REDIS_URL is unset")
-    return _ok("store", "redis (configured)")
-
-
-def check_master_key(environ: dict[str, str]) -> CheckResult:
-    """keyの形状だけを検証し、key自体は表示もログ記録もしない。"""
-    backend = environ.get("SECURITYMASKER_STORE", "memory").lower()
-    raw = environ.get("SECURITYMASKER_MASTER_KEY")
-    if backend != "redis":
-        return _skip("store.master_key", "not required for the memory store")
-    if not raw:
-        return _fail("store.master_key", "SECURITYMASKER_MASTER_KEY is required for redis")
-    import base64
-
-    try:
-        decoded = base64.b64decode(raw, validate=True)
-    except Exception:  # noqa: BLE001
-        return _fail("store.master_key", "not valid base64")
-    if len(decoded) != 32:
-        return _fail("store.master_key", f"must decode to 32 bytes, got {len(decoded)}")
-    return _ok("store.master_key", "present, 32 bytes")
-
-
 def check_session_crypto() -> CheckResult:
     """合成値をsession AEADでround-tripする（§8）。"""
     from securitymasker.errors import CryptoError
@@ -351,34 +310,6 @@ async def check_store_probe(store: Any) -> CheckResult:
     return _ok("store.probe", "write/read/delete OK, probe removed")
 
 
-# --- identity + network surface --------------------------------------------------------
-
-
-def check_identity_mode(environ: dict[str, str]) -> CheckResult:
-    from securitymasker.gateway.identity import (
-        MODE_LOCAL,
-        MODE_TENANT,
-        VALID_MODES,
-        normalize_mode,
-    )
-
-    mode = normalize_mode(environ.get("SECURITYMASKER_MODE", MODE_LOCAL))
-    if mode not in VALID_MODES:
-        return _fail("identity", f"unknown SECURITYMASKER_MODE {mode!r}")
-    if mode == MODE_LOCAL:
-        return _ok("identity", "local (single caller; no tenant/user isolation)")
-    if not environ.get("SECURITYMASKER_TENANT_AUTH_SECRET"):
-        return _fail("identity", f"{mode} requires SECURITYMASKER_TENANT_AUTH_SECRET")
-    untimed = environ.get("SECURITYMASKER_ALLOW_UNTIMED_ASSERTIONS") == "1"
-    if untimed:
-        return _warn("identity", f"{mode} with UNTIMED assertions allowed — a captured "
-                                 "proof is replayable for the life of the secret")
-    if mode == MODE_TENANT:
-        return _warn("identity", "tenant — users WITHIN a tenant share an alias table; "
-                                 "use tenant_user for mutually distrusting users")
-    return _ok("identity", "tenant_user (tenant and user isolated)")
-
-
 def check_upstreams(environ: dict[str, str]) -> CheckResult:
     """構文だけを検証し、doctorからproviderへは接続しない。"""
     from securitymasker.gateway.runtime import (
@@ -403,26 +334,6 @@ def check_upstreams(environ: dict[str, str]) -> CheckResult:
     if problems:
         return _fail("upstreams", "; ".join(problems))
     return _ok("upstreams", "scheme/host valid (not contacted)")
-
-
-def check_dev_transparent(environ: dict[str, str]) -> CheckResult:
-    if environ.get("SECURITYMASKER_DEV_TRANSPARENT") != "1":
-        return _ok("dev_transparent", "disabled")
-    if environ.get("SECURITYMASKER_CONFIG"):
-        return _warn("dev_transparent", "set, but a config is present so masking wins")
-    return _warn("dev_transparent",
-                 "ENABLED — bodies are forwarded UNMASKED (loopback upstreams only)")
-
-
-def check_public_bind(environ: dict[str, str]) -> CheckResult:
-    from securitymasker.gateway.identity import isolates_callers
-
-    if environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") != "1":
-        return _ok("bind", "loopback only")
-    if not isolates_callers(environ.get("SECURITYMASKER_MODE", "local")):
-        return _fail("bind", "public bind acknowledged while in local mode — every "
-                             "caller would share one alias table")
-    return _warn("bind", "public bind acknowledged; an authenticator must front the proxy")
 
 
 def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:
@@ -489,7 +400,7 @@ def check_client_proxy_config(
         return _warn("clients", "chatgpt: config.toml does not match generated settings")
 
     notes = [f"claude: ANTHROPIC_BASE_URL={'set' if base else 'unset'}"]
-    notes.append("codex: routed per-process by `securitymasker run`")
+    notes.append("chatgpt: persistent config.toml was not inspected")
     return _ok("clients", "; ".join(notes))
 
 
@@ -523,9 +434,7 @@ def _run_checks(
 
             gateway_target = gateway_url(config)
         else:
-            from securitymasker.integrations.launcher import DEFAULT_GATEWAY
-
-            gateway_target = DEFAULT_GATEWAY
+            gateway_target = "http://127.0.0.1:4000"
 
     # Reuse the pipeline check_config already built. Building another would load
     # HF NER a second time for a single diagnosis.
@@ -547,17 +456,7 @@ def _run_checks(
         yield check_gateway_ready(gateway_target, required=require_ready)
         yield check_client_proxy_config(environ, config)
         return
-
-    yield check_store_backend(environ)
-    yield check_master_key(environ)
-    yield check_session_crypto()
-
-    yield check_identity_mode(environ)
-    yield check_upstreams(environ)
-    yield check_dev_transparent(environ)
-    yield check_public_bind(environ)
-    yield check_gateway_ready(gateway_target, required=require_ready)
-    yield check_client_proxy_config(environ, config)
+    yield _skip("runtime", "version 2 configuration was not available")
 
 
 _SYMBOL: dict[Status, str] = {

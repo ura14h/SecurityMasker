@@ -1,6 +1,4 @@
-# Full dev lock: runtime + standard NER + redis + test/lint/type tooling.
-# CI installs from THIS file, so it tests the same runtime set production ships.
-# The production image installs requirements.lock (runtime only) instead.
+# Full development lock: runtime + standard NER + test/lint/type tooling.
 PyYAML==6.0.3
 Pygments==2.20.0
 annotated-types==0.8.0
@@ -38,7 +36,6 @@ pydantic_core==2.46.4
 pytest-asyncio==0.24.0
 pytest==8.4.2
 python-dotenv==1.2.2
-redis==8.0.1
 regex==2026.7.19
 requests==2.34.2
 respx==0.22.0

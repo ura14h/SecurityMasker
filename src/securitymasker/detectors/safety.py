@@ -1,4 +1,4 @@
-"""ユーザー指定patternに対するregex safety lint（§32、doc/06 P1-5）。
+"""ユーザー指定patternに対するregex safety lint。
 
 Python's ``re`` is a backtracking engine, so a pattern like ``(a+)+$`` degrades
 exponentially: a few dozen characters of input can occupy a core for minutes. The

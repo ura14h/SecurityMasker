@@ -1,96 +1,103 @@
 # SecurityMasker
 
-ローカルの Codex / Claude Code から外部 LLM（OpenAI / Anthropic）へ機密情報を送る前に、
-セッション単位の安定した仮名（alias）へ**可逆置換**し、レスポンスをローカルで復元する
-**可逆マスキング・セキュリティ境界**（透過プロキシ）。
+SecurityMasker は、ローカルの ChatGPT/Codex または Claude Code と外部サービスの間で動く、
+可逆マスキングプロキシです。送信前に機密情報をセッション固有の仮名へ置き換え、応答に含まれる
+仮名をローカルで元の値へ戻します。認証情報はクライアントから上流へ透過し、保存しません。
 
-- 初期ブリーフ（方針）: [`doc/00-First-Order.md`](doc/00-First-Order.md)
-- 実装計画: [`doc/01-Plan.md`](doc/01-Plan.md) / アーキテクチャ転換: [`docs/adr/0006-drop-litellm-purpose-built-proxy.md`](docs/adr/0006-drop-litellm-purpose-built-proxy.md)
-- 開発エージェント向けルール: [`AGENTS.md`](AGENTS.md) / 運用: [`docs/operations.md`](docs/operations.md)
-- **セキュリティ是正の到達状況と既知の制限**: [`doc/07-Remediation-Status.md`](doc/07-Remediation-Status.md)
-  （implemented / partial / 未実装 を明示）
-- 主要な設計判断: [ADR-0007 alias長](docs/adr/0007-alias-token-length.md) /
-  [ADR-0008 tenant+user identity](docs/adr/0008-tenant-user-identity.md) /
-  [ADR-0009 日本語NER](docs/adr/0009-japanese-ner-backend.md) /
-  [ADR-0012 配布設計](docs/adr/0012-renew-package-design.md)
+1プロセスは `chatgpt` または `claude` の一方だけを、loopback上の1ポートで扱います。
+両方を使う場合は、別config・別DB・別keyで2プロセス起動してください。
 
-> ⚠️ `SECURITYMASKER_CONFIG`（マスキング辞書）は**必須**です。未設定だと起動に失敗します
-> （fail-closed）。マスキングなしの開発モードは `SECURITYMASKER_DEV_TRANSPARENT=1` を明示した
-> ときだけで、実プロバイダーには決して向けないでください。
->
-> ✅ `securitymasker run codex` / `run claude` は、**Gateway が `/ready` を返し、かつ経路を
-> 設定できたときだけ**ツールを起動します。経路を保証できない場合は起動しません
-> （「保護されているつもり」で直接送信されることを防ぐため）。
+## 5分で試す（source版）
 
-> ✅ Codex（OpenAI Responses）と Claude Code（Anthropic Messages）を、**自作の薄い透過プロキシ**
-> （Starlette+httpx、LiteLLM 非依存 — [ADR-0006](docs/adr/0006-drop-litellm-purpose-built-proxy.md)）で
-> マスク・復元します（非ストリーム／ストリーム）。認証はクライアントの資格情報を**透過パススルー**
-> （ChatGPT OAuth も可・検証済み）。応答ストリーミング復元も動作します。
+必要条件は Python 3.12 以上です。setup時だけ依存パッケージと固定済み日本語NER modelを
+取得します。prompt処理中にmodelをdownloadすることはありません。
 
-## しくみ
-
-```
-Codex / Claude Code ──▶ SecurityMasker Proxy ──▶ OpenAI / Anthropic / ChatGPT backend
-   ▲  復元済み応答          mask 要求 / restore 応答        （マスク済みデータのみ到達）
-   └───────────────────────  認証は素通し（保存・ログしない）
-```
-
-## マスキングを試す（CLI・外部送信なし）
-
-```bash
+```console
+git clone <repository-url> SecurityMasker
+cd SecurityMasker
 ./scripts/setup
-.venv/bin/python securitymasker.py init --mode chatgpt --port 4000
-.venv/bin/python securitymasker.py preview \
-  "株式会社極秘技研の山田太郎です。 key=sk-abcdefghijklmnopqrstuvwxyz0"
+. .venv/bin/activate
+python3 securitymasker.py init --mode chatgpt --port 4000
+python3 securitymasker.py preview \
+  "株式会社極秘技研の山田太郎です。key=sk-abcdefghijklmnopqrstuvwxyz0"
+python3 securitymasker.py gateway
 ```
 
-`init`は`securitymasker.config`、単一の`securitymasker.dict`、privateなstate directoryと
-master keyを作成する。既存fileは上書きしない。SQLite DBは最初のGateway起動時まで作らない。
-実運用では辞書値を置き換え、API key・password・private keyはファイルへ直書きせず
-`value_from_env`で参照する。
-
-出力例（alias は session 鍵に基づくため実行ごとに異なります）：
+`init` は実行ファイルの隣に次を作ります。既存ファイルは上書きしません。
 
 ```text
-masked:
-  SM_ORG_2121B255C21BのSM_PERSON_81FEB612A4D0です。 key=${SECURITYMASKER_SECRET_5F7B783CB629}
-detected (type: count):
-  API_KEY: 1
-  ORGANIZATION: 1
-  PERSON: 1
+SecurityMasker/
+├── securitymasker.py
+├── securitymasker.config
+├── securitymasker.dict
+└── securitymasker.state/
+    └── securitymasker.key
 ```
 
-CLI は元の入力を再表示せず、この command では復元も行いません。応答経路では、この
-session が生成した `literal` alias だけをローカルで復元します。API key／private key は
-実値へ戻さず `${SECURITYMASKER_SECRET_...}` のまま保持します（§10、§27）。
+`securitymasker.db` は Gateway の初回起動時に作成されます。`securitymasker.dict` の合成例を
+自分の組織名・人名・project名へ置き換えてから通常利用してください。
 
-- 同一セッションでは同じ機密値が常に同じ alias、別セッションでは別 alias（§6）。
+## クライアントを手動設定する
 
-## プロキシを起動して Codex/Claude Code をつなぐ
+SecurityMasker は利用者の設定ファイルを自動変更しません。別terminalで次を実行し、表示された
+設定を適用します。
 
-```bash
-.venv/bin/python securitymasker.py client-config  # 手動設定snippetを表示
-.venv/bin/python securitymasker.py doctor          # 読み取り専用の事前診断
-.venv/bin/python securitymasker.py                 # configのmode/portで起動
+```console
+python3 securitymasker.py client-config
 ```
 
-- **ChatGPT/Codex**: 表示された`config.toml` snippetを手動で追記する。
-- **Claude Code/Desktop**: 表示された`ANTHROPIC_BASE_URL`を起動環境へ手動設定する。
-- `client-config`と`doctor`は利用者のclient設定を変更しない。
-- ラッパー: `securitymasker run codex` / `securitymasker run claude`（セッション UUID を発行して起動）。
+`chatgpt` modeでは ChatGPT/Codex が使用する `config.toml` に custom provider を追加します。
+認証は `requires_openai_auth = true` によりクライアント自身の ChatGPT 認証を透過します。
+`claude` modeでは、Claude Code/Desktopを起動する環境へ
+`ANTHROPIC_BASE_URL=http://127.0.0.1:<port>` を設定します。
 
-## 開発環境セットアップ（pip + venv）
+設定後に Gateway の状態を確認してください。
 
-```bash
-./scripts/setup
-source .venv/bin/activate
-pip install -e ".[dev]"  # 開発・テストを行う場合だけ
+```console
+python3 securitymasker.py doctor
 ```
 
-標準setupは、固定した日本語NER依存とmodelを取得して全artifactを検証します。実行中に
-modelを暗黙downloadすることはなく、欠落・改変・load失敗時はGatewayを起動しません。
-modelの出典とライセンス確認は
-[`docs/model-licenses.md`](docs/model-licenses.md)を参照してください。
+クライアントが本当にこのbase URLへ向いている場合だけ通信が保護されます。通常のWeb版ChatGPT、
+remote session、外部MCPなど、localhost Gatewayを通らない通信は対象外です。
 
-固定バージョンは [`docs/compatibility.md`](docs/compatibility.md)、置いた前提は
-[`docs/adr/`](docs/adr/) を参照。
+## binary版
+
+one-file版も同じコマンドと隣接ファイルを使います。
+
+```console
+./securitymasker init --mode chatgpt --port 4000
+./securitymasker preview "確認したい合成テキスト"
+./securitymasker gateway
+```
+
+現在は macOS arm64 で技術検証済みですが、署名・notarization、他OSのclean-machine検証、
+同梱NER weightの再配布確認が未完了です。このため、現時点の公開可能な経路はsource版です。
+
+## 保護層と限界
+
+- ユーザー辞書: 組織固有の人名、会社名、project名。最優先で検出します。
+- 決定論的検出: API key、秘密鍵、メール、電話、カード、公的識別子など。
+- 標準日本語NER: 辞書未登録の一般的な人名・組織名・地名を補完します。
+
+未知の組織内用語まで100%推測することはできません。重要語は必ず
+`securitymasker.dict` に登録し、`preview` で期待するmaskを確認してください。障害時は既定で
+fail-closedとなり、上流へ送りません。
+
+詳しい利用方法は [導入ガイド](docs/user/getting-started.md)、
+[設定リファレンス](docs/user/configuration.md)、
+[トラブルシューティング](docs/user/troubleshooting.md) を参照してください。
+設計は [architecture](docs/design/architecture.md)、開発状況は
+[status](docs/development/status.md)、最新の大規模変更は
+[ADR-0012](docs/adr/0012-renew-package-design.md) にあります。
+
+## 開発
+
+利用者向けsetupとtest setupは分離しています。
+
+```console
+./scripts/test-setup
+./scripts/release-check
+```
+
+実providerへテストpromptを送りません。開発手順と必須gateは
+[testing](docs/development/testing.md) を参照してください。
