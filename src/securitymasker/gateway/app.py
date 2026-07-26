@@ -455,14 +455,20 @@ def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
     routes = [
         Route("/health", health, methods=["GET"]),
         Route("/ready", ready, methods=["GET"]),
-        Route("/responses", handle_responses, methods=["POST"]),
-        Route("/v1/responses", handle_responses, methods=["POST"]),
-        Route("/messages", handle_messages, methods=["POST"]),
-        Route("/v1/messages", handle_messages, methods=["POST"]),
-        Route("/models", handle_models, methods=["GET"]),
-        Route("/v1/models", handle_models, methods=["GET"]),
     ]
     resolved_runtime = runtime or GatewayRuntime.from_env()
+    if resolved_runtime.product_mode in {None, "chatgpt"}:
+        routes.extend([
+            Route("/responses", handle_responses, methods=["POST"]),
+            Route("/v1/responses", handle_responses, methods=["POST"]),
+            Route("/models", handle_models, methods=["GET"]),
+            Route("/v1/models", handle_models, methods=["GET"]),
+        ])
+    if resolved_runtime.product_mode in {None, "claude"}:
+        routes.extend([
+            Route("/messages", handle_messages, methods=["POST"]),
+            Route("/v1/messages", handle_messages, methods=["POST"]),
+        ])
     app = Starlette(
         routes=routes,
         middleware=[

@@ -31,6 +31,7 @@ DEFAULT_ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
 
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+PRODUCT_MODES = frozenset({"chatgpt", "claude"})
 
 
 def _is_loopback(url: str) -> bool:
@@ -75,6 +76,7 @@ class GatewayRuntime:
         *,
         openai_upstream: str,
         anthropic_upstream: str,
+        product_mode: str | None = None,
         mode: str = "local",
         tenant_header: str = "x-securitymasker-tenant-id",
         tenant_auth_secret: str | None = None,
@@ -86,6 +88,12 @@ class GatewayRuntime:
         self.store = store
         self.openai_upstream = openai_upstream.rstrip("/")
         self.anthropic_upstream = anthropic_upstream.rstrip("/")
+        if product_mode is not None and product_mode not in PRODUCT_MODES:
+            raise ConfigError(
+                "product mode must be 'chatgpt' or 'claude'; combined mode is not supported"
+            )
+        # Noneはv1移行testだけが使うlegacy両protocol mode。v2では必ず一方になる。
+        self.product_mode = product_mode
         # tenant分離mode（doc/06 P0-9）。`local`は暗黙の単一tenant。
         # "multitenant" = tenant id proven by an HMAC the authenticator computes
         # with ``tenant_auth_secret`` (a bare header is never trusted).
@@ -144,6 +152,19 @@ class GatewayRuntime:
         anthropic_upstream = os.environ.get(
             "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
         )
+        configured_product_mode = (
+            config.runtime.mode
+            if config is not None and getattr(config, "runtime", None) is not None
+            else None
+        )
+        product_mode = os.environ.get(
+            "SECURITYMASKER_PRODUCT_MODE", configured_product_mode
+        )
+        if product_mode is not None and product_mode not in PRODUCT_MODES:
+            raise ConfigError(
+                "SECURITYMASKER_PRODUCT_MODE must be 'chatgpt' or 'claude'; "
+                f"got {product_mode!r}"
+            )
 
         if engine is None:
             # raw bodyを転送するdev transparent modeは実provider経路に置かない。
@@ -170,6 +191,7 @@ class GatewayRuntime:
             store,
             openai_upstream=openai_upstream,
             anthropic_upstream=anthropic_upstream,
+            product_mode=product_mode,
             mode=mode,
             tenant_header=os.environ.get(
                 "SECURITYMASKER_TENANT_HEADER", "x-securitymasker-tenant-id"

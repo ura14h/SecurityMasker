@@ -422,7 +422,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else argv
+    # configにmode/portを持つ通常運用ではcommandを省略してGatewayを起動する。
+    gateway_options = ("--config", "--host", "--mode", "--port")
+    if not arguments or any(
+        arguments[0] == option or arguments[0].startswith(f"{option}=")
+        for option in gateway_options
+    ):
+        arguments = ["gateway", *arguments]
+    args = parser.parse_args(arguments)
     try:
         return int(args.func(args))
     except SecurityMaskerError as exc:
