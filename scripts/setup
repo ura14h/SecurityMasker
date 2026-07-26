@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
+VENV_DIRECTORY="$PROJECT_DIRECTORY/.venv"
+
+PYTHON_COMMAND=${PYTHON_COMMAND:-python3}
+
+"$PYTHON_COMMAND" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else "SecurityMasker requires Python 3.12+")'
+
+if [ ! -x "$VENV_DIRECTORY/bin/python" ]; then
+    "$PYTHON_COMMAND" -m venv "$VENV_DIRECTORY"
+fi
+
+"$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
+    -r "$PROJECT_DIRECTORY/requirements.lock"
+"$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
+    --no-deps -e "$PROJECT_DIRECTORY"
+
+printf '%s\n' "SecurityMasker source environment is ready."
+printf '%s\n' "Initialize: $VENV_DIRECTORY/bin/python $PROJECT_DIRECTORY/securitymasker.py init"
+printf '%s\n' "Run:        $VENV_DIRECTORY/bin/python $PROJECT_DIRECTORY/securitymasker.py gateway"

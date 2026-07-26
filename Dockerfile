@@ -1,8 +1,9 @@
 # SecurityMasker proxy image (purpose-built gateway, no LiteLLM — ADR-0006).
 # Hardened: minimal base, non-root, no build caches, healthcheck (§35).
 #
-# Reproducible install: runtime deps come from requirements.lock (exact pins), then
-# the package is installed --no-deps so nothing is re-resolved (doc/06 P2-3).
+# Reproducible transitional image: standard runtime deps come from requirements.lock,
+# while the legacy Redis backend comes from requirements-redis.lock. The package is
+# installed --no-deps so nothing is re-resolved (doc/06 P2-3, ADR-0012 migration).
 #
 # The base image is pinned by DIGEST, not just by tag: `python:3.12-slim` is
 # republished continuously, so a tag-only reference means two builds of the same
@@ -24,8 +25,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Locked dependencies first (better layer caching + reproducibility).
-COPY requirements.lock ./
-RUN pip install --no-cache-dir -r requirements.lock
+COPY requirements.lock requirements-redis.lock ./
+RUN pip install --no-cache-dir -r requirements.lock \
+    && pip install --no-cache-dir --no-deps -r requirements-redis.lock
 
 # Then the app itself, without re-resolving its dependency ranges.
 COPY pyproject.toml README.md ./

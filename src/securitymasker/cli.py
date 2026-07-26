@@ -24,7 +24,13 @@ from importlib import resources
 from pathlib import Path
 
 from securitymasker import __version__
-from securitymasker.config import SecurityMaskerConfig, build_engine, load_config
+from securitymasker.config import (
+    SecurityMaskerConfig,
+    adjacent_config_directory,
+    build_engine,
+    load_config,
+    resolve_config_path,
+)
 from securitymasker.errors import ConfigError, SecurityMaskerError
 from securitymasker.integrations.launcher import (
     DEFAULT_GATEWAY,
@@ -38,17 +44,21 @@ from securitymasker.sessions.memory import InMemorySessionStore
 
 
 def _load(path: str | None) -> SecurityMaskerConfig:
-    if not path:
-        raise ConfigError("no --config given (a dictionary YAML is required)")
-    return load_config(path)
+    return load_config(resolve_config_path(path))
 
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
     config = _load(args.config)
+    runtime = (
+        f", mode={config.runtime.mode}, port={config.runtime.port}"
+        if config.runtime is not None
+        else ""
+    )
     print(
         f"OK: config valid — {len(config.entities)} entities, "
         f"{len(config.patterns)} patterns, secret_detector="
         f"{config.enable_secret_detector}, normalization={config.defaults.normalization}"
+        f"{runtime}"
     )
     return 0
 
@@ -56,8 +66,8 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
 def cmd_config_init(args: argparse.Namespace) -> int:
     """配布物内の合成値だけを含むstarter設定を安全に書き出す。"""
     output = Path(args.output)
-    template = resources.files("securitymasker").joinpath(
-        "resources/securitymasker.example.yaml"
+    template = resources.files("securitymasker.resources").joinpath(
+        "securitymasker.example.yaml"
     ).read_text(encoding="utf-8")
     try:
         if args.force:
@@ -76,6 +86,18 @@ def cmd_config_init(args: argparse.Namespace) -> int:
         print(f"error: cannot write {output}: {detail}", file=sys.stderr)
         return 1
     print(f"created {output}")
+    return 0
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """隣接config、単一辞書、state directory、master keyを安全に生成する。"""
+    from securitymasker.bootstrap import initialize_layout
+
+    directory = args.directory or adjacent_config_directory()
+    layout = initialize_layout(directory, mode=args.mode, port=args.port)
+    print(f"initialized SecurityMasker in {layout.root}")
+    print("created securitymasker.config, securitymasker.dict and securitymasker.state/")
+    print("state database will be created on the first gateway start")
     return 0
 
 
@@ -115,7 +137,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from securitymasker import doctor as checks
 
     gateway = args.gateway or os.environ.get("SECURITYMASKER_GATEWAY_URL", DEFAULT_GATEWAY)
-    config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
+    config_path: str | None
+    try:
+        config_path = str(resolve_config_path(args.config))
+    except ConfigError:
+        config_path = args.config or os.environ.get("SECURITYMASKER_CONFIG")
     # 明示指定したGatewayには到達できることをoperatorが期待している。
     # so its absence is a failure rather than a pre-flight note.
     require_ready = args.require_ready or args.gateway is not None
@@ -214,11 +240,7 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
     model, revision = args.model, args.revision
     if not model or not revision:
         # operatorの再入力を避けるため設定済みpinへfallbackする。
-        if not args.config:
-            print("error: give --model/--revision, or --config to use its ner pin",
-                  file=sys.stderr)
-            return 2
-        ner = load_config(args.config).ner
+        ner = _load(args.config).ner
         model, revision = model or ner.model, revision or ner.revision
     if not model or not revision:
         print("error: no NER model/revision configured to fetch", file=sys.stderr)
@@ -239,15 +261,23 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
     from securitymasker.gateway.app import create_app
 
-    if args.config:
-        os.environ["SECURITYMASKER_CONFIG"] = args.config
+    config_path = resolve_config_path(args.config)
+    config = load_config(config_path)
+    os.environ["SECURITYMASKER_CONFIG"] = str(config_path)
+
+    runtime = config.runtime
+    host = args.host or (runtime.host if runtime is not None else "127.0.0.1")
+    port = args.port or (runtime.port if runtime is not None else 4000)
+    product_mode = args.mode or (runtime.mode if runtime is not None else None)
+    if product_mode is not None:
+        os.environ["SECURITYMASKER_PRODUCT_MODE"] = product_mode
 
     # A non-loopback bind exposes the proxy — and the client credentials flowing
     # through it — to the network. Refuse unless the operator explicitly accepts
     # it AND has put an authenticator in front (doc/06 P0-9).
     from securitymasker.gateway.runtime import LOOPBACK_HOSTS
 
-    if args.host not in LOOPBACK_HOSTS:
+    if host not in LOOPBACK_HOSTS:
         from securitymasker.gateway.identity import isolates_callers
 
         acknowledged = os.environ.get("SECURITYMASKER_ALLOW_PUBLIC_BIND") == "1"
@@ -256,7 +286,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
         multitenant = isolates_callers(os.environ.get("SECURITYMASKER_MODE", "local"))
         if not acknowledged:
             print(
-                f"error: refusing to bind {args.host} (non-loopback). The proxy has no "
+                f"error: refusing to bind {host} (non-loopback). The proxy has no "
                 "built-in authentication; put a trusted authenticator in front and set "
                 "SECURITYMASKER_ALLOW_PUBLIC_BIND=1 to acknowledge.",
                 file=sys.stderr,
@@ -270,15 +300,13 @@ def cmd_gateway(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-    configured = bool(os.environ.get("SECURITYMASKER_CONFIG"))
-    dev = os.environ.get("SECURITYMASKER_DEV_TRANSPARENT") == "1"
-    mode = "masking" if configured else ("DEV transparent (no masking!)" if dev else "will fail")
+    mode_label = f"masking/{product_mode}" if product_mode else "masking/legacy"
     print(
-        f"[securitymasker] gateway on http://{args.host}:{args.port} ({mode})",
+        f"[securitymasker] gateway on http://{host}:{port} ({mode_label})",
         file=sys.stderr,
     )
     # create_app() -> GatewayRuntime.from_env() fails closed if unconfigured (P0-1).
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
     return 0
 
 
@@ -302,8 +330,23 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_config(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--config", default=os.environ.get("SECURITYMASKER_CONFIG"),
-                       help="path to the SecurityMasker dictionary YAML")
+        p.add_argument(
+            "--config",
+            default=None,
+            help="path to securitymasker.config (default: environment or adjacent file)",
+        )
+
+    p_init_layout = sub.add_parser(
+        "init", help="create config, dictionary, state directory and master key"
+    )
+    p_init_layout.add_argument(
+        "--directory",
+        default=None,
+        help="target directory (default: beside the executable or root script)",
+    )
+    p_init_layout.add_argument("--mode", choices=["chatgpt", "claude"], default="chatgpt")
+    p_init_layout.add_argument("--port", type=int, default=4000)
+    p_init_layout.set_defaults(func=cmd_init)
 
     p_config = sub.add_parser("config", help="config operations")
     config_sub = p_config.add_subparsers(dest="subaction", required=True)
@@ -343,8 +386,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_gateway = sub.add_parser("gateway", help="run the SecurityMasker proxy")
-    p_gateway.add_argument("--host", default="127.0.0.1")
-    p_gateway.add_argument("--port", type=int, default=4000)
+    p_gateway.add_argument("--mode", choices=["chatgpt", "claude"], default=None)
+    p_gateway.add_argument("--host", default=None)
+    p_gateway.add_argument("--port", type=int, default=None)
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
 

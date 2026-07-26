@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import os
 import re
+import stat
+import sys
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -39,7 +41,9 @@ from securitymasker.tool_trust import ToolTrustPolicy
 
 _VALID_PROFILES = {p.value for p in ReplacementProfile}
 _VALID_POLICIES = {p.value for p in RestorePolicy}
-_SCHEMA_VERSION = 1
+_LEGACY_SCHEMA_VERSION = 1
+_CURRENT_SCHEMA_VERSION = 2
+_PRIVATE_FILE_BITS = stat.S_IRWXG | stat.S_IRWXO
 
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
 _DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
@@ -262,6 +266,85 @@ class ToolTrustConfig(BaseModel):
     trusted_local_tools: list[str] = Field(default_factory=list)
 
 
+class RuntimeConfig(BaseModel):
+    """単一processの利用者向けruntime設定（ADR-0012）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["chatgpt", "claude"]
+    host: Literal["127.0.0.1", "::1", "localhost"] = "127.0.0.1"
+    port: int = Field(default=4000, ge=1, le=65535)
+
+
+class StateConfig(BaseModel):
+    """SQLiteとmaster keyの明示path。pathはconfig基準で絶対化して保持する。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    database: Path
+    key: Path
+
+
+class DetectorToggle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+
+
+class JapaneseNerV2Config(NerConfig):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+
+
+class DetectorsV2Config(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secrets: DetectorToggle = Field(default_factory=DetectorToggle)
+    formats: DetectorToggle = Field(default_factory=DetectorToggle)
+    japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
+    japanese_ner: JapaneseNerV2Config = Field(default_factory=JapaneseNerV2Config)
+
+
+class UserDictionaryConfig(BaseModel):
+    """単一の``securitymasker.dict`` schema。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    entities: list[EntityConfig] = Field(default_factory=list)
+    patterns: list[RegexConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> UserDictionaryConfig:
+        ids = [entry.id for entry in self.entities] + [pattern.id for pattern in self.patterns]
+        duplicates = {entry_id for entry_id in ids if ids.count(entry_id) > 1}
+        if duplicates:
+            raise ValueError(f"duplicate entity/pattern ids: {sorted(duplicates)}")
+        return self
+
+
+class SecurityMaskerConfigV2(BaseModel):
+    """利用者向け``securitymasker.config`` v2 schema。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[2]
+    runtime: RuntimeConfig
+    state: StateConfig
+    dictionary: str
+    defaults: Defaults = Field(default_factory=Defaults)
+    detectors: DetectorsV2Config = Field(default_factory=DetectorsV2Config)
+    tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
+
+    @field_validator("dictionary")
+    @classmethod
+    def _dictionary_path(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("dictionary path must not be empty")
+        return value
+
+
 class SecurityMaskerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -275,14 +358,19 @@ class SecurityMaskerConfig(BaseModel):
     presidio: PresidioConfig = Field(default_factory=PresidioConfig)
     ner: NerConfig = Field(default_factory=NerConfig)
     tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
+    # v2だけが持つ利用者向けruntime/state metadata。engine側は従来fieldを使う。
+    runtime: RuntimeConfig | None = None
+    state: StateConfig | None = None
+    dictionary: Path | None = None
+    config_path: Path | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("version")
     @classmethod
     def _version(cls, v: int) -> int:
-        if v != _SCHEMA_VERSION:
+        if v not in {_LEGACY_SCHEMA_VERSION, _CURRENT_SCHEMA_VERSION}:
             raise ValueError(
-                f"unsupported config version {v}; this build understands version "
-                f"{_SCHEMA_VERSION} only"
+                f"unsupported config version {v}; this build understands versions "
+                f"{_LEGACY_SCHEMA_VERSION} and {_CURRENT_SCHEMA_VERSION}"
             )
         return v
 
@@ -315,19 +403,158 @@ def _safe_validation_message(exc: ValidationError) -> str:
     return "; ".join(parts) or "invalid configuration"
 
 
-def load_config(path: str | Path) -> SecurityMaskerConfig:
+def adjacent_config_directory() -> Path:
+    """binaryまたはroot scriptのdirectoryを返す。
+
+    PyInstaller one-fileの``sys._MEIPASS``は一時展開先なので使用しない。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(sys.argv[0]).resolve().parent
+
+
+def resolve_config_path(path: str | Path | None = None) -> Path:
+    """CLI、環境変数、隣接fileの順でconfigを解決する（ADR-0012）。"""
+    if path is not None and str(path).strip():
+        return Path(path).expanduser().resolve()
+    environment_path = os.environ.get("SECURITYMASKER_CONFIG")
+    if environment_path:
+        return Path(environment_path).expanduser().resolve()
+    adjacent = adjacent_config_directory() / "securitymasker.config"
+    if adjacent.is_file():
+        return adjacent.resolve()
+    raise ConfigError(
+        "securitymasker.config was not found; use --config, "
+        "SECURITYMASKER_CONFIG, or place it beside the executable"
+    )
+
+
+def _read_yaml_mapping(path: Path, *, label: str) -> dict[str, Any]:
     try:
-        raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        raw: Any = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         # PyYAML errorはsecretを含み得る問題行を引用するため、そのまま返さない。
-        # dictionary entry — i.e. a registered secret. Report the position only.
         mark = getattr(exc, "problem_mark", None)
         where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
-        raise ConfigError(
-            f"{Path(path).name} is not valid YAML{where}"
-        ) from None
+        raise ConfigError(f"{path.name} is not valid YAML{where}") from None
+    except OSError as exc:
+        detail = exc.strerror or exc.__class__.__name__
+        raise ConfigError(f"cannot read {label} {path.name}: {detail}") from None
     if not isinstance(raw, dict):
-        raise ConfigError(f"config root must be a mapping, got {type(raw).__name__}")
+        raise ConfigError(f"{label} root must be a mapping, got {type(raw).__name__}")
+    return raw
+
+
+def _require_private_file(path: Path, *, label: str) -> None:
+    """user以外が読めるv2機密fileを拒否する。"""
+    try:
+        file_stat = path.stat()
+    except OSError as exc:
+        detail = exc.strerror or exc.__class__.__name__
+        raise ConfigError(f"cannot inspect {label} {path.name}: {detail}") from None
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise ConfigError(f"{label} {path.name} must be a regular file")
+    if os.name == "posix":
+        if file_stat.st_uid != os.getuid():
+            raise ConfigError(f"{label} {path.name} must be owned by the current user")
+        if stat.S_IMODE(file_stat.st_mode) & _PRIVATE_FILE_BITS:
+            raise ConfigError(
+                f"{label} {path.name} has unsafe permissions; use chmod 600"
+            )
+
+
+def _require_private_directory(path: Path, *, label: str) -> None:
+    try:
+        directory_stat = path.stat()
+    except OSError as exc:
+        detail = exc.strerror or exc.__class__.__name__
+        raise ConfigError(f"cannot inspect {label} {path.name}: {detail}") from None
+    if not stat.S_ISDIR(directory_stat.st_mode):
+        raise ConfigError(f"{label} {path.name} must be a directory")
+    if os.name == "posix":
+        if directory_stat.st_uid != os.getuid():
+            raise ConfigError(f"{label} {path.name} must be owned by the current user")
+        if stat.S_IMODE(directory_stat.st_mode) & _PRIVATE_FILE_BITS:
+            raise ConfigError(
+                f"{label} {path.name} has unsafe permissions; use chmod 700"
+            )
+
+
+def _resolve_from_config(config_path: Path, configured_path: str | Path) -> Path:
+    candidate = Path(configured_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = config_path.parent / candidate
+    return candidate.resolve()
+
+
+def _load_v2(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
+    _require_private_file(config_path, label="config")
+    try:
+        v2 = SecurityMaskerConfigV2.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigError(
+            f"invalid config {config_path.name}: {_safe_validation_message(exc)}"
+        ) from None
+
+    dictionary_path = _resolve_from_config(config_path, v2.dictionary)
+    _require_private_file(dictionary_path, label="dictionary")
+    dictionary_raw = _read_yaml_mapping(dictionary_path, label="dictionary")
+    try:
+        dictionary = UserDictionaryConfig.model_validate(dictionary_raw)
+    except ValidationError as exc:
+        raise ConfigError(
+            f"invalid dictionary {dictionary_path.name}: {_safe_validation_message(exc)}"
+        ) from None
+
+    state = StateConfig(
+        database=_resolve_from_config(config_path, v2.state.database),
+        key=_resolve_from_config(config_path, v2.state.key),
+    )
+    _require_private_directory(state.key.parent, label="state directory")
+    if state.database.parent != state.key.parent:
+        _require_private_directory(state.database.parent, label="state database directory")
+    _require_private_file(state.key, label="master key")
+    try:
+        key_size = state.key.stat().st_size
+    except OSError as exc:
+        detail = exc.strerror or exc.__class__.__name__
+        raise ConfigError(f"cannot inspect master key {state.key.name}: {detail}") from None
+    if key_size != 32:
+        raise ConfigError("master key must contain exactly 32 bytes")
+    if state.database.exists():
+        _require_private_file(state.database, label="state database")
+
+    ner = v2.detectors.japanese_ner.model_copy(
+        update={
+            "model": (
+                v2.detectors.japanese_ner.model
+                if v2.detectors.japanese_ner.enabled
+                else None
+            )
+        }
+    )
+    return SecurityMaskerConfig(
+        version=2,
+        defaults=v2.defaults,
+        entities=dictionary.entities,
+        patterns=dictionary.patterns,
+        enable_secret_detector=v2.detectors.secrets.enabled,
+        enable_format_detectors=v2.detectors.formats.enabled,
+        japanese_pii=v2.detectors.japanese_pii,
+        ner=NerConfig.model_validate(ner.model_dump(exclude={"enabled"})),
+        tool_trust=v2.tool_trust,
+        runtime=v2.runtime,
+        state=state,
+        dictionary=dictionary_path,
+        config_path=config_path,
+    )
+
+
+def load_config(path: str | Path) -> SecurityMaskerConfig:
+    config_path = Path(path).expanduser().resolve()
+    raw = _read_yaml_mapping(config_path, label="config")
+    if raw.get("version") == _CURRENT_SCHEMA_VERSION:
+        return _load_v2(config_path, raw)
     try:
         return SecurityMaskerConfig.model_validate(raw)
     except ValidationError as exc:

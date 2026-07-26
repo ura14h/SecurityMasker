@@ -1,6 +1,5 @@
-# Runtime-only lock: exactly what the production image installs.
-# Generated from 'pip install .[redis]' in a clean venv (doc/06 P2-3).
-# Dev/test tooling lives in requirements-dev.lock and must NOT ship.
+# Standard source runtime lock. Redis and dev/test tooling are intentionally excluded.
+# The transitional Docker/Redis implementation adds requirements-redis.lock separately.
 PyYAML==6.0.3
 annotated-types==0.8.0
 anyio==4.14.2
@@ -17,7 +16,6 @@ pydantic-settings==2.14.2
 pydantic==2.13.4
 pydantic_core==2.46.4
 python-dotenv==1.2.2
-redis==8.0.1
 starlette==1.3.1
 structlog==25.5.0
 typing-inspection==0.4.2

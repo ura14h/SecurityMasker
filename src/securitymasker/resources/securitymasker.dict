@@ -1,0 +1,32 @@
+# SecurityMasker user dictionary (strict YAML, schema version 1).
+# All starter values are synthetic. Replace them with your own organization data.
+# Prefer value_from_env for API keys, passwords, private keys and other credentials.
+version: 1
+
+entities:
+  - id: example_company
+    type: ORGANIZATION
+    values:
+      - 株式会社極秘技研
+      - 極秘技研
+    replacement_profile: prose_identifier
+    restore_policy: literal
+    priority: 100
+
+  - id: example_person
+    type: PERSON
+    values:
+      - 山田太郎
+      - 山田 太郎
+      - Taro Yamada
+    replacement_profile: prose_identifier
+    restore_policy: literal
+    priority: 100
+
+patterns:
+  - id: example_ticket
+    pattern: 'INC-[0-9]{6}'
+    type: CUSTOMER_ID
+    replacement_profile: numeric
+    restore_policy: literal
+    priority: 120

@@ -62,7 +62,7 @@ securitymasker = "securitymasker.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-securitymasker = ["resources/*.yaml"]
+securitymasker = ["resources/*"]
 
 [tool.ruff]
 line-length = 100
@@ -100,3 +100,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["src"]
