@@ -1,8 +1,8 @@
-"""最小限のSSE parser／serializer（§20、§22、§23）。
+"""最小限のSSE parser／serializer。
 
 Preserves event structure exactly: ``event:``/``id:``/``retry:``/comment (``:``)
 lines and multi-line ``data:`` payloads. Unknown fields and events pass through
-untouched (§22). ``data: [DONE]`` is just a data payload and is preserved verbatim.
+untouched. ``data: [DONE]`` is just a data payload and is preserved verbatim.
 The incremental ``SSEParser`` buffers partial lines/events across chunks.
 """
 

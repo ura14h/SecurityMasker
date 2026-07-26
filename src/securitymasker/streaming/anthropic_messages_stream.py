@@ -1,20 +1,20 @@
-"""Anthropic Messages SSE stream復元（§20、§21、§23）。
+"""Anthropic MessagesのSSE streamをclientへ返す前に復元する。
 
 The gateway forwards the Anthropic ``/v1/messages`` response as raw SSE **bytes**.
 This processor decodes them (UTF-8 safe across chunk boundaries), parses SSE
 events, and:
 
 - restores ``text_delta`` text with a per-block carry buffer so aliases split
-  across ``content_block_delta`` events are recovered (§20); the block's tail is
+  across ``content_block_delta`` events are recovered; the block's tail is
   flushed as an extra delta at ``content_block_stop``;
 - buffers ``input_json_delta`` ``partial_json`` per block, suppressing the deltas
-  until ``content_block_stop``, then emits one restored ``input_json_delta`` (§21).
+  until ``content_block_stop``, then emits one restored ``input_json_delta``.
   If the buffered JSON is invalid it is NOT re-sent: the client receives an error
   event instead. Forwarding text we could not parse would hand over a tool call
-  assembled from unvalidated model output (§24).
+  assembled from unvalidated model output.
 
 All other events (``message_start``/``message_delta``/``message_stop``/``ping``/
-unknown) pass through unchanged, preserving event order and ``usage`` (§20).
+unknown) pass through unchanged, preserving event order and ``usage``.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 from securitymasker.tool_trust import ToolTrustPolicy
 
-# Cap on buffered tool-input bytes per block (doc/06 P1-10): beyond this we emit the
+# tool-input blockごとのbuffer上限。超過後は
 # raw (aliased) buffer without restoration so a runaway stream can't grow memory
 # without bound. Never a partial literal restore.
 _MAX_JSON_BUFFER_BYTES = 1_000_000
@@ -51,7 +51,7 @@ class AnthropicStreamProcessor:
         self._json_buffers: dict[int, list[str]] = {}
         self._json_sizes: dict[int, int] = {}
         self._json_overflow: set[int] = set()
-        self._block_names: dict[int, str] = {}  # block index -> tool name (P0-8)
+        self._block_names: dict[int, str] = {}  # block index -> tool名
         self._reasm = ToolArgumentReassembler(restore)
 
     def feed(self, data: bytes) -> bytes:
@@ -71,7 +71,7 @@ class AnthropicStreamProcessor:
                 out.append(_text_delta_event(idx, leftover))
         self._text_restorers.clear()
         # Stream ended before these tool blocks stopped: never emit incomplete JSON
-        # as an executable call, but report it rather than dropping it (P1-10).
+        # executable callとして出力せず、error eventで通知する。
         pending = sorted(set(self._json_buffers) | self._json_overflow)
         if pending:
             out.append(_error_event(
@@ -137,7 +137,7 @@ class AnthropicStreamProcessor:
                 return []
             self._json_buffers.setdefault(idx, []).append(partial)
             self._json_sizes[idx] = size
-            return []  # suppress until the block completes (§21)
+            return []  # block完了まで出力を保留する
         return [ev]
 
     def _on_block_stop(self, ev: SSEEvent, payload: dict[str, Any]) -> list[SSEEvent]:
@@ -157,20 +157,20 @@ class AnthropicStreamProcessor:
             if overflowed:
                 # Fail closed and visibly: the input exceeded the cap so we no
                 # longer hold it; emitting the remainder would hand the client a
-                # tool call it must not execute (doc/06 P1-10).
+                # clientへ実行不能なtool callを渡さない。
                 extra.append(_error_event(
                     "securitymasker: tool input exceeded the "
                     f"{_MAX_JSON_BUFFER_BYTES}-byte buffer limit; the call was not "
                     "forwarded to the client."))
             elif raw:
                 # Validity is checked for EVERY tool block; trust only decides
-                # whether real values are substituted (doc/06 P0-8, P1-10).
+                # 実値へ復元するかだけをtrust設定で決める。
                 partial = self._safe_restore_json(
                     raw, restore=self._trust.restores_arguments(name)
                 )
                 if partial is None:
                     # Unparseable input cannot be restored; emitting it would hand
-                    # the client an unexecutable tool call (doc/06 P1-10).
+                    # clientへ実行不能なtool callを渡さない。
                     extra.append(_error_event(
                         "securitymasker: tool input was not valid JSON and could not "
                         "be restored; the call was not forwarded to the client."))
@@ -183,13 +183,13 @@ class AnthropicStreamProcessor:
 
         ``restore=True`` substitutes real values for a trusted local tool;
         ``restore=False`` re-serializes the parsed JSON with aliases intact. Both
-        paths parse, so a malformed tool call never reaches the client (P1-10).
+        どちらの経路もparseし、不正tool callをclientへ渡さない。
         """
         try:
             if restore:
                 return self._reasm.restore_arguments(raw)
             return json.dumps(json.loads(raw), ensure_ascii=False)
-        except Exception:  # noqa: BLE001 - never approximate a restore (§24)
+        except Exception:  # noqa: BLE001 - 近似復元せず拒否する
             return None
 
 
@@ -218,7 +218,7 @@ def _text_delta_event(idx: int, text: str) -> SSEEvent:
 
 
 def _error_event(message: str) -> SSEEvent:
-    """Anthropic互換error event（doc/06 P1-10）。
+    """Anthropic互換error event。
 
     An SSE stream's HTTP status is fixed once it starts, so a mid-stream
     fail-closed outcome is reported as an ``error`` event. Carries no user content.

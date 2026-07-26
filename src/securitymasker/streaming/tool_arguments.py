@@ -1,12 +1,12 @@
-"""復元のためのtool-call argument再構築（§21）。
+"""復元のためのtool-call argument再構築。
 
 Function/tool argument JSON arrives split across deltas. Restoring aliases by naive
 string replacement can corrupt JSON when an original value contains ``"``/``\\``/
 newlines. So we buffer deltas per tool-call id, wait for completion, ``json.loads``,
 restore string *values* recursively, and ``json.dumps`` again — re-serialization
-guarantees valid escaping (§21, §30.3).
+guarantees valid escaping.
 
-Fail-closed (§24, §26): if the reassembled buffer is not valid JSON, we raise rather
+Fail-closed: if the reassembled buffer is not valid JSON, we raise rather
 than emit a broken/partial tool call. Approximate restoration is never done inside
 tool arguments.
 """

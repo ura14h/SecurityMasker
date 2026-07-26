@@ -18,7 +18,7 @@ Coverage and its limits are deliberate:
 - 法人番号 / 適格請求書番号 are PUBLIC registry data and live in their own
   opt-in detector (``japanese_corporate_number``), not here.
 
-Test data must be synthetic (§30): none of the fixtures are real numbers.
+Test data must be synthetic: none of the fixtures are real numbers.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ _SPECS: list[tuple[str, re.Pattern[str], tuple[str, ...], str, float]] = [
 
 
 class JapaneseIdentifierDetector:
-    """context gate付きの日本の公的・業務番号recognizer（§5.7）。"""
+    """context gate付きの日本の公的・業務番号recognizer。"""
 
     name = "jp_identifiers"
 
@@ -120,7 +120,7 @@ class JapaneseIdentifierDetector:
         for entity_type, pattern, words, profile, score in _SPECS:
             for m in pattern.finditer(text):
                 if not has_context(text, m.start(1), m.end(1), words):
-                    continue  # bare number: refuse to guess (precision, §5.7)
+                    continue  # bare number: refuse to guess for precision
                 results.append(self._hit(context, m, entity_type, profile, score, 206))
         return results
 

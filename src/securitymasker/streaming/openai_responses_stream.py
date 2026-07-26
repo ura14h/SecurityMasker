@@ -1,17 +1,15 @@
-"""OpenAI Responses SSE復元（§19、§20、§21）。
+"""OpenAI ResponsesのSSE streamをclientへ返す前に復元する。
 
-The proxy owns the response stream, so — unlike the LiteLLM callback path — this
-restoration actually reaches the client. Decodes SSE bytes (UTF-8 safe across
-chunks), parses events, and restores aliases:
+UTF-8のchunk境界を保ってSSE byte列をdecode・parseし、text deltaとtool引数を復元する。
 
 - ``response.output_text.delta``: per-block carry buffer (aliases split across
-  deltas, §20); the block flushes at its ``output_text.done``.
+  deltas); the block flushes at its ``output_text.done``.
 - ``response.output_text.done`` / ``content_part.*`` / ``output_item.*`` /
   ``response.created|in_progress|completed``: full text — restored in place.
 - ``response.function_call_arguments.delta``: buffered per item and re-emitted as
-  one restored ``.done`` argument JSON (§21); invalid JSON is left as-is (§24).
+  one restored ``.done`` argument JSON。不正JSONはerror eventとして拒否する。
 
-Unknown events pass through unchanged (§22).
+未知eventは順序と内容を変えず透過する。
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ from securitymasker.streaming.text_replacer import StreamingRestorer
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 from securitymasker.tool_trust import ToolTrustPolicy
 
-# Cap on buffered tool-argument bytes per call (doc/06 P1-10): beyond this we stop
+# tool-callごとのbuffer上限。超過後は蓄積を止め、
 # accumulating and emit the raw (aliased) buffer without restoration, so a runaway
 # tool-call stream can't grow memory without bound. Never a partial literal restore.
 _MAX_ARG_BUFFER_BYTES = 1_000_000
@@ -66,9 +64,9 @@ class ResponsesStreamProcessor:
         self._arg_buffers: dict[str, list[str]] = {}
         self._arg_sizes: dict[str, int] = {}
         self._arg_overflow: set[str] = set()
-        self._item_names: dict[str, str] = {}  # item_id -> tool name (for trust, P0-8)
+        self._item_names: dict[str, str] = {}  # item_id -> trust判定用tool名
         # Response ids seen in the stream; the gateway binds them to this session
-        # so the next turn's previous_response_id continues it (doc/06 P1-1).
+        # 次turnのprevious_response_idから同じsessionを継続するために使う。
         self.response_ids: set[str] = set()
         self._reasm = ToolArgumentReassembler(restore)
 
@@ -91,7 +89,7 @@ class ResponsesStreamProcessor:
         self._text_restorers.clear()
         # The stream ended without a `.done` for these tool calls (upstream error,
         # cancel, truncation). Never emit the incomplete JSON as an executable
-        # call — but say so explicitly rather than dropping it silently (P1-10).
+        # callとして出力せず、黙って破棄せずerror eventで通知する。
         pending = sorted(set(self._arg_buffers) | self._arg_overflow)
         if pending:
             out.append(_error_event(
@@ -130,7 +128,7 @@ class ResponsesStreamProcessor:
                 if isinstance(item.get("id"), str) and isinstance(item.get("name"), str):
                     self._item_names[item["id"]] = item["name"]
                 _restore_content_parts(item.get("content"), self._restore)
-                # Validate for every tool; restore only for a trusted one (P0-8).
+                # 全toolでJSONを検証し、信頼済みtoolだけ実値へ復元する。
                 if isinstance(item.get("arguments"), str) and item["arguments"]:
                     restored_args = self._safe_args(
                         item["arguments"],
@@ -172,7 +170,7 @@ class ResponsesStreamProcessor:
         item_id = str(payload.get("item_id", ""))
         delta = str(payload.get("delta", ""))
         if item_id in self._arg_overflow:
-            return []  # already over the cap: discard, never keep growing (P1-10)
+            return []  # 上限超過後は破棄し、memoryを増やさない
         size = self._arg_sizes.get(item_id, 0) + len(delta)
         if size > _MAX_ARG_BUFFER_BYTES:
             # Stop accumulating entirely and drop what we have: retaining it would
@@ -184,7 +182,7 @@ class ResponsesStreamProcessor:
             return []
         self._arg_buffers.setdefault(item_id, []).append(delta)
         self._arg_sizes[item_id] = size
-        return []  # suppress until done (§21)
+        return []  # doneまで出力を保留する
 
     def _on_args_done(self, ev: SSEEvent, payload: dict[str, Any]) -> list[SSEEvent]:
         item_id = str(payload.get("item_id", ""))
@@ -195,13 +193,13 @@ class ResponsesStreamProcessor:
         if overflowed:
             # Fail closed and VISIBLY: the arguments exceeded the buffer cap, so we
             # no longer hold them. Emitting the truncated remainder would hand the
-            # client a tool call it must not execute (doc/06 P1-10).
+            # clientへ実行不能なtool callを渡さない。
             return [_error_event("securitymasker: tool arguments exceeded the "
                                  f"{_MAX_ARG_BUFFER_BYTES}-byte buffer limit; the call "
                                  "was not forwarded to the client.")]
         # JSON validity is checked for EVERY tool call: trust decides whether to
         # restore real values, not whether the payload has to be well-formed. A
-        # malformed tool call must never reach the client, trusted or not (P1-10).
+        # trust指定にかかわらず不正tool callはclientへ渡さない。
         trusted = self._trust.restores_arguments(self._item_names.get(item_id))
         restored = self._safe_args(raw, restore=trusted)
         if restored is None:
@@ -217,13 +215,13 @@ class ResponsesStreamProcessor:
 
         ``restore=True`` (trusted local tool) substitutes real values;
         ``restore=False`` re-serializes the parsed JSON with its aliases intact.
-        Either way the payload is parsed, so a malformed call is caught (P1-10).
+        どちらの場合もpayloadをparseし、不正tool callを検出する。
         """
         try:
             if restore:
                 return self._reasm.restore_arguments(raw)
             return json.dumps(json.loads(raw), ensure_ascii=False)
-        except Exception:  # noqa: BLE001 - never approximate a restore (§24)
+        except Exception:  # noqa: BLE001 - 近似復元せず拒否する
             return None
 
 
@@ -250,11 +248,11 @@ def _text_delta_event(output_index: int, content_index: int, text: str) -> SSEEv
 
 
 def _error_event(message: str) -> SSEEvent:
-    """provider互換error event（doc/06 P1-10）。
+    """provider互換error event。
 
     Once an SSE stream has begun the HTTP status can no longer change, so a
     fail-closed outcome mid-stream is reported as an ``error`` event. The message
-    describes the limit that was hit and never contains user content (§25).
+    describes the limit that was hit and never contains user content.
     """
     payload = {"type": "error", "error": {"type": "securitymasker_stream_error",
                                           "message": message}}

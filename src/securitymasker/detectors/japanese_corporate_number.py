@@ -6,7 +6,7 @@ default restore policy is ``literal`` (pseudonymize-but-restorable), not block.
 
 To keep precision high on a bare 13-digit run, a detection requires BOTH a valid
 check digit AND a nearby context word (or the ``T`` invoice-registration prefix).
-Test data uses synthetic numbers with a computed valid check digit only (§30).
+Test data uses synthetic numbers with a computed valid check digit only.
 """
 
 from __future__ import annotations

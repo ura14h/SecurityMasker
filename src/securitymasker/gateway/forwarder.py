@@ -1,10 +1,8 @@
-"""httpxによるupstreamへの透過転送（§5、§25）。
+"""httpxによるupstreamへの透過転送。
 
-Forwards the client's request (masked body) to the upstream, passing the client's
-own auth and unknown headers through verbatim — the proxy never stores, decrypts,
-or logs credentials (§25: ``Authorization``/``x-api-key`` are forwarded, never
-logged). Streaming responses can be piped through a stateful processor that
-restores aliases; non-streaming responses are buffered for dict restoration.
+マスク済みrequest bodyと許可済みheaderをupstreamへ転送する。認証情報は保存・復号・
+ログ記録しない。streaming responseは状態を持つprocessorでaliasを復元し、
+非streaming responseは全体をbufferして復元処理へ渡す。
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from typing import Any, Protocol
 import httpx
 from starlette.responses import StreamingResponse
 
-# Hop-by-hop / recomputed headers not forwarded upstream or back downstream.
+# hop-by-hop headerと再計算するheaderは両方向とも転送しない。
 _REQ_STRIP = {"host", "content-length", "connection", "accept-encoding", "transfer-encoding"}
 _RESP_STRIP = {"content-length", "content-encoding", "transfer-encoding", "connection"}
 
@@ -45,9 +43,8 @@ async def forward_streaming(
 ) -> StreamingResponse:
     """requestを転送し、必要なら``processor``で復元しながらresponseをstreamで返す。
 
-    ``on_complete`` runs once the upstream stream ends, giving the caller an async
-    point to persist what the processor observed (e.g. binding the response id to
-    this session) — the processor itself is sync and cannot await.
+    ``on_complete``はupstream stream完了後に一度だけ実行する。同期processorが観測した
+    response IDなどを、callerが非同期でsessionへ保存するために使う。
     """
     client = httpx.AsyncClient(timeout=_TIMEOUT)
     upstream = await client.send(
@@ -95,6 +92,6 @@ def upstream_url(base: str, path: str) -> str:
 
 
 def redacted_headers(headers: Mapping[str, str]) -> dict[str, Any]:
-    """安全にログ記録できるheader概要。auth／cookie値は含めない（§25）。"""
+    """安全にログ記録できるheader概要。認証情報とcookie値は含めない。"""
     redact = {"authorization", "cookie", "x-api-key", "proxy-authorization"}
     return {k: ("<redacted>" if k.lower() in redact else v) for k, v in headers.items()}

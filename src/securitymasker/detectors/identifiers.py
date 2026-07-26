@@ -29,7 +29,7 @@ which is the one case where the digits provably belong to something else.
 to every detector, which silently defeated the dictionary and user regexes: an
 operator who registered `03-9210-9274` as an API_KEY got no detection, no masking,
 and the final leak gate accepted the value. Suppressing a rule the operator wrote
-by hand inverts invariant 9 — the user's own rules are the MOST trusted signal —
+by hand violates the rule that the user's own rules are the most trusted signal
 and turns a precision fix into a leak. Those rules mean "this exact string is
 sensitive wherever it appears", and inside an identifier is a where.
 """

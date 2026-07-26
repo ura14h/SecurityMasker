@@ -1,17 +1,11 @@
-"""構造を保持するJSON walker（§16）。
+"""構造を保持するJSON walker。
 
-Never stringify a whole payload and blanket-replace. Instead walk the structure and
-transform only *string values*, never dict keys, ids, or type/role tags. Two tools:
+payload全体を文字列化して一括置換せず、構造を辿って文字列値だけを変換する。dict key、
+ID、typeやroleなどの構造fieldは変更しない。
 
-- ``transform_all_string_values``: for free-form user JSON (tool arguments) — every
-  string value is run through the transform; keys are untouched (§16 tool example).
-  This is safe because the transform (detection) only replaces detected secrets, so
-  non-sensitive strings pass through unchanged.
-- ``transform_field`` / ``transform_text_fields``: for known envelopes where only
-  designated text keys (``text``, ``input``, ``instructions``, …) may be masked and
-  structural keys (``type``, ``role``, ``status``, ``id``) must not be.
-
-Transforms are async so the masking engine can be awaited inline.
+``transform_all_string_values``はtool引数など自由形式JSONの全文字列値を対象にする。
+``transform_field``と``transform_text_fields``は既知のenvelopeで指定fieldだけを対象にする。
+masking engineをinlineでawaitできるよう変換は非同期である。
 """
 
 from __future__ import annotations

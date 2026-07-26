@@ -1,9 +1,6 @@
-"""Codex／Claude Code専用の透過masking proxy（ADR-0006）。
+"""ChatGPT/CodexとClaude Code専用の透過masking proxy。
 
-Replaces the LiteLLM integration. The proxy terminates the client request, masks
-it, forwards it transparently upstream (the client's own credentials are passed
-through, never stored/logged, §25), and restores the response — owning both
-directions so streaming restoration works, which LiteLLM's callbacks could not do.
-The masking core (engine/detectors/sessions/crypto/aliases/streaming/protocols) is
-reused unchanged.
+client requestを受け取り、機密値をマスクしてから対応providerへ転送し、responseを
+同じsessionの対応表で復元する。clientの認証情報は対応するproviderへだけ透過し、
+保存・復号・ログ記録しない。requestとstreaming responseの両方向をGatewayが所有する。
 """

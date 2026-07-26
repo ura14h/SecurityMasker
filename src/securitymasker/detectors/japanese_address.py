@@ -1,10 +1,10 @@
-"""複合的な日本語住所（JP_ADDRESS）recognizer（§14.2）。
+"""複合的な日本語住所（JP_ADDRESS）recognizer。
 
 A Japanese address is not reliably found by one signal, so this combines an
 optional postal code, a prefecture, a locality run, and a 丁目/番地/号 tail (plus an
 optional building/floor/room) into a single ``JP_ADDRESS`` span, so a partially
-masked address can't be reconstructed from the remainder (§14.2). Heuristic and
-bounded; the evaluation corpus (§31) measures precision/recall.
+masked address can't be reconstructed from the remainder. Heuristic and
+bounded; the evaluation corpus measures precision/recall.
 """
 
 from __future__ import annotations

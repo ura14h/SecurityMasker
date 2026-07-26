@@ -1,4 +1,4 @@
-"""固定したHugging Face token-classification modelによる日本語NER（§14.1、ADR-0009）。
+"""固定したHugging Face token-classification modelによる日本語NER。
 
 標準構成では固定済みmodelをONにする。辞書と決定論的recognizerを信頼の基礎としつつ、
 未登録の氏名・法人名・地名を補う。NERの空振りだけを「安全」の根拠にはしない
@@ -9,7 +9,7 @@ ways that are silent:
 
 - **Label schema is validated at load.** Models disagree wildly: this one emits
   ``PER``/``ORG``/``LOC``, another emits ``人名``/``法人名``/``地名``. During the
-  ADR-0009 comparison a model whose labels we did not know produced *zero*
+  過去の比較では、未知labelを持つmodelが検出ゼロを正常終了に見せた。
   detections and looked like a clean run — under-detection that reads as success
   is exactly how a leak hides. So the mapping is checked against the model's own
   ``id2label`` at construction, and a model with no mappable label is refused.
@@ -24,7 +24,7 @@ ways that are silent:
   CPU-bound. A timeout does NOT stop it — nothing can interrupt CPU-bound Python —
   so what protects us is the admission limit in ``detectors.inference``: an
   abandoned inference keeps occupying its slot until it finishes, and further
-  requests are refused rather than queued behind it (ADR-0011).
+  requests are refused rather than queued behind it.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from securitymasker.models import DetectionResult, EntityType, ReplacementProfil
 
 # 対応schema間の粗いlabel mapping。fuzzy matchingにせず明示する。
 # matched: guessing what an unknown label means is how a model silently mislabels
-# a person as a product (ADR-0009).
+# a person as a product.
 _LABEL_MAP: dict[str, str] = {
     # English／ISO形式（tsmatz/xlm-roberta-ner-japaneseと多くのCoNLL model）
     "PER": EntityType.PERSON.value,
@@ -112,7 +112,7 @@ class JapaneseNerDetector:
         # offset対応tokenizerがない場合だけ使う（`_windows`参照）。
         self._window_chars = 400
         self._window_overlap_chars = 64
-        # fuzzy NERはcode-like spanを対象外にする（§17）。
+        # fuzzy NERはcode-like spanを対象外にする。
         # deterministic detectors keep running there.
         self.skip_code_contexts = skip_code_contexts
         self._min_score = min_score
@@ -134,7 +134,7 @@ class JapaneseNerDetector:
 
         # fetch後のcache改変を検出するためload前にartifactを再検証する。
         # verification says what was downloaded once; a cache can be altered
-        # afterwards, so the gate has to be here too (ADR-0010).
+        # afterwards, so the gate has to be here too.
         #
         # `source` is what we hand to transformers. In offline mode it is the
         # model IDではなく検証済みsnapshot directoryを渡し、再解決を防ぐ。
@@ -207,7 +207,7 @@ class JapaneseNerDetector:
                 tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)  # type: ignore[no-untyped-call]
                 # use_safetensors=True is REQUIRED, not preferred: without it
                 # transformers silently falls back to a pickle .bin, which executes
-                # arbitrary code on load (ADR-0010).
+                # arbitrary code on load.
                 weights = AutoModelForTokenClassification.from_pretrained(
                     source, use_safetensors=True, **load_kwargs
                 )
@@ -237,7 +237,7 @@ class JapaneseNerDetector:
         self.available = self._pipeline is not None
 
     def _validate_label_schema(self, model: str, required: bool) -> None:
-        """解釈不能なlabelを持つmodelを拒否する（ADR-0009）。
+        """解釈不能なlabelを持つmodelを拒否する。
 
         A model with an unknown schema returns detections we drop on the floor,
         which looks exactly like a clean run. For a masking proxy that is a leak
@@ -267,7 +267,7 @@ class JapaneseNerDetector:
         say WHICH characters to replace. Some tokenizers (LUKE's, for one) return
         ``None`` offsets, which produced a crash mid-request rather than a clean
         refusal. A one-off synthetic probe at load turns that into a startup
-        failure (ADR-0009). The probe text contains no real data (§30).
+        failure. The probe text contains no real data.
         """
         if self._pipeline is None:
             return
@@ -342,7 +342,7 @@ class JapaneseNerDetector:
             # stop the worker (nothing can interrupt CPU-bound Python), so the
             # protection is the admission limit: abandoned work keeps its slot
             # until it finishes, and further requests are refused rather than
-            # queued behind it (ADR-0011).
+            # queued behind it.
             return list(await shared_runner().run(
                 self._pipeline, text, timeout=self._inference_timeout
             ))
@@ -403,7 +403,7 @@ class JapaneseNerDetector:
                     original_value=context.norm.original[o_start:o_end],
                     normalized_value=text[start:end],
                     # 最低信頼signalとし、dictionary／deterministic detectorを優先する。
-                    # detectors win every overlap (§40-10, invariant 8).
+                    # deterministic detectorがすべてのoverlapで優先される。
                     metadata={"priority": 90, "ner_label": label},
                 )
             )

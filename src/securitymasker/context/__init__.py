@@ -1,4 +1,4 @@
-"""context分類：bodyをdetector policy用のtyped spanへ分割する（§17）。"""
+"""context分類：bodyをdetector policy用のtyped spanへ分割する。"""
 
 from securitymasker.context.segmenter import (
     MAX_CLAIMS,

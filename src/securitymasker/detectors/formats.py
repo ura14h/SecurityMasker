@@ -1,8 +1,8 @@
-"""組み込みformat recognizer：email、IPv4、credit card（§11 step 6）。
+"""組み込みformat recognizer：email、IPv4、credit card。
 
 High-precision, deterministic. Credit cards require a valid Luhn checksum and
-default to ``block`` (§10). IPv4 octets are range-validated. These run on the
-normalized text (full-width ＠/digits already folded by NFKC, §14.4).
+default to ``block``. IPv4 octets are range-validated. These run on the
+normalized text after full-width ＠ and digits are folded by NFKC.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from securitymasker.models import DetectionResult, EntityType, ReplacementProfil
 
 # EAI／国際化address（RFC 6531）：local partとdomainの両方がnon-ASCIIになり得る。
 # non-ASCII, e.g. 山田＠例え.jp. NFKC upstream folds the full-width ＠ and digits,
-# so only the character classes need to admit non-ASCII letters (doc/06 §5.4).
+# so only the character classes need to admit non-ASCII letters.
 #
 # 日本語にはword spaceがないため、無制限local partは直前のproseを飲み込む。
 # prose: 「連絡先は山田＠example.co.jp」 would match from 連. Two patterns solve it
@@ -53,7 +53,7 @@ def _luhn_ok(digits: str) -> bool:
 
 # RFC 5737 documentation rangeは例示用に予約され、定義上real endpointではない。
 # not anyone's real address — and they are exactly what we mint IPv4 aliases from
-# (ADR-0007). Masking them adds no protection while burning alias space, so they
+# Masking them adds no protection while burning alias space, so they
 # are excluded from detection.
 _DOC_IPV4_PREFIXES = ("192.0.2.", "198.51.100.", "203.0.113.")
 

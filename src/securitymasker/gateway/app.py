@@ -1,17 +1,9 @@
-"""SecurityMasker proxy ASGI app（ADR-0006、ADR-0012）。
+"""SecurityMasker proxyのASGI application。
 
-Routes Codex (OpenAI Responses) and Claude Code (Anthropic Messages) through the
-masking core. Security gates (external-send is only allowed after masking):
-
-- explicit route allowlist — unknown routes are refused locally, never forwarded;
-- request validation — non-JSON-object, malformed, oversized, or unsupported
-  Content-Encoding bodies are refused locally before anything leaves;
-- header hygiene — internal `X-SecurityMasker-*` headers are stripped; client auth
-  is passed through to the correct upstream, never logged (§25);
-- readiness (`/ready`) is distinct from liveness (`/health`).
-
-One handler invocation resolves the session, masks the request, forwards it, and
-restores the response — owning both directions.
+ChatGPT/CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesをmasking coreへ
+接続する。未知route、不正・過大なJSON、未対応Content-Encodingはlocalで拒否する。
+内部headerは除去し、client認証情報は対応providerへだけ透過してログへ残さない。
+一つのhandlerがsession解決、requestのマスク、転送、responseの復元までを所有する。
 """
 
 from __future__ import annotations
@@ -58,13 +50,13 @@ from securitymasker.streaming.openai_responses_stream import ResponsesStreamProc
 _log = get_logger(component="securitymasker.gateway")
 
 # マスク前に受理するrequest bodyの最大値。testから変更できるmodule値。
-# tuned/overridden; a hard cap protects the detectors and the event loop (§32).
+# detectorとevent loopを過大入力から保護するhard limitである。
 MAX_BODY_BYTES = 10 * 1024 * 1024
 _INTERNAL_HEADER_PREFIX = "x-securitymasker-"
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
-    # errorにはrequest body／値を絶対に再表示しない（§25）。
+    # errorにはrequest bodyや機密値を絶対に再表示しない。
     return JSONResponse({"error": {"message": message, "type": code, "code": str(status)}},
                         status_code=status)
 
@@ -73,21 +65,16 @@ def _payload_has_alias_shape(data: dict[str, Any]) -> bool:
     return any(contains_alias_shape(s) for s in iter_strings(data))
 
 
-# 全upstreamへ転送可能なheader。deny-by-defaultで未記載項目を拒否する。
-# in the provider set below) is dropped, so a custom header can neither leak a
-# secret nor smuggle data past the masker.
+# 全upstreamへ転送可能なheader。deny-by-defaultで未記載項目を破棄し、
+# custom headerによる機密値の迂回送信を防ぐ。
 _COMMON_HEADERS = frozenset({
     "accept", "accept-encoding", "accept-language", "content-type", "content-length",
     "user-agent",
 })
 
-# provider固有header。Anthropicの`x-api-key`をOpenAIへ送ってはならない。
-# `openai-*`/`chatgpt-*` are OpenAI's and must never reach Anthropic.
-# `authorization` is Bearer for BOTH providers, so it is forwarded only to the
-# upstream the client's own route selected — never copied across providers.
-# 実Codex sessionで確認したCodex固有request header。
-# Codex session). `session-id`/`thread-id` are the correct spellings — Codex sends
-# them and the session resolver reads them, so they must reach the upstream too.
+# provider固有headerを相互に混在させない。``authorization``は両providerで使うため、
+# clientが選んだrouteのupstreamへだけ転送する。Codex固有headerは実通信で確認した
+# spellingを維持し、session resolverが利用する``session-id``と``thread-id``も転送する。
 _OPENAI_HEADERS = frozenset({
     "authorization", "openai-organization", "openai-project", "openai-beta",
     "chatgpt-account-id", "originator", "session-id", "thread-id",
@@ -98,9 +85,8 @@ _OPENAI_HEADERS = frozenset({
 def _is_openai_passthrough(name: str) -> bool:
     """Codexが送る``x-codex-*`` header群をまとめて転送する。
 
-    Because the NAME is not known in advance, the VALUE is untrusted free text and
-    is scanned with the full deterministic detector set before forwarding — unlike
-    the fixed, structural headers above.
+    header名を事前列挙できないため値は未信頼の自由textとして扱い、固定的な構造headerと
+    異なり、転送前に決定論的detectorの全集合でscanする。
     """
     return name.startswith("x-codex-")
 
@@ -121,12 +107,11 @@ PROVIDER_HEADERS: dict[str, frozenset[str]] = {
     "anthropic": _ANTHROPIC_HEADERS,
 }
 
-# auth headerは対応providerへ透過するが、マスク・保存・ログ記録しない。
-# or logged (§25) — and never leak-scanned into an error message.
+# auth headerは対応providerへ透過するが、マスク・保存・scan・ログ記録を行わない。
 _AUTH_HEADERS = frozenset({"authorization", "x-api-key"})
 
-# user contentではなくclient／proxy transportが生成するheader。
-# legitimately hold IPs and hostnames, so they are not leak-scanned.
+# user contentではなくclientやproxy transportが生成するheader。
+# IPやhostnameを正当に含むため、一般のPII scan対象にはしない。
 _TRANSPORT_HEADERS = frozenset({
     "host", "connection", "content-length", "accept-encoding", "accept",
     "accept-language", "user-agent", "via", "forwarded",
@@ -150,8 +135,8 @@ def _client_headers(request: Request, provider: str) -> dict[str, str]:
 async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
     """request bodyを検証してJSON objectへparseし、失敗時はlocal errorを返す。
 
-    Refuses (no forward) on unsupported Content-Encoding/Type, oversized bodies,
-    malformed JSON, or non-object JSON.
+    未対応のContent-Encoding／Content-Type、過大body、不正JSON、object以外のJSONは
+    upstreamへ転送せず拒否する。
     """
     encoding = request.headers.get("content-encoding", "").strip().lower()
     if encoding and encoding != "identity":
@@ -161,8 +146,8 @@ async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JS
     if ctype and "json" not in ctype.lower():
         return None, _error(415, "unsupported_media_type",
                             "Only application/json request bodies are supported.")
-    # 宣言lengthで先に拒否し、stream受信中にも上限を強制する。
-    # oversized (or lying) body is never fully materialised in memory.
+    # 宣言lengthで先に拒否し、stream受信中にも上限を強制する。虚偽のlengthを持つ
+    # 過大bodyもmemoryへ全展開しない。
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         return None, _error(413, "payload_too_large",
@@ -239,8 +224,7 @@ async def _handle(
             bound = await rt.store.resolve_response(resolved.previous_response_id)
             if bound is not None and await rt.store.get(bound) is None:
                 # binding元sessionが期限切れ・revoke・purge済みなら新sessionを作らない。
-                # a fresh one here would silently re-mask the client's existing aliases
-                # onto a new table, which is exactly the drift we block for (P1-1).
+                # 既存aliasを別の対応表へ再マスクするとturn間の復元が壊れるためである。
                 bound = None
         except Exception as exc:  # noqa: BLE001 - store障害は安全な503へ畳み込む
             telemetry.store_error(provider_name, StoreOperation.REQUEST)
@@ -251,10 +235,8 @@ async def _handle(
             )
         if bound is None:
             # 対応sessionを特定できないconversation継続は拒否する。
-            # 自プロセスの既知responseでない場合は一律拒否する。Shape
-            # heuristics are NOT enough here — a numeric or uuid alias is
-            # indistinguishable from ordinary data, and such a request would be
-            # silently re-masked onto a new table.
+            # 自プロセスの既知responseでない場合は一律拒否する。numericやUUID形状のaliasは
+            # 通常値と区別できず、形状推測だけでは別の対応表への再マスクを防げない。
             _log.warning("sm_block_unknown_previous_response", path=path)
             telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
             return _error(409, "session_unresolved",
@@ -263,7 +245,7 @@ async def _handle(
 
     if not stable and _payload_has_alias_shape(data):
         # 前turnのaliasがあるのに安定sessionがなければ、新規作成せずblockする。
-        # of silently starting a fresh session and corrupting the turn (P1-1).
+        # 新しい対応表で処理を続けると復元不能になるためである。
         _log.warning("sm_block_unresolved_session", path=path)
         telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
         return _error(409, "session_unresolved",
@@ -279,23 +261,20 @@ async def _handle(
             await held.verify()
             await rt.store.save(session, lock=held)
             held.check()
-        # マスク済みpayload全体への最終block-only guard。
-        # registered secret in an unknown/structural field must never be forwarded.
+        # マスク済みpayload全体への最終block-only guard。未知fieldや構造fieldに残った
+        # 登録済みsecretも転送しない。
         await rt.engine.assert_no_leak_in_payload(data, session=session, request_id=store_key)
         # allowlist対象だけでなく全incoming non-auth headerにも同じguardを適用する。
-        # subset — so a secret placed in a header is refused outright rather than
-        # silently dropped. Provider auth headers are excluded: they
-        # are the client's own credential for this upstream and must never be
-        # scanned into an error or log (§25). Transport headers are excluded too:
-        # they are generated by the client/proxy, not user content.
+        # headerへ置かれたsecretを黙って破棄せず明示的に拒否する。provider認証headerは
+        # errorやlogへ値を取り込まないよう除外し、transport headerもuser contentでは
+        # ないため除外する。
         scannable = {k: v for k, v in request.headers.items()
                      if k.lower() not in _AUTH_HEADERS and k.lower() not in _TRANSPORT_HEADERS}
         await rt.engine.assert_no_leak_in_headers(
             scannable, session=session, request_id=store_key,
         )
-        # wildcard一致する`x-codex-*`は自由text値を持つため個別scanする。
-        # the narrow header scan is not enough — run the FULL deterministic set on
-        # them, exactly as for a body field.
+        # wildcard一致する``x-codex-*``は自由text値を持つため、body fieldと同じ
+        # 決定論的detectorの全集合で個別scanする。
         wildcard = {
             k: v
             for k, v in scannable.items()
@@ -439,7 +418,7 @@ async def handle_head_root(request: Request) -> Response:
 
 
 def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
-    # 明示allowlistだけを許しcatch-allは置かない。未知routeはlocalで404（P0-3）。
+    # 明示allowlistだけを許しcatch-allは置かない。未知routeはlocalで404にする。
     routes = [
         Route("/health", health, methods=["GET"]),
         Route("/ready", ready, methods=["GET"]),

@@ -1,8 +1,8 @@
 """preview用memoryと通常運用SQLiteが共有するsession store interface。
 
-The store owns session lifetime (idle + absolute TTL, §7) and hands out a
+The store owns session lifetime (idle + absolute TTL) and hands out a
 per-session async lock so alias allocation for one session is serialized across
-concurrent requests without blocking other sessions (§30.4).
+concurrent requests without blocking other sessions.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def new_session(
     client_type: str = "unknown",
     absolute_ttl: timedelta = DEFAULT_ABSOLUTE_TTL,
 ) -> MaskingSession:
-    """新しいCSPRNG鍵でsessionを構築する（§7）。"""
+    """新しいCSPRNG鍵でsessionを構築する。"""
     index_key, aead_key = generate_session_keys()
     now = _now()
     return MaskingSession(

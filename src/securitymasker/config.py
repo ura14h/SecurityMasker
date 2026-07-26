@@ -1,9 +1,8 @@
-"""設定とユーザーdictionaryの読み込み（§12）。
+"""設定とユーザーdictionaryの読み込み。
 
-The dictionary YAML declares entities (with one or more surface forms) and optional
-user regexes. Plaintext secrets must NOT be committed to YAML — such values come
-from the environment via ``value_from_env`` (§12, §25). Loading validates enums and
-regex compilation up front so a bad config fails at startup, not mid-request (§12).
+dictionary YAMLには一つ以上の表記を持つentityと任意のuser regexを記述する。
+平文secretはYAMLへ保存せず、``value_from_env``で環境変数から取得する。enum、regex、
+参照先をload時に検証し、不正設定をrequest処理中ではなく起動時に拒否する。
 """
 
 from __future__ import annotations
@@ -71,13 +70,10 @@ class Defaults(BaseModel):
     session_idle_ttl: str = "4h"
     session_absolute_ttl: str = "24h"
     inject_alias_instruction: bool = True
-    # detectorごとのwall-clock budget（doc/06 P1-5）。0で無効。
+    # detectorごとのwall-clock待機上限。0で無効。
     detector_timeout_seconds: float = Field(default=10.0, ge=0.0, le=300.0)
-    # 一requestがmodel-backed detectorへ渡せるtext量の上限。
-    # detectors. Over it the request is REFUSED, because the alternative —
-    # scanning a prefix and reporting success — is a silent blind spot
-    # (ADR-0011). Sized for a very large prompt; raise it only with the
-    # inference cost in mind.
+    # 一requestがmodel-backed detectorへ渡せるtext量の上限。超過時にprefixだけを
+    # 検査して成功扱いすると未検査領域が生じるため、request全体を拒否する。
     max_fuzzy_chars: int = Field(default=200_000, ge=1_000, le=10_000_000)
 
     @field_validator("fail_mode")
@@ -126,9 +122,9 @@ class EntityConfig(BaseModel):
             raise ValueError(f"entity {self.id!r} needs 'values' or 'value_from_env'")
         # 空またはwhitespaceだけの値は全位置に一致し得るため拒否する。
         # always a config mistake; duplicates silently double the work. Both are
-        # rejected at load rather than tolerated (doc/06 P1-2).
+        # rejected at load rather than tolerated.
         # 問題のVALUEは登録済みsecretなのでerrorに含めない。
-        # validation error surfaces in startup logs, the CLI and tracebacks (§25).
+        # validation error surfaces in startup logs, the CLI and tracebacks.
         # 修正に十分でlogにも安全な位置だけを報告する。
         for index, value in enumerate(self.values):
             if not value.strip():
@@ -180,7 +176,7 @@ class RegexConfig(BaseModel):
     def _compiles(self) -> RegexConfig:
         # user regexにはsecret literalが含まれ得るためPATTERNを再表示しない。
         # secret it is meant to match, and this message reaches startup logs and
-        # tracebacks (§25). The rule id is enough to locate it.
+        # tracebacks. The rule id is enough to locate it.
         try:
             compiled = re.compile(self.pattern)
         except re.error as exc:
@@ -194,7 +190,7 @@ class RegexConfig(BaseModel):
                 f"(the expression has {compiled.groups} group(s))"
             )
         # `re`は実行中に割り込めないため既知のcatastrophic-backtracking形式をload時に拒否する。
-        # interrupted mid-match, so a bad user pattern is a DoS (doc/06 P1-5).
+        # interrupted mid-match, so a bad user pattern is a DoS.
         check_regex_safety(self.pattern, rule_id=self.id)
         return self
 
@@ -204,11 +200,11 @@ class JapanesePiiConfig(BaseModel):
 
     enabled: bool = True
     my_number_restore_policy: str = RestorePolicy.BLOCK.value
-    # My Numberのconfidence gate（§5.6）。0.0なら有効checksumをすべて対象にする。
+    # My Numberのconfidence gate。0.0なら有効checksumをすべて対象にする。
     # (fail-closed); ~0.6 = require My Number context words, avoiding false blocks
     # of unrelated checksum-valid 12-digit business ids.
     my_number_min_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    # 法人番号 (corporate number) is public info; masking is opt-in (doc/06 §5.7).
+    # 法人番号は公開情報なのでmaskingをopt-inにする。
     corporate_number: bool = False
 
     @field_validator("my_number_restore_policy")
@@ -224,10 +220,10 @@ class NerConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str | None = None  # HF token-classification model id; None disables (§14.1)
+    model: str | None = None  # HF token-classification model id。Noneなら無効
     # modelのcommit revision。未固定modelの変化を防ぐためmodel指定時は必須。
     # id silently follows `main`, so the weights doing the detecting could change
-    # under us between deploys (ADR-0009).
+    # under us between deploys.
     revision: str | None = None
     # 0.7 is the measured optimum for the adopted model on tests/evaluation:
     # below it prose false positives appear, above it PERSON recall falls off.
@@ -237,7 +233,7 @@ class NerConfig(BaseModel):
     local_files_only: bool = True
     skip_code_contexts: bool = True
     # A model with no artifact manifest cannot be verified. Accepting one is an
-    # explicit, argued-for choice, never a default (ADR-0010).
+    # explicit, argued-for choice, never a default.
     allow_unverified_model: bool = False
 
     @model_validator(mode="after")
@@ -253,12 +249,12 @@ class NerConfig(BaseModel):
 class ToolTrustConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # 既定は空で、どのtool argumentも実値へ復元しない（P0-8）。
+    # 既定は空で、どのtool argumentも実値へ復元しない。
     trusted_local_tools: list[str] = Field(default_factory=list)
 
 
 class RuntimeConfig(BaseModel):
-    """単一processの利用者向けruntime設定（ADR-0012）。"""
+    """単一processの利用者向けruntime設定。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -388,7 +384,7 @@ class SecurityMaskerConfig(BaseModel):
 
 
 def _safe_validation_message(exc: ValidationError) -> str:
-    """問題の入力値を含めずにValidationErrorを表示する（§25、doc/06 P0-4）。
+    """問題の入力値を含めずにValidationErrorを表示する。
 
     Pydantic's default rendering embeds the rejected value, and in this config the
     rejected value is often a registered secret. We emit only the field LOCATION
@@ -418,7 +414,7 @@ def adjacent_config_directory() -> Path:
 
 
 def resolve_config_path(path: str | Path | None = None) -> Path:
-    """CLI、環境変数、隣接fileの順でconfigを解決する（ADR-0012）。"""
+    """CLI、環境変数、隣接fileの順でconfigを解決する。"""
     if path is not None and str(path).strip():
         return Path(path).expanduser().resolve()
     environment_path = os.environ.get("SECURITYMASKER_CONFIG")
@@ -569,11 +565,11 @@ def load_config(path: str | Path) -> SecurityMaskerConfig:
 
 
 def _require_env_values(config: SecurityMaskerConfig) -> None:
-    """``value_from_env``が未設定または空なら起動を失敗させる（doc/06 P0-6）。
+    """``value_from_env``が未設定または空なら起動を失敗させる。
 
     A declared env-backed secret that resolves to nothing would otherwise silently
     disable that entity's masking — a leak. The error names only the env var and
-    entity id, never a value (§25).
+    entity idだけを報告し、値は含めない。
     """
     for entity in config.entities:
         if entity.value_from_env is None:
@@ -587,7 +583,7 @@ def _require_env_values(config: SecurityMaskerConfig) -> None:
 
 
 def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]:
-    """priority順にdetector pipelineを構築する（§11）。"""
+    """priority順にdetector pipelineを構築する。"""
     _require_env_values(config)
     norm = config.defaults.normalization
     dict_entries = [
@@ -657,7 +653,7 @@ def build_detectors(config: SecurityMaskerConfig) -> list[SensitiveDataDetector]
 
 # fuzzyなmodel-backed detectorは誤検出で全requestをblockし得るため最終guardから除く。
 # scan structural/unknown fields too, where an NER false positive would block a
-# legitimate request. Every DETERMINISTIC detector is included (doc/06 P0-4).
+# legitimate request. Every DETERMINISTIC detector is included.
 _FUZZY_DETECTOR_NAMES = frozenset({"jp_ner", "existing_alias"})
 
 
@@ -665,7 +661,7 @@ def build_leak_scanners(
     config: SecurityMaskerConfig,
     detectors: list[SensitiveDataDetector] | None = None,
 ) -> list[SensitiveDataDetector]:
-    """最終payloadのblock-only guardで使うdeterministic detector（doc/06 P0-4）。
+    """最終payloadのblock-only guardで使うdeterministic detector。
 
     Invariant 1 (never send original secrets) outranks "unknown fields pass
     through": anything a deterministic detector would have masked in text must not
@@ -691,7 +687,7 @@ def build_engine(config: SecurityMaskerConfig) -> MaskingEngine:
         value for entity in config.entities for value in entity.resolved_values()
     )
     # pipelineは一度だけbuildしてleak scannerと共有し、modelの二重loadを防ぐ。
-    # build_detectors() would load the HF model again (doc/06 P2 review).
+    # build_detectors()を再利用するとHF modelを二重loadするため、既存detectorから組み立てる。
     detectors = build_detectors(config)
     return MaskingEngine(
         detectors,

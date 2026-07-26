@@ -4,7 +4,7 @@ Two rules shape the output:
 
 - **No secrets, ever.** Not the master key, not URL credentials, not dictionary
   values, not session mappings. Checks report shape and
-  reachability; they quote configuration keys, never configuration values (§25).
+  reachability; they quote configuration keys, never configuration values.
 - **Never talk to a real provider.** Upstreams are validated syntactically —
   scheme, host, loopback-ness. `doctor` sends no request body anywhere.
 
@@ -272,7 +272,7 @@ def check_runtime_port(config: Any) -> CheckResult:
 
 
 def check_session_crypto() -> CheckResult:
-    """合成値をsession AEADでround-tripする（§8）。"""
+    """合成値をsession AEADでround-tripする。"""
     from securitymasker.errors import CryptoError
     from securitymasker.sessions.crypto import decrypt, encrypt, generate_session_keys
 
@@ -485,7 +485,7 @@ ProbeRunner = Callable[[], Any]
 
 @dataclass(frozen=True)
 class BuiltArtifacts:
-    """callerが再利用できるよう``run_checks``の構築物を保持する（ADR-0011）。"""
+    """callerが再利用できるよう``run_checks``の構築物を保持する。"""
 
     config: Any = None
     engine: Any = None

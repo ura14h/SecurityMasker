@@ -1,4 +1,4 @@
-"""単一利用者・単一modeのGateway runtime（ADR-0012）。"""
+"""単一利用者・単一modeのGateway runtime。"""
 
 from __future__ import annotations
 

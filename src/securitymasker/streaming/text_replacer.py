@@ -1,4 +1,4 @@
-"""carry-bufferを使うstreaming alias→original置換（§20）。
+"""carry-bufferを使うstreaming alias→original置換。
 
 Aliases can be split across SSE chunks (``"…sm-host-7f" | "3a91.example.invalid…"``),
 so a naive per-chunk ``replace()`` would miss them. This holds back only the
@@ -7,7 +7,7 @@ everything before it (with complete aliases replaced), and carries the rest to t
 next chunk. ``flush()`` drains the tail at end-of-stream.
 
 Operates on ``str`` (already-decoded text), so UTF-8 multibyte characters are never
-split (§20). It replaces a fixed alias vocabulary; unknown text passes through
+split. It replaces a fixed alias vocabulary; unknown text passes through
 untouched, preserving order.
 """
 

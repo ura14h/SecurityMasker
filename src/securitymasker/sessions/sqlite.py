@@ -1,4 +1,4 @@
-"""単一process用の暗号化SQLite session store（ADR-0012 Phase 4）。"""
+"""単一process用の暗号化SQLite session store。"""
 
 from __future__ import annotations
 

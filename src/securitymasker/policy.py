@@ -1,12 +1,7 @@
-"""detectionを統合・解決し、spanごとの最終処理を決定する（§11 step 8-9）。
+"""全detectorの結果を統合し、重ならない最終spanとrestore policyを決定する。
 
-Input: every detector's raw hits (original coordinates). Output: a set of
-non-overlapping spans to act on, plus their restore policy. Rules:
-
-- ``EXISTING_ALIAS`` hits are protected regions: any overlapping hit is dropped and
-  the alias itself is left untouched (idempotency, §11).
-- Remaining overlaps resolve by preference: higher priority, then longer span, then
-  higher score — so ``株式会社極秘技研`` wins over the shorter ``極秘技研`` (§11).
+``EXISTING_ALIAS``と重なる検出は破棄して既存aliasを保護する。それ以外の重なりは、
+安全強度、priority、span長、scoreの順で解決する。
 """
 
 from __future__ import annotations
@@ -15,7 +10,7 @@ from dataclasses import replace
 
 from securitymasker.models import DetectionResult, EntityType, RestorePolicy
 
-# Safety lattice (doc/06 P1-3): strictly-ordered restore policies, strongest last.
+# restore policyを弱い順に並べた安全強度。
 _POLICY_STRENGTH: dict[str, int] = {
     RestorePolicy.LITERAL.value: 0,
     RestorePolicy.ENV_REFERENCE.value: 1,
@@ -60,10 +55,7 @@ def _safety_rank(d: DetectionResult) -> int:
 
 
 def _preference(d: DetectionResult) -> tuple[int, int, int, float]:
-    # Safety dominates priority (P1-3). Ranking on the *effective* strictness — not
-    # just the entity-type floor — is what stops a high-priority `literal` from
-    # winning an overlap against a lower-priority `block`/`redacted` and quietly
-    # weakening it.
+    # priorityより安全強度を優先し、高priorityのliteralがblock/redactedを弱めるのを防ぐ。
     priority = int(d.metadata.get("priority", 100))
     return (_safety_rank(d), priority, d.length, d.score)
 
@@ -75,8 +67,7 @@ def _overlaps(a: DetectionResult, b: DetectionResult) -> bool:
 def _resolve_cluster(cluster: list[DetectionResult]) -> list[DetectionResult]:
     """互いに到達可能な小overlap cluster内でpreference-greedyに選ぶ。
 
-    Existing-alias spans are protected: they suppress overlapping candidates and are
-    themselves excluded from the result (idempotency, §11).
+    既存aliasのspanは重なる候補を抑止し、自身は処理対象から除外する。
     """
     protected = [d for d in cluster if d.entity_type == EntityType.EXISTING_ALIAS.value]
     candidates = [d for d in cluster if d.entity_type != EntityType.EXISTING_ALIAS.value]
@@ -94,10 +85,10 @@ def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
     """処理対象の重ならないdetectionをstart位置順で返す。
 
     Near-linear: sort by start, sweep into clusters of transitively-overlapping
-    spans, and run the preference greedy (priority, then length, then score, §11)
+    spans, and run the preference greedy (priority, then length, then score)
     only *within* each cluster. Non-overlapping detections — e.g. the same secret
     repeated thousands of times in a large input — become singleton clusters, so
-    there is no all-pairs blowup (§32).
+    there is no all-pairs blowup.
     """
     if not detections:
         return []
@@ -121,7 +112,7 @@ def resolve(detections: list[DetectionResult]) -> list[DetectionResult]:
 
 
 def blocking_entities(resolved: list[DetectionResult]) -> list[str]:
-    """restore policyが``block``のentity type。requestをfail-closedにする（§10）。"""
+    """restore policyが``block``のentity type。requestをfail-closedにする。"""
     return [
         d.entity_type
         for d in resolved

@@ -1,14 +1,8 @@
-"""Anthropic Messages adapter（§23、§16）。
+"""Anthropic Messages APIのrequestをマスクし、responseを復元するadapter。
 
-Masks only user-text-bearing fields and restores them on the way back, never
-altering structural fields (§16): ``type``, ``role``, ``id``, ``name``,
-``tool_use_id``, ``input_schema`` keys/types, ``stop_reason``, ``usage``. Unknown
-block types pass through untouched (§23).
-
-Maskable request fields (§23): ``system`` (string or text blocks), ``messages``
-content (text blocks, ``tool_result`` content, ``tool_use`` input string values),
-and tool ``description``. Response restoration reverses text blocks and
-``tool_use`` input string values.
+``system``、``messages``内のtextとtool入出力、toolの``description``だけを変換する。
+``type``、``role``、各種ID、``name``、``input_schema``、``stop_reason``、
+``usage``などの構造fieldと未知blockは変更しない。
 """
 
 from __future__ import annotations
@@ -111,10 +105,10 @@ async def _mask_block(block: dict[str, Any], mask: MaskTransform) -> None:
 def restore_response(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> None:
-    """非streamingのAnthropic responseをin-placeで復元する（§19）。
+    """非streamingのAnthropic responseをin-placeで復元する。
 
-    ``text`` blocks are restored for display; ``tool_use.input`` is restored only
-    for allowlisted trusted-local tools, else left aliased.
+    text blockは表示用に復元する。``tool_use.input``はallowlist済みlocal toolだけ
+    復元し、それ以外はaliasのまま保持する。
     """
     restore = engine.make_restorer(session)
     trust = engine.tool_trust
@@ -134,7 +128,7 @@ def _restore_block(block: Any, restore: Any, trust: Any) -> None:
 
 
 def restore_response_object(engine: MaskingEngine, session: MaskingSession, response: Any) -> None:
-    """live Anthropic response objectをattribute accessで復元する（§19）。"""
+    """live Anthropic response objectをattribute accessで復元する。"""
     restore = engine.make_restorer(session)
     trust = engine.tool_trust
     for block in getattr(response, "content", None) or []:

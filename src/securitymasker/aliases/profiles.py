@@ -1,10 +1,8 @@
-"""置換profile — entityの構文を保つ形にaliasを整える（§9）。
+"""entityの構文を保つ形へaliasを整える置換profile。
 
-Each profile turns a short opaque ``token`` (hex derived from the fingerprint) into
-an alias string that stays syntactically valid in the entity's context, so that
-generated code / JSON / shell / hostnames don't break (§6, §16). Reserved,
-non-routable domains/ranges (``.invalid``, ``2001:db8::/32``, ``198.51.100.0/24``)
-are used so an alias can't be mistaken for a real endpoint (§9.2, §9.4).
+fingerprint由来の短いhex tokenを、code、JSON、shell、hostnameなどの構文を壊さない
+aliasへ変換する。実endpointと誤認されないよう、予約済みの非routing domainと
+documentation address rangeを使う。
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ from securitymasker.models import EntityType, ReplacementProfile
 
 ALIAS_PREFIX = "SM_"
 INVALID_DOMAIN = "example.invalid"
-# RFC 5737の三documentation rangeを使い、254ではなく3×254 aliasを得る（ADR-0007）。
+# RFC 5737の三documentation rangeを使い、3×254個のIPv4 alias空間を得る。
 _DOC_IPV4_NETS = ("192.0.2", "198.51.100", "203.0.113")
 _DOC_IPV4_NET = _DOC_IPV4_NETS[1]  # kept for existing references/tests
 _DOC_IPV6_PREFIX = "2001:db8"  # RFC 3849 documentation range
@@ -74,7 +72,7 @@ def alias_for(
     if p is ReplacementProfile.IPV4:
         # 形状保持により空間は有限。IPv4 aliasはdocumentation range内に限定する。
         # the documentation ranges, so there are 3 x 254 = 762 of them per session.
-        # これは意図したtrade-offで、枯渇を黙って許容しない（ADR-0007）。
+        # 有限空間が枯渇した場合は黙って再利用せずfail-closedにする。
         # tolerated: the factory keeps lengthening the token, finds every candidate
         # taken, and raises AliasCollisionError -> the request fails closed.
         n = int(token, 16)
@@ -97,8 +95,7 @@ def alias_for(
         return f"${{{ENV_SECRET_PREFIX}{hexup}}}"
 
     # URL／FILE_PATHは有効な構文を保つためcomponent単位で再構築する。
-    # parseable URL or a resolvable-looking path (invariant 3).
-    # A value that cannot be rebuilt safely raises MaskingError -> request blocked.
+    # 安全に再構築できない値はMaskingErrorとしてrequestをblockする。
     if p is ReplacementProfile.URL:
         return url_alias(token, original)
 

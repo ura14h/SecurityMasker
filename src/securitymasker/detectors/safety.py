@@ -51,7 +51,7 @@ def check_regex_safety(pattern: str, *, rule_id: str) -> None:
     """``pattern``が既知の計算量爆発形式なら``UnsafeRegexError``を送出する。
 
     The message names only the rule id and the reason — never the pattern, which
-    routinely embeds the very secret it matches (§25).
+    routinely embeds the very secret it matches.
     """
     if _NESTED_QUANTIFIER.search(pattern):
         raise UnsafeRegexError(

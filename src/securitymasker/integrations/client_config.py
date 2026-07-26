@@ -1,4 +1,4 @@
-"""v2 configから永続client設定snippetを生成する（ADR-0012 Phase 6）。"""
+"""v2 configから永続client設定snippetを生成する。"""
 
 from __future__ import annotations
 

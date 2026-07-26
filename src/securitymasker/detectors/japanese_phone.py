@@ -1,9 +1,9 @@
-"""日本の電話番号（JP phone number）recognizer（§14.3）。
+"""日本の電話番号（JP phone number）recognizer。
 
 Matches common Japanese formats (landline, mobile, freedial, +81, parenthesized,
 extension) on the NFKC-normalized text. Context words (電話/TEL/携帯/連絡先/内線…)
 raise the score so build numbers / customer ids in code are less likely to be
-misdetected (§14.3).
+misdetected.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class JapanesePhoneDetector:
                 if pattern is _EXTENSION and not has_ctx:
                     continue
                 # A digit run with no separator (e.g. a build id) needs phone context
-                # to avoid false positives (§14.3).
+                # to avoid false positives.
                 has_sep = any(c in m.group(0) for c in "- （）()+")
                 if not has_sep and not has_ctx:
                     continue

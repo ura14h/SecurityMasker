@@ -1,8 +1,8 @@
-"""process内metricとaudit event（§25）。
+"""process内metricとaudit event。
 
 Only safe fields are ever recorded (entity types, counts, timings, fail-open/closed
 outcomes, irreversible fingerprints). Original secret values, decrypted mappings,
-keys, and full prompts must never pass through here (§25). The counters are a tiny
+keys, and full prompts must never pass through here. The counters are a tiny
 dependency-free registry; a Prometheus exporter can wrap ``Metrics.snapshot()``.
 """
 
@@ -121,7 +121,7 @@ AuditSink = Callable[[AuditRecord], None]
 
 
 def emit_audit(record: AuditRecord) -> None:
-    """schema済みrecordだけをstructured logへ出力する（§25）。"""
+    """schema済みrecordだけをstructured logへ出力する。"""
     _audit_log.info(record.event.value, **record.fields())
 
 

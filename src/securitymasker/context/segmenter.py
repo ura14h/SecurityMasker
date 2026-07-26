@@ -1,4 +1,4 @@
-"""message bodyをtyped spanへ分割する（ADR-0011）。
+"""message bodyをtyped spanへ分割する。
 
 A chat message is rarely one kind of text. It is prose *around* a fenced code
 block, a shell transcript, a pasted diff, a JSON blob. Treating the whole body as
@@ -34,16 +34,12 @@ from dataclasses import dataclass
 from securitymasker.errors import MaskingError
 from securitymasker.models import ContextKind
 
-# bodyごとのspan上限。超過時はsegment化を止めてfail-closedにする。
-# treats the remainder as one prose span: pathological input must not translate
-# into unbounded detector work (ADR-0011). Generous for real documents.
+# bodyごとのspan上限。pathological inputを無制限なdetector実行へ変換しないよう、
+# 超過時はsegment化を止めてfail-closedにする。
 MAX_SEGMENTS = 512
 
-# 一bodyで検出するstructural claimのhard ceiling。
-# bounded, but an input engineered to produce tens of thousands of claims is not a
-# document anyone wrote — it is an attempt to make us do work. Past this we refuse
-# the request outright rather than silently degrade it, so the original never
-# reaches an upstream on a path we did not fully analyse (invariant 4, ADR-0011).
+# 一bodyで検出するstructural claimのhard ceiling。大量claimを生成する入力は黙って
+# 精度を落とさず拒否し、未解析領域をupstreamへ送らない。
 MAX_CLAIMS = 4 * MAX_SEGMENTS
 
 # ``` or ~~~ fence, optional info string, to the matching closing fence or EOF.
@@ -199,7 +195,7 @@ def segment(
     Adjacent prose runs are emitted as ONE segment, and the total is capped at
     ``max_segments``; past the cap the remaining text becomes a single trailing
     prose segment. Both exist so one request cannot fan out into unbounded
-    detector invocations (ADR-0011).
+    detector invocations.
     """
     if not text:
         return []

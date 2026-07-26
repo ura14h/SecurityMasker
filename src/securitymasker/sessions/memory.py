@@ -34,7 +34,7 @@ class InMemorySessionStore:
         self._locks: dict[str, asyncio.Lock] = {}
         self._lock_refs: dict[str, int] = {}
         self._guard = asyncio.Lock()
-        # response_id -> (session_key, bound_at) for multi-turn continuity (P1-1).
+        # response_id -> (session_key, bound_at) for multi-turn continuity.
         self._response_bindings: dict[str, tuple[str, datetime]] = {}
 
     async def get(self, session_id: str) -> MaskingSession | None:

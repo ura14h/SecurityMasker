@@ -1,8 +1,7 @@
 """protocol adapterが共有するhelper。
 
-Adapters mutate the request/response dicts in place, touching only text-bearing
-value fields and never structural keys (§16). The transform used for masking is the
-engine's async ``mask_text``; for restoration it is the engine's sync restorer.
+adapterはrequest/responseのdictをin-placeで処理するが、文字列値だけを変更し、構造keyは
+変更しない。マスクにはengineの非同期変換を、復元には同期restorerを使う。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from securitymasker.models import DetectionResult
 
 
 class MaskTransform(Protocol):
-    """非同期masking変換。``kind``で検出contextを選ぶ（§17）。"""
+    """非同期masking変換。``kind``で検出contextを選ぶ。"""
 
     async def __call__(self, text: str, kind: str = ...) -> str: ...
 

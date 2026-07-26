@@ -1,4 +1,4 @@
-"""利用者向けlayoutの安全な初期化（ADR-0012 Phase 1）。"""
+"""利用者向けlayoutの安全な初期化。"""
 
 from __future__ import annotations
 

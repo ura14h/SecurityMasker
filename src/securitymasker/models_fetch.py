@@ -1,4 +1,4 @@
-"""model artifactのmanifest、取得、検証（ADR-0009、ADR-0010）。
+"""model artifactのmanifest、取得、検証。
 
 The runtime loads models ``local_files_only``, so nothing a user types can trigger
 a download. Fetching is therefore a separate, deliberate step — and this is where
@@ -75,7 +75,7 @@ class ModelManifest:
         return next((a for a in self.artifacts if a.name == name), None)
 
 
-# 固定値を公開するmodelのmanifest（ADR-0009）。配布byteからdigestを取得する。
+# 固定値を公開するmodelのmanifest。配布byteからdigestを取得する。
 # the Hugging Face registry API at adoption time and are reproduced in the ADR.
 MANIFESTS: dict[str, ModelManifest] = {
     f"{ADOPTED_MODEL}@{ADOPTED_REVISION}":
@@ -217,7 +217,7 @@ def require_verified(
         if not allow_unverified:
             raise UnknownModelError(
                 f"{model}@{revision} has no artifact manifest, so its files cannot be "
-                "verified. Add a manifest (see ADR-0009) or set "
+                "verified. Add a manifest or set "
                 "ner.allow_unverified_model=true to accept it UNVERIFIED."
             )
         return VerificationResult(model=model, revision=revision or "", verified=[])
@@ -264,7 +264,7 @@ def fetch(
     if manifest_for(model, revision) is None and not allow_unverified:
         raise UnknownModelError(
             f"refusing to fetch {model}@{revision}: no artifact manifest on record. "
-            "Add one (ADR-0009) or pass --allow-unverified to accept it UNVERIFIED."
+            "Add one or pass --allow-unverified to accept it UNVERIFIED."
         )
     try:
         from huggingface_hub import snapshot_download

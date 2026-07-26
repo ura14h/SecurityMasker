@@ -1,10 +1,10 @@
-"""組み込みのdeveloper secret pattern（§15）。
+"""組み込みのdeveloper secret pattern。
 
 Secrets default to the ``environment_reference`` profile + ``env_reference`` restore
 policy, so their real value is never returned to the client — generated code uses
-``${SECURITYMASKER_SECRET_...}`` instead (§9.9, §10, §27). These live behind the
+``${SECURITYMASKER_SECRET_...}`` instead. These live behind the
 ``RegexDetector`` interface; an external secret scanner can be added as another
-detector later (§15) without touching the core.
+detector later without touching the core.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ _PRIORITY = 200
 
 # Order does not matter here; central overlap resolution keeps the longest/highest.
 # Every pattern is prefix/format-anchored (not bare entropy) to keep precision high
-# and avoid flagging ordinary hashes, commit ids, or fixtures (doc/06 P1-4).
+# and avoid flagging ordinary hashes, commit ids, or fixtures.
 SECRET_PATTERNS: list[RegexEntry] = [
     RegexEntry(r"sk-ant-[A-Za-z0-9_-]{20,}", EntityType.API_KEY.value, _ENV, _ENV_RESTORE, _PRIORITY, 0.99),
     RegexEntry(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}", EntityType.API_KEY.value, _ENV, _ENV_RESTORE, _PRIORITY, 0.95),

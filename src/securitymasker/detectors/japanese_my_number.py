@@ -1,13 +1,13 @@
-"""マイナンバー／個人番号（JP_MY_NUMBER）recognizer（§14.5）。
+"""マイナンバー／個人番号（JP_MY_NUMBER）recognizer。
 
 12 digits with an official check digit. We normalize full-width digits (done
 upstream by NFKC), allow space/hyphen grouping, verify the check digit, and only
-emit when the checksum is valid — a wrong checksum is NOT detected (§14.5). Context
+emit when the checksum is valid — a wrong checksum is NOT detected. Context
 words raise the score; without them the score stays lower so a plain 12-digit
 business id is less likely to be masked as a My Number.
 
 Test data must use synthetic numbers with a computed valid check digit, never a
-real person's number (§14.5, §30).
+real person's number.
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ class JapaneseMyNumberDetector:
     def __init__(
         self, *, restore_policy: str = RestorePolicy.BLOCK.value, min_score: float = 0.0
     ) -> None:
-        # Default block: My Number is high-sensitivity (§10 policy default). The
-        # min_score gate makes the context score actionable (doc/06 §5.6): raise it
+        # Default block: My Number is high-sensitivity. The
+        # min_score gate makes the context score actionable: raise it
         # (e.g. 0.6) so a bare checksum-valid 12-digit business id is not masked as
         # a My Number, while a context-bearing one (score 0.95) still is. Default
         # 0.0 keeps the safe fail-closed behavior (any valid checksum is caught).
@@ -72,10 +72,10 @@ class JapaneseMyNumberDetector:
         for m in _PATTERN.finditer(text):
             digits = re.sub(r"[ -]", "", m.group(1))
             if not is_valid_my_number(digits):
-                continue  # wrong checksum -> not detected (§14.5)
+                continue  # wrong checksum -> not detected
             score = 0.95 if has_context(text, m.start(), m.end(), _CONTEXT) else 0.5
             if score < self._min_score:
-                continue  # below the configured confidence gate (§5.6)
+                continue  # below the configured confidence gate
             o_start, o_end = context.norm.to_original_span(m.start(1), m.end(1))
             results.append(
                 DetectionResult(

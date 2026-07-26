@@ -1,8 +1,8 @@
-"""日本語recognizerが共有するcontext word score処理（§14）。
+"""日本語recognizerが共有するcontext word score処理。
 
 Japanese PII (phone, postal code, My Number, DOB) collides with ordinary numbers,
 so a raw pattern match is only promoted to a confident detection when nearby text
-contains supporting context words (§14.3, §14.5-7). This module provides a small
+contains supporting context words. This module provides a small
 window-scan helper; each recognizer supplies its own vocabulary.
 """
 

@@ -1,16 +1,14 @@
-"""request header／bodyからのsession解決。
+"""request headerとbodyからsessionを解決する。
 
-The proxy masks (request) and restores (response) in a *single* handler
-invocation, so one resolved session covers the whole turn. Cross-turn consistency
-comes from a stable session id. Priority prefers a stable identifier
-over the per-turn ``previous_response_id``, which changes every turn and would
-otherwise fork the alias table each time:
+一つのhandler呼出しでrequestのマスクとresponseの復元を行うため、同じturnでは一つの
+sessionを共有する。turnをまたぐaliasの一貫性には安定したIDが必要なので、毎回変わる
+``previous_response_id``より安定したheaderを優先する。
 
     1. 明示的な``X-SecurityMasker-Session-ID``
     2. Claude Codeのstable ``x-claude-code-session-id`` header
-    3. a stable ``session-id`` / ``thread-id`` header
-    4. ``previous_response_id`` (only as a last resort before ephemeral)
-    5. a fresh ephemeral id
+    3. 安定した``session-id``または``thread-id`` header
+    4. ``previous_response_id``による既存sessionの検索
+    5. 新しい一時ID
 
 単一利用者のlocal runtimeなので、このmoduleは「どのsessionか」だけを解決する。
 """
@@ -28,9 +26,8 @@ SESSION_HEADER = "x-securitymasker-session-id"
 @dataclass(frozen=True)
 class ResolvedSession:
     session_id: str
-    stable: bool  # False => ephemeral (no durable identifier was available)
-    # Present when the request referenced a prior response; the caller resolves it
-    # against the store's response bindings to continue that session (P1-1).
+    stable: bool  # Falseなら永続的な識別子を取得できなかった一時session
+    # 過去responseを参照した場合、callerがstoreのbindingから元sessionを検索する。
     previous_response_id: str | None = None
 
 

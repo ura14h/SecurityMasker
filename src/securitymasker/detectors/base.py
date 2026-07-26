@@ -1,4 +1,4 @@
-"""detector Protocolと共有context（§15）。
+"""detector Protocolと共有context。
 
 Detectors run over the NFKC/NFC-normalized text and return ``DetectionResult``s in
 **original** coordinates (they map spans back via ``context.norm``). This keeps
@@ -23,7 +23,7 @@ class DetectionContext:
     # 現在のsessionで実際に発行したalias。既存alias detectorが利用する。
     # only protects a token if it is in this set, so an alias-shaped string that
     # was never issued here (another session's, an expired one, or a secret that
-    # merely looks like an alias) is not auto-protected (doc/06 P0-7).
+    # merely looks like an alias) is not auto-protected.
     issued_aliases: frozenset[str] = frozenset()
 
 

@@ -1,4 +1,4 @@
-"""session単位の暗号処理（§7、§8、ADR-0005）。
+"""session単位の暗号処理。
 
 - Session keys come from a CSPRNG (``secrets.token_bytes``), never derived from
   the session id.
@@ -40,7 +40,7 @@ def fingerprint(
     """表層形または正規化値のsession単位で決定論的なfingerprint。
 
     Domain-separated by entity type and profile so the same string under two
-    entity types maps to two aliases (§7). Returns a hex digest.
+    entity types maps to two aliases. Returns a hex digest.
     """
     msg = b"\x00".join(
         (value.encode("utf-8"), entity_type.encode("utf-8"), replacement_profile.encode("utf-8"))

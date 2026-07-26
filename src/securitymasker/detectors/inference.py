@@ -1,4 +1,4 @@
-"""同期model inferenceを上限付きで実行する（ADR-0011）。
+"""同期model inferenceを上限付きで実行する。
 
 The honest constraint first: **a timeout cannot stop CPU-bound Python inference.**
 ``asyncio.wait_for`` cancels the *await*, not the worker; ``concurrent.futures``

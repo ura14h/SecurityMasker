@@ -1,7 +1,7 @@
-"""例外階層。既定動作はfail-closed（§26、§40-4）。
+"""例外階層。既定動作はfail-closed。
 
 Any of these raised during request processing must prevent the original data from
-reaching the upstream LLM. Messages must never carry original secret values (§25);
+reaching the upstream LLM. Messages must never carry original secret values;
 they carry only safe, actionable info (entity type, request id).
 """
 
@@ -29,7 +29,7 @@ class MaskingError(SecurityMaskerError):
 
 
 class LeakageError(SecurityMaskerError):
-    """送信前の再scanで登録済みsecretの残存を検出した（§18 step 11）。"""
+    """送信前の再scanで登録済みsecretの残存を検出した。"""
 
     def __init__(self, entity_type: str, request_id: str | None = None) -> None:
         self.entity_type = entity_type
@@ -42,11 +42,11 @@ class LeakageError(SecurityMaskerError):
 
 
 class RestoreError(SecurityMaskerError):
-    """modelによる変形などでaliasを安全に復元できない（§24）。"""
+    """modelによる変形などでaliasを安全に復元できない。"""
 
 
 class CryptoError(SecurityMaskerError):
-    """暗号化／復号または認証（AES-GCM tag）の失敗（§8）。"""
+    """暗号化／復号または認証（AES-GCM tag）の失敗。"""
 
 
 class SessionError(SecurityMaskerError):
@@ -54,4 +54,4 @@ class SessionError(SecurityMaskerError):
 
 
 class AliasCollisionError(SecurityMaskerError):
-    """token延長でも解消できなかったalias collision（§7）。"""
+    """token延長でも解消できなかったalias collision。"""

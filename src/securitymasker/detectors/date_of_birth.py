@@ -1,8 +1,8 @@
-"""生年月日（DATE_OF_BIRTH）recognizer（§14.7）。
+"""生年月日（DATE_OF_BIRTH）recognizer。
 
 Distinguishes a birth date from an ordinary date by context: a Japanese date is
 only promoted to ``DATE_OF_BIRTH`` when 生年月日/誕生日/生まれ/DOB/年齢 appears nearby
-(§14.7). Plain release/announcement dates are left alone.
+Plain release/announcement dates are left alone.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class DateOfBirthDetector:
             for m in pattern.finditer(text):
                 if (m.start(), m.end()) in seen:
                     continue
-                # Only a birth date if birth context is present (§14.7).
+                # Only a birth date if birth context is present.
                 if not has_context(text, m.start(), m.end(), _CONTEXT, window=12):
                     continue
                 seen.add((m.start(), m.end()))

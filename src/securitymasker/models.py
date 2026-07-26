@@ -1,8 +1,7 @@
 """SecurityMaskerの中核data model。
 
-Kept dependency-free (stdlib only) so the masking core never imports LiteLLM,
-model libraries or provider SDKs. Enums make the string taxonomies explicit and
-``mypy --strict`` checkable.
+masking coreがmodel libraryやprovider SDKへ依存しないよう標準libraryだけで構成する。
+文字列taxonomyはEnumで明示し、``mypy --strict``で検査できる形にする。
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from typing import Any
 
 
 class ContextKind(str, Enum):
-    """値が見つかった場所。安全な置換形式を制約する（§17）。"""
+    """値が見つかった場所。安全な置換形式を制約する。"""
 
     PROSE = "prose"
     MARKDOWN_CODE = "markdown_code"          # fenced block
@@ -33,7 +32,7 @@ class ContextKind(str, Enum):
 
 
 class ReplacementProfile(str, Enum):
-    """aliasが保持すべき構文上の形状（§9）。"""
+    """aliasが保持すべき構文上の形状。"""
 
     PROSE_IDENTIFIER = "prose_identifier"
     HOSTNAME = "hostname"
@@ -48,7 +47,7 @@ class ReplacementProfile(str, Enum):
 
 
 class RestorePolicy(str, Enum):
-    """clientへ返す前にaliasをどう復元するか（§10）。"""
+    """clientへ返す前にaliasをどう復元するか。"""
 
     LITERAL = "literal"
     ENV_REFERENCE = "env_reference"
@@ -78,10 +77,8 @@ class EntityType(str, Enum):
     DB_CONNECTION_STRING = "DB_CONNECTION_STRING"
     PASSWORD = "PASSWORD"
     GENERIC_SECRET = "GENERIC_SECRET"
-    # Japan-specific (Phase 4 detectors; declared now for policy defaults).
-    # A place name (city, prefecture, station). Deliberately DISTINCT from
-    # JP_ADDRESS: "Yokohama" is not somebody's home address, and conflating them
-    # would let a coarse NER hit inherit an address's sensitivity (ADR-0009).
+    # 地名は個人住所とは限らないため、LOCATIONをJP_ADDRESSから分離する。
+    # 粗いNER hitへ住所の高いsensitivityを誤って継承させない。
     LOCATION = "LOCATION"
     JP_ADDRESS = "JP_ADDRESS"
     JP_POSTAL_CODE = "JP_POSTAL_CODE"
@@ -97,7 +94,7 @@ class EntityType(str, Enum):
     DATE_OF_BIRTH = "DATE_OF_BIRTH"
     EMPLOYEE_ID = "EMPLOYEE_ID"
     CUSTOMER_ID = "CUSTOMER_ID"
-    # Alias already present in the text (idempotency guard, §11).
+    # 既に本文へ存在するSecurityMasker aliasを表し、再マスクを防ぐ。
     EXISTING_ALIAS = "EXISTING_ALIAS"
 
 
@@ -113,8 +110,7 @@ class DetectionResult:
     context_kind: str
     replacement_profile: str
     restore_policy: str
-    # The value as matched in the ORIGINAL text (surface form). Restoration must
-    # reproduce this verbatim (§12).
+    # 原文で一致したsurface form。復元時はこの表記をそのまま再現する。
     original_value: str
     # NFKC/NFC-normalized value used for detection/fingerprinting when merging.
     normalized_value: str | None = None
@@ -148,7 +144,7 @@ class AliasMapping:
 
 @dataclass
 class MaskingSession:
-    """一sessionの中核となる可逆state（§7）。"""
+    """一sessionの中核となる可逆state。"""
 
     session_id: str
     session_index_key: bytes
@@ -163,7 +159,7 @@ class MaskingSession:
 
 @dataclass(frozen=True)
 class MaskingPolicyDecision:
-    """解決済みdetectionに対するpolicy評価結果（§29）。"""
+    """解決済みdetectionに対するpolicy評価結果。"""
 
     action: str  # "mask" | "block" | "ignore" | "audit"
     replacement_profile: str | None

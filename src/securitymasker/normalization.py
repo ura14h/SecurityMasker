@@ -1,4 +1,4 @@
-"""原文へ戻るoffset mapを伴うUnicode正規化（§12、§14.4）。
+"""原文へ戻るoffset mapを伴うUnicode正規化。
 
 Detection runs on the normalized text (default NFKC) so that full-width/half-width
 and compatibility variants match a dictionary/regex; but replacement happens on the

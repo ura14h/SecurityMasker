@@ -1,4 +1,4 @@
-"""ユーザー定義の完全一致dictionary detector（§11 step 2、§12）。
+"""ユーザー定義の完全一致dictionary detector。
 
 Highest-trust detector. Each entry may list several surface forms (spacing/width
 variants). Matching runs on normalized text; overlap/longest-match resolution is
@@ -6,7 +6,7 @@ done centrally in ``policy`` after all detectors run, so this detector simply
 reports every occurrence.
 
 MVP uses per-term substring scanning. For very large dictionaries this should be
-replaced by an Aho–Corasick automaton (§11) behind the same interface.
+replaced by an Aho–Corasick automaton behind the same interface.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class DictionaryDetector:
         # and NFKC folds the ideographic space to an ASCII one. Rather than making
         # operators enumerate every spacing variant (and silently missing the ones
         # they forget), each space-free term also gets a pattern that tolerates an
-        # optional single space between its characters (doc/06 §5.3).
+        # optional single space between its characters.
         self._spaced: list[tuple[re.Pattern[str], DictionaryEntry]] = []
         if flexible_spacing:
             for term, entry in self._terms:
@@ -104,7 +104,7 @@ class DictionaryDetector:
                 start = target.find(needle, start + 1)
 
         # 登録値「山田太郎」に対する「山田 太郎」などのspacing variant。
-        # exact hits above are resolved centrally in ``policy`` (§11).
+        # exact hits above are resolved centrally in ``policy``.
         for pattern, entry in self._spaced:
             for m in pattern.finditer(haystack):
                 if " " not in m.group(0):

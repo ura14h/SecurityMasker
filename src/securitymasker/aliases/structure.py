@@ -1,12 +1,7 @@
-"""URLとfile pathの構造保持alias（不変条件3）。
+"""URLとfile pathの構造を保つalias。
 
-Invariant 3 says masking must not break syntax. Replacing a whole URL or path with
-an opaque ``SM_VALUE_ABC123`` token satisfies confidentiality but destroys it: the
-result no longer parses as a URL, no longer resolves as a path, and any generated
-code, shell command, or patch that contains it stops working.
-
-So both profiles rebuild the value component-by-component instead, keeping
-everything that is *structure* and replacing everything that is *identity*:
+値全体を不透明tokenへ置換するとURLやpathとしてparseできず、生成code、shell command、
+patchを壊す。そのため構造componentを維持し、identityを持つcomponentだけを置換する。
 
     https://taro:pw@db01.corp.example:8443/orders/2024?owner=taro#notes
     https://sm-user-1a2b:sm-pw-3c4d@sm-host-5e6f.example.invalid:8443/
@@ -179,7 +174,7 @@ def file_path_alias(token: str, original: str) -> str:
 
 
 def is_structurally_valid_url(value: str) -> bool:
-    """``value``がscheme付きURLとしてparseできる場合にTrue（test／§30.5用）。"""
+    """``value``がscheme付きURLとしてparseできる場合にTrue（test／用）。"""
     try:
         parts = urlsplit(value)
     except ValueError:
@@ -188,5 +183,5 @@ def is_structurally_valid_url(value: str) -> bool:
 
 
 def path_depth(value: str) -> int:
-    """POSIX pathのcomponent数を返す（test／§30.5用）。"""
+    """POSIX pathのcomponent数を返す（test／用）。"""
     return len(posixpath.normpath(value).split("/"))
