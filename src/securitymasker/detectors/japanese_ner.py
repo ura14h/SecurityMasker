@@ -123,11 +123,7 @@ class JapaneseNerDetector:
             return  # not configured -> disabled (a model is never hardcoded)
 
         try:
-            from transformers import (
-                AutoModelForTokenClassification,
-                AutoTokenizer,
-                pipeline,
-            )
+            from transformers import pipeline
         except ImportError as exc:
             if required:
                 raise ConfigError(
@@ -185,26 +181,53 @@ class JapaneseNerDetector:
                 # snapshot for exactly this revision and require_verified() has
                 # already checked every artifact's bytes.
                 load_kwargs["revision"] = revision
-            # transformers ships no stubs for this factory; the kwargs are checked
-            # by the explicit `load_kwargs` dict above.
-            tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)  # type: ignore[no-untyped-call]
-            # use_safetensors=True is REQUIRED, not preferred: without it
-            # transformers silently falls back to a pickle .bin, which executes
-            # arbitrary code on load (ADR-0010).
-            weights = AutoModelForTokenClassification.from_pretrained(
-                source, use_safetensors=True, **load_kwargs)
+            from securitymasker.models_fetch import ADOPTED_MODEL, ADOPTED_REVISION
+
+            if model == ADOPTED_MODEL and revision == ADOPTED_REVISION:
+                # 固定architectureを直接loadする。Auto factoryはTransformersの
+                # 全model registryを動的探索し、PyInstallerでは無関係なmodel
+                # moduleの欠落で停止する。直接指定は供給網の固定も強くする。
+                from transformers.models.xlm_roberta.modeling_xlm_roberta import (
+                    XLMRobertaForTokenClassification,
+                )
+                from transformers.models.xlm_roberta.tokenization_xlm_roberta_fast import (
+                    XLMRobertaTokenizerFast,
+                )
+
+                tokenizer = XLMRobertaTokenizerFast.from_pretrained(
+                    source, **load_kwargs
+                )
+                weights = XLMRobertaForTokenClassification.from_pretrained(
+                    source, use_safetensors=True, **load_kwargs
+                )
+            else:
+                # legacy/source互換経路。v2標準設定は上の固定model以外を拒否する。
+                from transformers import AutoModelForTokenClassification, AutoTokenizer
+
+                tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)  # type: ignore[no-untyped-call]
+                # use_safetensors=True is REQUIRED, not preferred: without it
+                # transformers silently falls back to a pickle .bin, which executes
+                # arbitrary code on load (ADR-0010).
+                weights = AutoModelForTokenClassification.from_pretrained(
+                    source, use_safetensors=True, **load_kwargs
+                )
             self._pipeline = pipeline(
                 "token-classification",
                 model=weights,
                 tokenizer=tokenizer,
                 aggregation_strategy="simple",
+                device=-1,
             )
         except Exception as exc:  # noqa: BLE001 - model missing/corrupt/incompatible
             self._pipeline = None
             if required:
+                detail = type(exc).__name__
+                # module名は利用者データではなくpackaging診断に必要な公開識別子。
+                if isinstance(exc, ModuleNotFoundError) and exc.name:
+                    detail = f"{detail}: {exc.name}"
                 raise ConfigError(
                     f"ner.model={model!r} (revision={revision or 'unpinned'}) could not "
-                    f"be loaded ({type(exc).__name__}). Fetch it first with "
+                    f"be loaded ({detail}). Fetch it first with "
                     "'securitymasker models fetch', or clear ner.model."
                 ) from exc
             return

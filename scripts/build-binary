@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
+BUILD_DIRECTORY=${SECURITYMASKER_BUILD_DIRECTORY:-"$PROJECT_DIRECTORY/build/pyinstaller"}
+BUILD_VENV="$BUILD_DIRECTORY/venv"
+WORK_DIRECTORY="$BUILD_DIRECTORY/work"
+DIST_DIRECTORY="$PROJECT_DIRECTORY/dist"
+PYTHON_COMMAND=${PYTHON_COMMAND:-python3}
+
+"$PYTHON_COMMAND" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else "SecurityMasker binary build requires Python 3.12+")'
+
+if [ -e "$BUILD_DIRECTORY" ]; then
+    printf '%s\n' "error: clean build directory required: $BUILD_DIRECTORY" >&2
+    exit 2
+fi
+if [ -e "$DIST_DIRECTORY/securitymasker" ]; then
+    printf '%s\n' "error: output already exists: $DIST_DIRECTORY/securitymasker" >&2
+    exit 2
+fi
+
+mkdir -p "$BUILD_DIRECTORY" "$DIST_DIRECTORY"
+"$PYTHON_COMMAND" -m venv "$BUILD_VENV"
+"$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
+    -r "$PROJECT_DIRECTORY/requirements.lock"
+"$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
+    --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
+"$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
+    --no-deps -r "$PROJECT_DIRECTORY/requirements-build.lock"
+"$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
+    --no-build-isolation --no-deps -e "$PROJECT_DIRECTORY"
+"$BUILD_VENV/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" models fetch \
+    --model tsmatz/xlm-roberta-ner-japanese \
+    --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
+
+cd "$PROJECT_DIRECTORY"
+"$BUILD_VENV/bin/pyinstaller" --noconfirm --clean \
+    --distpath "$DIST_DIRECTORY" \
+    --workpath "$WORK_DIRECTORY" \
+    "$PROJECT_DIRECTORY/securitymasker.spec"
+
+printf '%s\n' "Created $DIST_DIRECTORY/securitymasker"

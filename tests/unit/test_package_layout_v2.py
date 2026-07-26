@@ -261,6 +261,27 @@ def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> Non
     assert "|| true" not in release
 
 
+def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services() -> None:
+    build = (ROOT / "scripts/build-binary").read_text(encoding="utf-8")
+    lock = (ROOT / "requirements-build.lock").read_text(encoding="utf-8")
+    spec = (ROOT / "securitymasker.spec").read_text(encoding="utf-8")
+
+    assert "pyinstaller==6.21.0" in lock
+    assert "requirements-build.lock" in build
+    assert "requirements-dev.lock" not in build
+    assert "binary build requires Python 3.12+" in build
+    assert "--no-build-isolation --no-deps -e" in build
+    assert "securitymasker.spec" in build
+    assert "securitymasker_model" in spec
+    assert 'sys.path.insert(0, str(source))' in spec
+    assert 'securitymasker/_binary_entry.py' in spec
+    binary_test = (ROOT / "scripts/test-binary").read_text(encoding="utf-8")
+    assert "tests/integration/test_binary_release.py" in binary_test
+    assert 'SM_BINARY="$BINARY"' in binary_test
+    for excluded in ("devtools", "pytest", "redis", "presidio_analyzer", "spacy"):
+        assert f'"{excluded}"' in spec
+
+
 @pytest.mark.parametrize(
     ("arguments", "expected_mode", "expected_port"),
     [

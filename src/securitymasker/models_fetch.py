@@ -25,6 +25,7 @@ Three rules follow from "a NER model is untrusted code-adjacent input":
 from __future__ import annotations
 
 import hashlib
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -231,6 +232,16 @@ def require_verified(
 
 def cache_directory(model: str, revision: str) -> Path | None:
     """正確なrevisionが存在する場合、そのlocal cache位置を返す。"""
+    # one-file binaryは検証済みmodelを一時展開先へ同梱する。利用者のcacheやnetworkを
+    # 見る前に、そのbuild時に固定したdirectoryだけを返す。
+    bundle_root = getattr(sys, "_MEIPASS", None) if getattr(sys, "frozen", False) else None
+    if (
+        bundle_root is not None
+        and model == ADOPTED_MODEL
+        and revision == ADOPTED_REVISION
+    ):
+        bundled = Path(bundle_root) / "securitymasker_model"
+        return bundled if bundled.is_dir() else None
     try:
         from huggingface_hub import snapshot_download
     except ImportError:

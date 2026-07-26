@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
+PYTHON="$PROJECT_DIRECTORY/.venv/bin/python"
+BINARY=${1:-"$PROJECT_DIRECTORY/dist/securitymasker"}
+
+if [ ! -x "$PYTHON" ]; then
+    printf '%s\n' "error: run scripts/test-setup first" >&2
+    exit 2
+fi
+if [ ! -x "$BINARY" ]; then
+    printf '%s\n' "error: executable binary required: $BINARY" >&2
+    exit 2
+fi
+
+cd "$PROJECT_DIRECTORY"
+SM_BINARY="$BINARY" "$PYTHON" -m pytest tests/integration/test_binary_release.py -q

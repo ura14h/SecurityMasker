@@ -292,3 +292,17 @@ def test_pinned_manifest_records_whole_file_bytes() -> None:
             f"{path.stat().st_size} — the manifest was not built from the file itself"
         )
         assert file_sha256(path) == artifact.sha256, artifact.name
+
+
+def test_frozen_runtime_uses_only_the_bundled_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from securitymasker import models_fetch
+
+    bundled = tmp_path / "securitymasker_model"
+    bundled.mkdir()
+    monkeypatch.setattr(models_fetch.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(models_fetch.sys, "_MEIPASS", str(tmp_path), raising=False)
+
+    assert models_fetch.cache_directory(ADOPTED, ADOPTED_REV) == bundled
+    assert models_fetch.cache_directory("other/model", ADOPTED_REV) is None

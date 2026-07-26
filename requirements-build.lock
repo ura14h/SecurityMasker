@@ -1,0 +1,7 @@
+# Exact one-file build dependencies (ADR-0012 Phase 8).
+# Install after requirements.lock + requirements-ner.lock. Runtime artifacts do
+# not include these build tools.
+altgraph==0.17.5
+macholib==1.16.4
+pyinstaller==6.21.0
+pyinstaller-hooks-contrib==2026.6

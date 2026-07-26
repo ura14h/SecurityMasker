@@ -342,6 +342,50 @@ NERを含めても、組織固有の任意語を100%推測するとは主張し�
 このPhaseは旧infra撤去より前に行う。one-fileが成立しない場合は、先に原因と代替
 （onedir、別packager、対応OS縮小）を判断する。
 
+#### Phase 8 実測結果（2026-07-26、macOS arm64）
+
+PyInstaller 6.21.0を固定し、Python 3.12.13のclean venvから、標準NER runtimeと検証済み
+model artifactを含むMach-O one-fileを生成できた。`scripts/build-binary`はPython 3.12未満を
+成果物作成前に拒否し、runtime / NER / buildの各lockだけを導入する。
+
+| 項目 | 結果 |
+|---|---|
+| artifact | arm64 thin Mach-O、961,152,432 bytes（約917 MiB） |
+| clean build | 約244秒、収集対象331件 |
+| cold `--help` | 約25.5秒 |
+| warm `config validate` | 約11.5秒 |
+| 標準NER `preview` | 約46.8秒（初期化・推論を含む） |
+| 外部runtime | `otool -L`ではmacOS標準`libSystem` / `libz`のみ。外部Pythonへのlinkなし |
+| 署名 | ad-hoc。Developer ID署名・notarizationは未実施 |
+| 一時展開 | `TMPDIR`配下の`_MEI*`。通常終了とSIGTERM後に残存なし |
+| binary E2E | init / validate / NER preview、ChatGPT / Claude mock、SQLite作成、mask・復元・漏えいゼロが成功 |
+
+標準modelではTransformersの`AutoTokenizer`が全model registryを動的探索し、凍結環境で
+無関係なmodule欠落を起こした。採用model/revisionは固定済みなので、XLM-RoBERTaの
+tokenizer / token-classification classを直接loadする経路にした。sourceの任意model互換用
+Auto経路は残すが、v2標準設定では採用model以外を許可しない。
+
+one-fileは展開した子実行ファイルを起動するため、`noexec` filesystemを一時directoryに
+指定すると動作しない。実行許可のあるlocal `TMPDIR`を使用するかsource版を使う必要がある
+（[PyInstaller operation mode](https://pyinstaller.org/en/stable/operating-mode.html)、
+[usage / `--runtime-tmpdir`](https://pyinstaller.org/en/stable/usage.html)）。macOS上で
+`noexec` mountそのものは再現していない。
+
+技術的なone-file成立は確認できた。一方、次は未完了であり、現時点のbinaryを公開artifactとは
+扱わない。
+
+- Linux / Windows native buildと同じbinary gate
+- macOS Developer ID署名・notarization
+- model weight、base model、学習datasetを一体配布する場合の最終的な再配布判断
+- Python自体が存在しない別machineでの実行（本検証は空環境変数＋外部Python linkなしの代替確認）
+
+再現コマンド：
+
+```bash
+PYTHON_COMMAND=python3.12 ./scripts/build-binary
+./scripts/test-binary ./dist/securitymasker
+```
+
 ### Phase 9 — 旧infra撤去と文書再編
 
 - Redis、Dockerfile、Compose、GitHub Actions、multi-tenant/public-bind codeを削除

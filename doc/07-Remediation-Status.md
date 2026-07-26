@@ -21,7 +21,7 @@ release target から外れた。最新の仕様と実装順は
 | 5. NER標準化 | **partial** | 実装・source setup・実model test・Presidio撤去は完了。weight同梱binaryの再配布条件確認が残る |
 | 6. preview / setup / doctor | **done** | v2同一pipelineのoffline preview、mode別snippet、read-only doctor、E2Eとの生成元統一 |
 | 7. test setup分離 | **partial** | test-setup/local gate、隔離v2/persistent設定E2E、skip強制失敗を実装。macOSではnamespace実行不能のため実CLI再実行が残る |
-| 8. PyInstaller | not started | sourceと同一挙動のOS別one-file build |
+| 8. PyInstaller | **partial** | macOS arm64 one-file生成とbinary gateは成功。Linux/Windows、署名/notarization、weight再配布判断が残る |
 | 9. legacy撤去・利用者文書 | not started | Docker / Redis / CI / PyPI前提を標準経路から除去 |
 | 10. release candidate判定 | not started | 全gate通過、残存制約明記、手動Desktop smoke |
 
