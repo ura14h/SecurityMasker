@@ -43,7 +43,7 @@ _DIRECT_PROVIDER_ENV = (
 
 
 class LaunchRefused(Exception):
-    """The proxy route could not be guaranteed, so the tool was not started."""
+    """The proxy route could not be set up, so the tool was not started."""
 
 
 @dataclass(frozen=True)
@@ -127,7 +127,11 @@ def build_plan(
     environ: dict[str, str] | None = None,
     allow_unknown_tool: bool = False,
 ) -> LaunchPlan:
-    """Resolve ``argv`` into a launch that is guaranteed to traverse the proxy.
+    """Resolve ``argv`` into a launch configured to traverse the proxy.
+
+    The plan either routes the tool through the gateway or refuses. It cannot
+    attest to what the child process does afterwards — see ``cmd_run`` for the
+    boundary between what is verified and what is not.
 
     Raises ``LaunchRefused`` when the route cannot be established. Callers must
     treat that as "do not start the child process" (doc/06 P2-1).

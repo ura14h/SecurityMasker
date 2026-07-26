@@ -119,11 +119,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Launch a tool with its traffic GUARANTEED to traverse the proxy (§7).
+    """Launch a tool configured to route through the proxy, or launch nothing (§7).
 
     Fail-closed: if the gateway is not ready, or we cannot route this particular
     tool, the child process is never started — reporting success while the tool
     talks straight to the provider would be the worst possible outcome.
+
+    What that does and does not establish, stated precisely because "guaranteed"
+    was overclaiming it:
+
+    - Verified here: the settings handed to the child point at the gateway and
+      carry the session header; direct-provider environment variables and unknown
+      tools are refused; nothing launches unless /ready reports ready.
+    - NOT verified here: that the launched binary honours those settings for
+      every request. That needs the real CLI driving real traffic, which CI does
+      not have. See doc/07-Remediation-Status.md.
     """
     if not args.tool:
         print("usage: securitymasker run <tool> [args...]", file=sys.stderr)
@@ -224,7 +234,8 @@ def cmd_gateway(args: argparse.Namespace) -> int:
         if not multitenant:
             print(
                 "warning: public bind in single-tenant 'local' mode — every caller "
-                "shares one alias table. Use SECURITYMASKER_MODE=multitenant.",
+                "shares one alias table. Set SECURITYMASKER_MODE=tenant_user to "
+                "separate callers by tenant AND user, or =tenant for tenant only.",
                 file=sys.stderr,
             )
 
@@ -307,7 +318,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.set_defaults(func=cmd_models_fetch)
 
     p_run = sub.add_parser(
-        "run", help="launch codex/claude with traffic guaranteed to go via the proxy")
+        "run", help="launch codex/claude configured to route via the proxy "
+                    "(refuses to start if the route cannot be set up)")
     p_run.add_argument("--gateway", default=None,
                        help=f"gateway base URL (default {DEFAULT_GATEWAY})")
     p_run.add_argument("--unsafe-unknown-tool", action="store_true",

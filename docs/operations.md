@@ -36,8 +36,14 @@ gateway to it — starting the container alone leaves the gateway on its in-proc
 store:
 
 ```bash
-SECURITYMASKER_STORE=redis docker compose --profile redis up
+docker compose -f docker-compose.yml -f docker-compose.redis.yml --profile redis up
 ```
+
+A shell prefix (`SECURITYMASKER_STORE=redis docker compose ...`) does **not** do
+this. Compose reads such a variable for substitution in the YAML, but it does not
+pass it into a container unless the file says so — so that form starts Redis and
+leaves the gateway on its in-process store, silently. The overlay is what sets
+both `SECURITYMASKER_STORE` and `SECURITYMASKER_REDIS_URL` on the service.
 
 Compose supplies a demo `SECURITYMASKER_MASTER_KEY` (32 bytes, base64) so the
 stack starts; generate your own for anything real and inject it from a secret
@@ -55,13 +61,22 @@ openssl rand -base64 32
   and map `X-SecurityMasker-Session-ID` from `SECURITYMASKER_SESSION_ID`. Generate
   the block: `python -c "from securitymasker.integrations.codex import codex_config_toml; print(codex_config_toml())"`.
 - **Claude Code**: `ANTHROPIC_BASE_URL=http://127.0.0.1:4000` + the session header.
-- Wrapper: `securitymasker run codex` / `securitymasker run claude` GUARANTEES the
+- Wrapper: `securitymasker run codex` / `securitymasker run claude` sets up the
   proxy route or refuses to start the tool: it requires `/ready` to report
   `ready: true`, sets `ANTHROPIC_BASE_URL` + session header for Claude Code and
   per-process `-c` overrides for Codex (never editing `~/.codex/config.toml`), and
   refuses outright if `ANTHROPIC_API_URL`/`OPENAI_BASE_URL`/`OPENAI_API_BASE` would
-  bypass it or if the tool is one it cannot route. It generates a
-  session UUID and launches the tool.
+  bypass it or if the tool is one it cannot route. It generates a session UUID and
+  launches the tool.
+
+  **Scope of that claim.** What is covered by tests: the generated settings point
+  at the gateway and carry the session header, the overrides are valid TOML, the
+  user's real config is untouched, and nothing launches when the route cannot be
+  set up. What is **not** covered: that the launched binary honours those settings
+  for every request it makes. Confirming that needs the real CLI driving real
+  traffic, which CI does not have, so it is listed as outstanding in
+  `doc/07-Remediation-Status.md`. Treat `run` as "refuses to start an unprotected
+  tool", not as proof that a started tool stayed protected.
 - The proxy passes the client's own credentials through and never stores/logs them (§25).
 
 ## CLI
