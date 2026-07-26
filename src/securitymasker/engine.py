@@ -71,18 +71,49 @@ class MaskResult:
     blocked: bool = False
 
 
-def _apply_replacements(text: str, spans: list[tuple[int, int, str]]) -> str:
-    """重複しない各``(start, end, repl)``を置換して``text``を再構築する。"""
+def _apply_replacements(
+    text: str,
+    spans: list[tuple[int, int, str]],
+    exact_replacements: dict[str, str] | None = None,
+) -> str:
+    """検出spanと、同じ原文の未検出な完全一致を置換する。
+
+    Model detectorは長いtext内で同じ固有名詞の一部だけを返すことがある。検出済み原文が
+    同じmask可能textに残ればleak guardが正しくblockするため、span間の未置換領域にある
+    完全一致も同じaliasへ揃える。既に挿入したaliasへ再置換をかけないよう、各gapを原文の
+    まま処理してからspanの置換値を連結する。
+    """
     spans = sorted(spans, key=lambda s: s[0])
+    replacements = {
+        original: replacement
+        for original, replacement in (exact_replacements or {}).items()
+        if original
+    }
+    exact_pattern = (
+        re.compile(
+            "|".join(
+                re.escape(original)
+                for original in sorted(replacements, key=len, reverse=True)
+            )
+        )
+        if replacements
+        else None
+    )
+
+    def complete(fragment: str) -> str:
+        if exact_pattern is None:
+            return fragment
+        return exact_pattern.sub(lambda match: replacements[match.group(0)], fragment)
+
     out: list[str] = []
     cursor = 0
     for start, end, repl in spans:
         if start < cursor:  # overlap guard (policy should prevent this)
             raise MaskingError("overlapping replacement spans")
-        out.append(text[cursor:start])
+        out.append(complete(text[cursor:start]))
         out.append(repl)
         cursor = end
-    out.append(text[cursor:])
+    out.append(complete(text[cursor:]))
     return "".join(out)
 
 
@@ -391,9 +422,11 @@ class MaskingEngine:
             )
 
         spans: list[tuple[int, int, str]] = []
+        exact_replacements: dict[str, str] = {}
         for det in resolved:
             if det.restore_policy == RestorePolicy.REDACTED.value:
                 spans.append((det.start, det.end, REDACTION_MARK))
+                exact_replacements.setdefault(det.original_value, REDACTION_MARK)
                 continue
             fp_value = det.normalized_value if self._merge_surface_forms else det.original_value
             mapping = get_or_create_alias(
@@ -405,9 +438,15 @@ class MaskingEngine:
                 restore_policy=det.restore_policy,
             )
             spans.append((det.start, det.end, mapping.alias))
+            exact_replacements.setdefault(det.original_value, mapping.alias)
 
-        masked = _apply_replacements(text, spans)
-        self._verify_no_leak(masked, resolved, request_id)
+        masked = _apply_replacements(text, spans, exact_replacements)
+        self._verify_no_leak(
+            masked,
+            resolved,
+            request_id,
+            protected_replacements=frozenset(exact_replacements.values()),
+        )
         return MaskResult(masked_text=masked, detections=resolved)
 
     def _verify_no_leak(
@@ -415,19 +454,26 @@ class MaskingEngine:
         masked: str,
         resolved: list[DetectionResult],
         request_id: str | None,
+        protected_replacements: frozenset[str] = frozenset(),
     ) -> None:
         """送信前の再scan（§18 step 11）：マスク対象の原文を残さない。
 
         Deduplicate the originals first so a value repeated thousands of times in a
         large input is checked once, keeping this linear in the input size (§32).
+        発行済みalias自体に短い原文が偶然含まれても漏えいではないため、置換値を除いた領域を
+        検査する。原文側の未置換領域は``_apply_replacements``が完全一致補完済みである。
         """
+        inspected = masked
+        for replacement in sorted(protected_replacements, key=len, reverse=True):
+            if replacement:
+                inspected = inspected.replace(replacement, "")
         seen: dict[str, str] = {}
         for det in resolved:
             if det.restore_policy == RestorePolicy.BLOCK.value or not det.original_value:
                 continue
             seen.setdefault(det.original_value, det.entity_type)
         for original, entity_type in seen.items():
-            if original in masked:
+            if original in inspected:
                 raise LeakageError(entity_type=entity_type, request_id=request_id)
 
     async def assert_no_leak_in_payload(
