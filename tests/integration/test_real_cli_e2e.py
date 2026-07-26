@@ -110,25 +110,50 @@ def _has_default_route_v6(proc: str = "/proc/net/ipv6_route") -> bool:
     return False
 
 
+def _active_non_loopback_interfaces(
+    sysfs: Path = Path("/sys/class/net"),
+) -> list[str]:
+    """Administratively UPな非loopback interfaceを返す。
+
+    Docker ``--network none`` でもkernel組み込みのtunnel deviceは列挙されるが、
+    IFF_UPが落ちていればpacketを送出できない。状態を読めないdeviceは安全と推測せず、
+    active扱いにしてfail-closedとする。
+    """
+    active: list[str] = []
+    for _, name in socket.if_nameindex():
+        if name == "lo":
+            continue
+        try:
+            flags = int((sysfs / name / "flags").read_text().strip(), 0)
+        except (OSError, ValueError):
+            active.append(name)
+            continue
+        if flags & 0x1:  # Linux IFF_UP
+            active.append(name)
+    return sorted(active)
+
+
 def _isolation_failure() -> str | None:
     """Why this host is not network-isolated, or None when it is.
 
-    Structural, not probabilistic: a host with no interface other than loopback
-    and no default route cannot reach anything off-box, whatever the firewall
-    policy happens to be. That is exactly what `unshare -n` and `--network none`
-    produce, and it is checkable without sending a packet anywhere.
+    Structural, not probabilistic: a host with no active interface other than
+    loopback and no default route cannot reach anything off-box, whatever the
+    firewall policy happens to be. That is exactly what `unshare -n` and
+    `--network none` produce, and it is checkable without sending a packet anywhere.
 
-    The interface check is the decisive one — with only `lo` there is nowhere for
-    a packet to go. The route checks are defence in depth, and ignore routes bound
-    to `lo`, which a fresh namespace can carry without them meaning anything.
+    The interface check is decisive — an administratively down device cannot send.
+    Linux can still enumerate down tunnel devices in a network-none container, so
+    mere presence is not treated as connectivity. The route checks are defence in
+    depth, and ignore routes bound to `lo`, which a fresh namespace can carry
+    without them meaning anything.
     """
     if sys.platform != "linux":
         return (f"network isolation cannot be verified on {sys.platform}; run the "
                 "whole stack in a Linux namespace (devtools/run_cli_e2e.sh) or a "
                 "--network none container")
-    external = sorted(name for _, name in socket.if_nameindex() if name != "lo")
+    external = _active_non_loopback_interfaces()
     if external:
-        return f"non-loopback interfaces are present: {external}"
+        return f"active non-loopback interfaces are present: {external}"
     if _has_default_route_v4():
         return "an IPv4 default route exists"
     if _has_default_route_v6():
