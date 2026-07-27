@@ -76,4 +76,6 @@ SecurityMaskerへのrouting設定が必要です。
 現行パッケージ方針は [ADR-0012](../adr/0012-renew-package-design.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
-model供給網は [ADR-0010](../adr/0010-model-supply-chain.md) を参照してください。
+model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、
+現行製品でGo全面移植を採用しない判断は
+[ADR-0014](../adr/0014-reject-go-port-for-current-product.md) を参照してください。
