@@ -5,7 +5,7 @@
 
     securitymasker init [--mode chatgpt|claude] [--port PORT]
     securitymasker gateway [--config PATH] [--mode MODE] [--port PORT]
-    securitymasker preview "<text>" [--config PATH]
+    securitymasker preview [TEXT] [--config PATH]
     securitymasker client-config [--config PATH]
     securitymasker config-check [--config PATH]
     securitymasker entities [--config PATH]
@@ -83,13 +83,24 @@ def cmd_entities(args: argparse.Namespace) -> int:
 
 def cmd_preview(args: argparse.Namespace) -> int:
     """Gatewayと同じpipelineで外部送信せずmask結果を確認する。"""
+    if args.text is not None:
+        text = args.text
+    elif sys.stdin.isatty():
+        print("error: preview requires TEXT or non-empty standard input", file=sys.stderr)
+        return 2
+    else:
+        text = sys.stdin.read()
+        if not text:
+            print("error: preview requires TEXT or non-empty standard input", file=sys.stderr)
+            return 2
+
     config = _load(args.config)
     engine = build_engine(config)
 
     async def run() -> int:
         store = InMemorySessionStore()
         session = await store.get_or_create(f"cli-{uuid.uuid4()}")
-        result = await engine.mask_text(session, args.text)
+        result = await engine.mask_text(session, text)
         counts = Counter(d.entity_type for d in result.detections)
         print("masked:")
         print(f"  {result.masked_text}")
@@ -232,7 +243,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_preview = sub.add_parser(
         "preview", help="mask text locally with the Gateway pipeline (no external send)"
     )
-    p_preview.add_argument("text", help="text to mask locally; the original is not printed")
+    p_preview.add_argument(
+        "text",
+        nargs="?",
+        default=None,
+        help="text to mask locally (default: standard input); the original is not printed",
+    )
     add_config(p_preview)
     p_preview.set_defaults(func=cmd_preview)
 

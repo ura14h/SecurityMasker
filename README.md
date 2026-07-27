@@ -68,6 +68,7 @@ one-file版も同じコマンドと隣接ファイルを使います。
 ```console
 ./securitymasker init --mode chatgpt --port 4000
 ./securitymasker preview "確認したい合成テキスト"
+./securitymasker preview < prompt.txt
 ./securitymasker gateway
 ```
 

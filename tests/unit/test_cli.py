@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,6 +34,44 @@ def test_preview_masks_and_hides_original(config_path: str, capsys: pytest.Captu
     assert "山田太郎" not in out  # 元の機密値は表示しない
     assert "SM_PERSON_" in out
     assert "PERSON: 1" in out
+
+
+def test_preview_reads_standard_input(
+    config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original = "担当は山田太郎です\n"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(original))
+
+    assert main(["preview", "--config", config_path]) == 0
+    output = capsys.readouterr()
+    assert original.strip() not in output.out + output.err
+    assert "SM_PERSON_" in output.out
+    assert "PERSON: 1" in output.out
+
+
+@pytest.mark.parametrize("standard_input", [io.StringIO(""), pytest.param(None, id="tty")])
+def test_preview_rejects_missing_standard_input(
+    config_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    standard_input: io.StringIO | None,
+) -> None:
+    class InteractiveInput(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        standard_input if standard_input is not None else InteractiveInput(),
+    )
+
+    assert main(["preview", "--config", config_path]) == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "TEXT or non-empty standard input" in output.err
 
 
 def test_entities_shows_counts_not_values(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:

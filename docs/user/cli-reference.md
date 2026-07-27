@@ -62,12 +62,19 @@ Gatewayと同じdetector・policyでtextをlocal maskし、mask後の文字列�
 表示します。外部送信は行わず、元の入力を別途列挙しません。
 
 ```console
-securitymasker preview TEXT [--config PATH]
+securitymasker preview [TEXT] [--config PATH]
 ```
 
-- `TEXT`: 確認対象のtext。shell historyへ残るため、実在する秘密ではなく合成値での確認を
-  推奨します。
+- `TEXT`: 確認対象のtext。省略時は標準入力を最後まで読みます。引数へ書くとshell historyや
+  process一覧へ残り得るため、実際のpromptは標準入力から渡してください。
 - `--config PATH`: 使用するconfigを明示します。
+
+```console
+securitymasker preview < prompt.txt
+generate-prompt | securitymasker preview
+```
+
+対話端末で`TEXT`を省略した場合と、標準入力が空の場合は、待機せず終了code`2`になります。
 
 ## `securitymasker client-config`
 
