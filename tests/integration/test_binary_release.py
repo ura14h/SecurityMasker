@@ -61,6 +61,28 @@ def _isolated_environment(home: Path, temp: Path) -> dict[str, str]:
     }
 
 
+def test_binary_without_command_shows_help_and_exits(tmp_path: Path) -> None:
+    binary = _binary()
+    home = tmp_path / "home"
+    temp = tmp_path / "temp"
+    home.mkdir()
+    temp.mkdir()
+
+    completed = subprocess.run(
+        [binary],
+        env=_isolated_environment(home, temp),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "SecurityMasker CLI" in completed.stdout
+    assert "gateway_started" not in completed.stderr
+    assert not list(temp.glob("_MEI*")), "help exit left a one-file extraction directory"
+
+
 def test_binary_init_validate_preview_and_temp_cleanup(tmp_path: Path) -> None:
     binary = _binary()
     home = tmp_path / "home"

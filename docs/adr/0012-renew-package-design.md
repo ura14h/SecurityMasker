@@ -53,8 +53,8 @@ SecurityMaskerへ向け、promptをmaskして送り、responseを同じ対応表
 次を同等の利用経路として提供する。
 
 ```console
-python3 securitymasker.py
-./securitymasker
+python3 securitymasker.py gateway
+./securitymasker gateway
 ```
 
 root `securitymasker.py` は `src/securitymasker` のCLIを呼ぶ薄いlauncherとし、製品logicを複製しない。

@@ -12,8 +12,8 @@
     securitymasker doctor [--config PATH] [--json]
     securitymasker model-load [--config PATH]
 
-引数なし、またはGateway用optionから開始した場合は``gateway``を補い、設定ファイルに
-modeとportを持つ通常運用を短く記述できるようにする。
+引数なしではhelpを表示して終了する。常駐Gatewayを起動する場合は、意図しないport openや
+長時間processを避けるため、``gateway`` commandを明示的に要求する。
 """
 
 from __future__ import annotations
@@ -321,13 +321,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = sys.argv[1:] if argv is None else argv
-    # configにmode/portを持つ通常運用ではcommandを省略してGatewayを起動する。
+    if not arguments:
+        parser.print_help()
+        return 0
     gateway_options = ("--config", "--host", "--mode", "--port")
-    if not arguments or any(
+    if any(
         arguments[0] == option or arguments[0].startswith(f"{option}=")
         for option in gateway_options
     ):
-        arguments = ["gateway", *arguments]
+        parser.error("gateway options require the explicit 'gateway' command")
     args = parser.parse_args(arguments)
     try:
         return int(args.func(args))

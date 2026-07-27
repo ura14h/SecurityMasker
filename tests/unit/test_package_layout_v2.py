@@ -220,9 +220,11 @@ def test_init_refuses_existing_targets_without_overwriting(
     assert not (target / "securitymasker.state/securitymasker.key").exists()
 
 
-def test_source_launcher_runs_from_unrelated_working_directory(tmp_path: Path) -> None:
+def test_source_launcher_without_command_shows_help_from_unrelated_directory(
+    tmp_path: Path,
+) -> None:
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "securitymasker.py"), "--help"],
+        [sys.executable, str(ROOT / "securitymasker.py")],
         cwd=tmp_path,
         check=False,
         capture_output=True,
@@ -230,6 +232,7 @@ def test_source_launcher_runs_from_unrelated_working_directory(tmp_path: Path) -
     )
     assert completed.returncode == 0
     assert "SecurityMasker CLI" in completed.stdout
+    assert "gateway_started" not in completed.stderr
 
 
 def test_release_version_is_consistent() -> None:

@@ -11,8 +11,9 @@
 - `--config PATH`: 使用する`securitymasker.config`を明示します。指定がなければ
   `SECURITYMASKER_CONFIG`、実行ファイルに隣接する`securitymasker.config`の順で探索します。
   current working directoryや親directoryは探索しません。
-- commandを省略した場合は`gateway`を実行します。先頭が`--config`、`--host`、`--mode`、
-  `--port`の場合も`gateway`のoptionとして扱います。
+- commandを省略した場合はtop-level helpを表示し、終了code`0`で終了します。
+- Gatewayは`gateway` commandを明示した場合だけ起動します。`--config`、`--host`、`--mode`、
+  `--port`だけをtop-levelへ指定してもGatewayとは解釈せず、終了code`2`で拒否します。
 - option値にpromptや機密値を直接指定しないでください。shell historyやprocess一覧へ残る
   可能性があります。
 
@@ -121,6 +122,7 @@ securitymasker gateway [--mode chatgpt|claude] [--host HOST] [--port PORT] \
 
 CLI overrideはconfig fileを書き換えません。優先順位はCLI、config、組込み既定値です。
 ChatGPTとClaudeを同時に使う場合は、別config・別DB・別key・別portで2process起動します。
+安全のため`gateway` commandは省略できません。
 
 ### ログの読み方
 
@@ -163,15 +165,6 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
 foregroundで起動したGatewayは、クライアント操作を終えてから起動terminalで`Ctrl+C`を1回
 入力し、shellのpromptが戻るまで待って終了します。background processには`SIGTERM`を送ります。
 通常の終了で応答しない場合を除き、`SIGKILL`やterminalの強制終了は使用しないでください。
-
-### 起動commandの省略形
-
-次の省略形も同じ意味です。
-
-```console
-securitymasker
-securitymasker --config /path/to/securitymasker.config --port 4000
-```
 
 ## `securitymasker model-load`
 

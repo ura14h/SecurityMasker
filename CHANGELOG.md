@@ -23,6 +23,7 @@ SecurityMaskerの最初のsource release候補です。
 - provider認証を保存・logせず、対応する上流へだけ透過
 - Linuxでは公式CPU版Torchを固定し、CUDA runtimeを要求しない
 - model検出が同一text内の反復を一部だけ返しても、検出済み原文の完全一致を同じaliasへ揃える
+- 引数なしではhelpを表示し、常駐Gatewayの起動には明示的な`gateway` commandを要求
 
 ### 対象外・既知の制限
 

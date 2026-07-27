@@ -376,7 +376,13 @@ def stack(tmp_path: Path, request: pytest.FixtureRequest):
         "SECURITYMASKER_ANTHROPIC_UPSTREAM": f"http://127.0.0.1:{mock_port}",
     }
     gateway = subprocess.Popen(  # noqa: S603
-        [sys.executable, str(REPO / "securitymasker.py"), "--config", str(layout.config)],
+        [
+            sys.executable,
+            str(REPO / "securitymasker.py"),
+            "gateway",
+            "--config",
+            str(layout.config),
+        ],
         cwd=str(REPO), env=gw_env,
     )
     try:

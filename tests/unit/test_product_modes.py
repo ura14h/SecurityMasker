@@ -155,16 +155,36 @@ def test_runtime_rejects_combined_mode_from_environment(
         GatewayRuntime.from_env(engine=MaskingEngine([]), config=config)
 
 
+def test_no_command_prints_help_without_starting_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    observed: list[object] = []
+
+    def fake_gateway(args: object) -> int:
+        observed.append(args)
+        return 0
+
+    monkeypatch.setattr("securitymasker.cli.cmd_gateway", fake_gateway)
+    assert main([]) == 0
+    captured = capsys.readouterr()
+    assert "SecurityMasker CLI" in captured.out
+    assert "gateway" in captured.out
+    assert captured.err == ""
+    assert observed == []
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
-        [],
+        ["--config", "securitymasker.config"],
         ["--mode", "chatgpt", "--port", "4555"],
         ["--mode=claude", "--port=4556"],
     ],
 )
-def test_gateway_command_can_be_omitted(
+def test_gateway_options_require_explicit_command(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     arguments: list[str],
 ) -> None:
     observed: list[object] = []
@@ -174,5 +194,8 @@ def test_gateway_command_can_be_omitted(
         return 0
 
     monkeypatch.setattr("securitymasker.cli.cmd_gateway", fake_gateway)
-    assert main(arguments) == 0
-    assert len(observed) == 1
+    with pytest.raises(SystemExit) as raised:
+        main(arguments)
+    assert raised.value.code == 2
+    assert "require the explicit 'gateway' command" in capsys.readouterr().err
+    assert observed == []
