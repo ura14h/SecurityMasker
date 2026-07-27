@@ -44,7 +44,7 @@ SecurityMaskerはPOSIX環境でowner以外が読める権限を拒否します�
 
 ```console
 python3 securitymasker.py preview "株式会社極秘技研の山田太郎です"
-python3 securitymasker.py config validate
+python3 securitymasker.py config-check
 ```
 
 `preview` は元の入力を再表示せず、mask後の文字列と検出件数だけを表示します。

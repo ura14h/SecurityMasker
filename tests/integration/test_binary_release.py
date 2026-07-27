@@ -92,7 +92,7 @@ def test_binary_init_validate_preview_and_temp_cleanup(tmp_path: Path) -> None:
     assert config.is_file()
 
     validated = subprocess.run(
-        [binary, "config", "validate", "--config", config],
+        [binary, "config-check", "--config", config],
         env=environment,
         check=False,
         capture_output=True,

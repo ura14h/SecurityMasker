@@ -353,7 +353,7 @@ model artifactを含むMach-O one-fileを生成できた。`scripts/build-binary
 | artifact | arm64 thin Mach-O、961,152,432 bytes（約917 MiB） |
 | clean build | 約244秒、収集対象331件 |
 | cold `--help` | 約25.5秒 |
-| warm `config validate` | 約11.5秒 |
+| warm `config-check` | 約11.5秒 |
 | 標準NER `preview` | 約46.8秒（初期化・推論を含む） |
 | 外部runtime | `otool -L`ではmacOS標準`libSystem` / `libz`のみ。外部Pythonへのlinkなし |
 | 署名 | ad-hoc。Developer ID署名・notarizationは未実施 |

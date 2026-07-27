@@ -4,7 +4,7 @@
 
 ```console
 python3 securitymasker.py doctor
-python3 securitymasker.py config validate
+python3 securitymasker.py config-check
 ```
 
 `doctor --json` はticketへ貼れるsecret非表示の形式です。実providerには接続しません。

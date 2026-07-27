@@ -34,40 +34,27 @@ securitymasker init [--directory DIRECTORY] [--mode chatgpt|claude] [--port PORT
 - `--port PORT`: configへ書くloopback port。既定値は`4000`です。Claude用に別processを
   起動する例では`4001`を推奨します。
 
-## `securitymasker config validate`
+## `securitymasker config-check`
 
 configと参照辞書を読み、schema、値、権限、環境変数参照を検証します。Gatewayは起動せず、
 providerにも接続しません。
 
 ```console
-securitymasker config validate [--config PATH]
+securitymasker config-check [--config PATH]
 ```
 
 - `--config PATH`: 検証するconfigを明示します。
 
-## `securitymasker entities list`
+## `securitymasker entities`
 
 設定済みentityとpatternのID、type、replacement profile、restore policy、variant件数を
 表示します。辞書の実値は表示しません。
 
 ```console
-securitymasker entities list [--config PATH]
+securitymasker entities [--config PATH]
 ```
 
 - `--config PATH`: 読み込むconfigを明示します。
-
-## `securitymasker entities test`
-
-後方互換commandです。`preview`と同じpipelineでsample textをlocal maskします。
-
-```console
-securitymasker entities test TEXT [--config PATH]
-```
-
-- `TEXT`: localでmaskするsample text。元の値は結果へ再表示しません。
-- `--config PATH`: 使用するconfigを明示します。
-
-新しい手順では意味が明確な`securitymasker preview`を使用してください。
 
 ## `securitymasker preview`
 

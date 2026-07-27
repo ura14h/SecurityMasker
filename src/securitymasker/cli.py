@@ -7,8 +7,8 @@
     securitymasker gateway [--config PATH] [--mode MODE] [--port PORT]
     securitymasker preview "<text>" [--config PATH]
     securitymasker client-config [--config PATH]
-    securitymasker config validate [--config PATH]
-    securitymasker entities list [--config PATH]
+    securitymasker config-check [--config PATH]
+    securitymasker entities [--config PATH]
     securitymasker doctor [--config PATH] [--json]
     securitymasker models fetch [--config PATH]
 
@@ -41,7 +41,7 @@ def _load(path: str | None) -> SecurityMaskerConfig:
     return load_config(resolve_config_path(path))
 
 
-def cmd_config_validate(args: argparse.Namespace) -> int:
+def cmd_config_check(args: argparse.Namespace) -> int:
     config = _load(args.config)
     if config.version != 2:
         raise ConfigError("version 2 securitymasker.config is required")
@@ -71,7 +71,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_entities_list(args: argparse.Namespace) -> int:
+def cmd_entities(args: argparse.Namespace) -> int:
     config = _load(args.config)
     for e in config.entities:
         # 機密値を端末履歴へ残さないよう、値ではなくvariant件数だけを表示する。
@@ -101,11 +101,6 @@ def cmd_preview(args: argparse.Namespace) -> int:
         return 0
 
     return asyncio.run(run())
-
-
-def cmd_entities_test(args: argparse.Namespace) -> int:
-    """後方互換の``entities test``を``preview``と同じ処理で実行する。"""
-    return cmd_preview(args)
 
 
 def cmd_client_config(args: argparse.Namespace) -> int:
@@ -224,20 +219,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init_layout.set_defaults(func=cmd_init)
 
-    p_config = sub.add_parser("config", help="config operations")
-    config_sub = p_config.add_subparsers(dest="subaction", required=True)
-    p_validate = config_sub.add_parser("validate", help="validate the config")
-    add_config(p_validate)
-    p_validate.set_defaults(func=cmd_config_validate)
-    p_entities = sub.add_parser("entities", help="entity dictionary operations")
-    entities_sub = p_entities.add_subparsers(dest="subaction", required=True)
-    p_list = entities_sub.add_parser("list", help="list configured entities (no values)")
-    add_config(p_list)
-    p_list.set_defaults(func=cmd_entities_list)
-    p_test = entities_sub.add_parser("test", help="mask a sample string and show detections")
-    p_test.add_argument("text", help="sample text to mask locally")
-    add_config(p_test)
-    p_test.set_defaults(func=cmd_entities_test)
+    p_config_check = sub.add_parser("config-check", help="validate the config")
+    add_config(p_config_check)
+    p_config_check.set_defaults(func=cmd_config_check)
+
+    p_entities = sub.add_parser(
+        "entities", help="list configured entities and patterns without their values"
+    )
+    add_config(p_entities)
+    p_entities.set_defaults(func=cmd_entities)
 
     p_preview = sub.add_parser(
         "preview", help="mask text locally with the Gateway pipeline (no external send)"

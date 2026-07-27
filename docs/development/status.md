@@ -49,7 +49,7 @@ macOS arm64、Python 3.12.13、PyInstaller 6.21.0:
 | artifact | arm64 thin Mach-O、961,117,984 bytes（約917 MiB） |
 | clean build | 243.6秒 |
 | cold `--help` | 約25.5秒 |
-| warm config validate | 約11.5秒 |
+| warm config-check | 約11.5秒 |
 | NER preview | 約46.8秒 |
 | 外部runtime link | macOS標準libSystem/libzのみ |
 | 署名 | ad-hoc |
