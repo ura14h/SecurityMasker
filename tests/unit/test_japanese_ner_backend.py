@@ -19,6 +19,7 @@ from securitymasker.detectors.japanese_ner import (
     JapaneseNerDetector,
     UnsupportedLabelSchemaError,
     _coarse,
+    _CpuDeviceNoticeFilter,
     _suppress_cpu_device_notice,
 )
 from securitymasker.errors import DetectionError
@@ -30,18 +31,37 @@ def ctx(text: str, kind: str = ContextKind.PROSE.value) -> DetectionContext:
     return DetectionContext(norm=normalize(text, "nfkc"), context_kind=kind)
 
 
-def test_only_redundant_cpu_device_notice_is_suppressed(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_only_redundant_cpu_device_notice_is_suppressed() -> None:
     logger = logging.getLogger("transformers.pipelines.base")
+    existing_filters = tuple(logger.filters)
+    notice = logging.LogRecord(
+        logger.name,
+        logging.WARNING,
+        __file__,
+        1,
+        "Device set to use cpu",
+        (),
+        None,
+    )
+    important = logging.LogRecord(
+        logger.name,
+        logging.WARNING,
+        __file__,
+        1,
+        "model artifact is incomplete",
+        (),
+        None,
+    )
 
-    with caplog.at_level(logging.WARNING, logger=logger.name), _suppress_cpu_device_notice():
-        logger.warning("Device set to use cpu")
-        logger.warning("model artifact is incomplete")
+    with _suppress_cpu_device_notice():
+        installed = [
+            item for item in logger.filters if isinstance(item, _CpuDeviceNoticeFilter)
+        ]
+        assert len(installed) == 1
+        assert installed[0].filter(notice) is False
+        assert installed[0].filter(important) is True
 
-    messages = [record.getMessage() for record in caplog.records]
-    assert "Device set to use cpu" not in messages
-    assert "model artifact is incomplete" in messages
+    assert tuple(logger.filters) == existing_filters
 
 
 class _StubPipeline:
