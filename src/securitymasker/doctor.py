@@ -186,7 +186,7 @@ def check_ner_models(config: Any, detectors: Any = None) -> CheckResult:
         if detector is None or not getattr(detector, "available", False):
             return _fail("detectors.ner",
                          f"ner.model {config.ner.model!r}@{config.ner.revision} is not "
-                         "available locally — run 'securitymasker models fetch'")
+                         "available locally — run 'securitymasker model-load'")
         notes.append(f"hf:{config.ner.model}@{(config.ner.revision or '')[:8]}")
     return _ok("detectors.ner", ", ".join(notes))
 

@@ -70,7 +70,7 @@ code で誤検出しなかった唯一の候補です。
    - `sentencepiece.bpe.model` sha256：`cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865`
    - `tokenizer.json` sha256：`62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626`
 3. **request処理中はoffline。** 既定を `local_files_only=True` とし、明示的な
-   `securitymasker models fetch` または image build 時に取得する。user text を Hub
+   `securitymasker model-load` または image build 時に取得する。user text を Hub
    へ送らない。
 4. **safetensorsだけを許可し、remote codeを実行しない。**
    `trust_remote_code` は設定しない。

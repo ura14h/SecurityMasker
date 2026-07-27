@@ -36,7 +36,7 @@ fi
     --no-deps -r "$PROJECT_DIRECTORY/requirements-ner.lock"
 "$VENV_DIRECTORY/bin/python" -m pip install --disable-pip-version-check \
     --no-build-isolation --no-deps -e "$PROJECT_DIRECTORY"
-"$VENV_DIRECTORY/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" models fetch \
+"$VENV_DIRECTORY/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" model-load \
     --model tsmatz/xlm-roberta-ner-japanese \
     --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
 

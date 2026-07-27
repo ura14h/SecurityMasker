@@ -129,14 +129,15 @@ securitymasker
 securitymasker --config /path/to/securitymasker.config --port 4000
 ```
 
-## `securitymasker models fetch`
+## `securitymasker model-load`
 
 固定revisionの日本語NER modelを明示的に取得し、manifestのsizeとSHA-256で検証します。
 通常は`scripts/setup`が実行するため、手動復旧やmodel準備時だけ使用します。prompt処理中の
-暗黙downloadは行いません。
+暗黙downloadは行いません。稼働中Gatewayをhot reloadするcommandではなく、次回起動時に
+読み込める検証済みlocal artifactを準備するcommandです。
 
 ```console
-securitymasker models fetch [--model MODEL] [--revision REVISION] \
+securitymasker model-load [--model MODEL] [--revision REVISION] \
   [--allow-unverified] [--config PATH]
 ```
 

@@ -193,7 +193,7 @@ def test_detector_refuses_when_the_model_is_not_cached(monkeypatch) -> None:
     monkeypatch.setattr("securitymasker.models_fetch.cache_directory", lambda m, r: None)
     with pytest.raises(ConfigError) as exc:
         mod.JapaneseNerDetector(model=ADOPTED, revision=ADOPTED_REV, required=True)
-    assert "models fetch" in str(exc.value)      # tells the operator what to do
+    assert "model-load" in str(exc.value)      # tells the operator what to do
 
 
 def test_unverified_model_is_disabled_when_not_required(monkeypatch) -> None:
@@ -259,7 +259,7 @@ def test_pinned_manifest_verifies_the_real_snapshot() -> None:
     directory = _snapshot()
     if directory is None:
         _missing(f"{ADOPTED}@{ADOPTED_REV} is not in the local cache "
-                 "(run: securitymasker models fetch)")
+                 "(run: securitymasker model-load)")
         return
 
     manifest = manifest_for(ADOPTED, ADOPTED_REV)

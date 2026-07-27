@@ -311,7 +311,7 @@ def test_the_real_model_finds_a_name_anywhere_in_a_long_document(position) -> No
     model = "tsmatz/xlm-roberta-ner-japanese"
     revision = "aba094e118d5ffc622e9b25e07edc49f9dd85feb"
     if cache_directory(model, revision) is None:
-        pytest.skip("pinned model not cached (run: securitymasker models fetch)")
+        pytest.skip("pinned model not cached (run: securitymasker model-load)")
 
     detector = mod.JapaneseNerDetector(model=model, revision=revision, required=True)
     filler, sentence = "これはテスト文章です。" * 150, "担当者は佐々木健一です。"

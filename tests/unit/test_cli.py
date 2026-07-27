@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -80,6 +81,30 @@ def test_entities_shows_counts_not_values(config_path: str, capsys: pytest.Captu
     assert "山田太郎" not in out
     assert "variants=2" in out
     assert "variants=3" in out
+
+
+def test_model_load_prepares_explicit_model(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[str, str, bool]] = []
+
+    def prepare(model: str, revision: str, *, allow_unverified: bool) -> SimpleNamespace:
+        calls.append((model, revision, allow_unverified))
+        return SimpleNamespace(
+            model=model,
+            revision=revision,
+            verified=["model.safetensors"],
+            ok=True,
+        )
+
+    monkeypatch.setattr("securitymasker.models_fetch.fetch", prepare)
+
+    assert main(
+        ["model-load", "--model", "example/model", "--revision", "fixed-revision"]
+    ) == 0
+    assert calls == [("example/model", "fixed-revision", False)]
+    assert "model ready: example/model@fixed-revision" in capsys.readouterr().out
 
 
 def test_doctor_runs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

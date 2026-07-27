@@ -47,7 +47,7 @@ fi
     --no-deps -r "$PROJECT_DIRECTORY/requirements-build.lock"
 "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
     --no-build-isolation --no-deps -e "$PROJECT_DIRECTORY"
-"$BUILD_VENV/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" models fetch \
+"$BUILD_VENV/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" model-load \
     --model tsmatz/xlm-roberta-ner-japanese \
     --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
 

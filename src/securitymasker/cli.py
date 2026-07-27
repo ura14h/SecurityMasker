@@ -10,7 +10,7 @@
     securitymasker config-check [--config PATH]
     securitymasker entities [--config PATH]
     securitymasker doctor [--config PATH] [--json]
-    securitymasker models fetch [--config PATH]
+    securitymasker model-load [--config PATH]
 
 引数なし、またはGateway用optionから開始した場合は``gateway``を補い、設定ファイルに
 modeとportを持つ通常運用を短く記述できるようにする。
@@ -143,11 +143,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if any(r.failed for r in results) else 0
 
 
-def cmd_models_fetch(args: argparse.Namespace) -> int:
-    """固定したNER modelを取得してdigestを検証する。
+def cmd_model_load(args: argparse.Namespace) -> int:
+    """固定したNER modelを取得・検証し、local実行可能な状態にする。
 
     Gatewayとは別の明示操作にすることで、利用者が入力した文字列を契機とするdownloadを
-    防ぎ、実行時は検証済みのlocal artifactだけを読み込めるようにする。
+    防ぎ、次回起動時は検証済みのlocal artifactだけを読み込めるようにする。
     """
     from securitymasker.models_fetch import fetch
 
@@ -157,11 +157,11 @@ def cmd_models_fetch(args: argparse.Namespace) -> int:
         ner = _load(args.config).ner
         model, revision = model or ner.model, revision or ner.revision
     if not model or not revision:
-        print("error: no NER model/revision configured to fetch", file=sys.stderr)
+        print("error: no NER model/revision configured to load", file=sys.stderr)
         return 2
 
     result = fetch(model, revision, allow_unverified=args.allow_unverified)
-    print(f"fetched {result.model}@{result.revision}")
+    print(f"model ready: {result.model}@{result.revision}")
     for name in sorted(result.verified):
         print(f"  verified   {name}")
     if not result.verified and args.allow_unverified:
@@ -291,23 +291,26 @@ def build_parser() -> argparse.ArgumentParser:
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
 
-    p_models = sub.add_parser("models", help="model preparation (offline runtime)")
-    models_sub = p_models.add_subparsers(dest="subaction", required=True)
-    p_fetch = models_sub.add_parser("fetch", help="download + verify a pinned NER model")
-    p_fetch.add_argument(
+    p_model_load = sub.add_parser(
+        "model-load", help="download and verify the pinned NER model for the next start"
+    )
+    p_model_load.add_argument(
         "--model",
         default=None,
         help="model ID (default: detectors.japanese_ner.model from the config)",
     )
-    p_fetch.add_argument(
+    p_model_load.add_argument(
         "--revision",
         default=None,
         help="model revision (default: detectors.japanese_ner.revision from the config)",
     )
-    p_fetch.add_argument("--allow-unverified", action="store_true",
-                         help="DANGEROUS: accept a model with no artifact manifest")
-    add_config(p_fetch)
-    p_fetch.set_defaults(func=cmd_models_fetch)
+    p_model_load.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="DANGEROUS: accept a model with no artifact manifest",
+    )
+    add_config(p_model_load)
+    p_model_load.set_defaults(func=cmd_model_load)
 
     return parser
 

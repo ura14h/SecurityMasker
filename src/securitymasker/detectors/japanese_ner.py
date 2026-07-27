@@ -152,7 +152,7 @@ class JapaneseNerDetector:
                 if required:
                     raise ConfigError(
                         f"ner.model={model!r}@{revision} is not in the local cache. "
-                        "Run 'securitymasker models fetch' first."
+                        "Run 'securitymasker model-load' first."
                     )
                 return
             try:
@@ -228,7 +228,7 @@ class JapaneseNerDetector:
                 raise ConfigError(
                     f"ner.model={model!r} (revision={revision or 'unpinned'}) could not "
                     f"be loaded ({detail}). Fetch it first with "
-                    "'securitymasker models fetch', or clear ner.model."
+                    "'securitymasker model-load', or clear ner.model."
                 ) from exc
             return
 
