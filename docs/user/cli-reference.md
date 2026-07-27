@@ -122,6 +122,8 @@ securitymasker gateway [--mode chatgpt|claude] [--host HOST] [--port PORT] \
 CLI overrideはconfig fileを書き換えません。優先順位はCLI、config、組込み既定値です。
 ChatGPTとClaudeを同時に使う場合は、別config・別DB・別key・別portで2process起動します。
 
+### ログの読み方
+
 Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の一行形式で標準errorへ表示します。
 監査eventには検出件数、不可逆なsession fingerprintなどの固定fieldだけを含め、processのmodeから
 自明なprovider、prompt、元の機密値、alias対応表、認証情報は表示しません。
@@ -130,8 +132,6 @@ Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の�
 2026-07-27 21:21:03 [info] gateway_started url=http://127.0.0.1:4000 mode=chatgpt
 2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
 ```
-
-### ログの読み方
 
 先頭はlocal時刻、`[info]`や`[warning]`はlevel、その次がevent名、残りが
 `key=value`形式のfieldです。1 processは一つのmodeだけを扱うため、各監査eventで自明な
@@ -158,9 +158,13 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
 - `mode`: `chatgpt`または`claude`。一つのprocessでは起動中に変わりません。
 - `url`: clientが接続するloopback URLです。
 
+### Gatewayの終了方法
+
 foregroundで起動したGatewayは、クライアント操作を終えてから起動terminalで`Ctrl+C`を1回
 入力し、shellのpromptが戻るまで待って終了します。background processには`SIGTERM`を送ります。
 通常の終了で応答しない場合を除き、`SIGKILL`やterminalの強制終了は使用しないでください。
+
+### 起動commandの省略形
 
 次の省略形も同じ意味です。
 
