@@ -2,7 +2,7 @@
 
 ## 1. 展開する
 
-source版は Python 3.12 以上を使います。
+source版は Python 3.11 以上を使います。
 
 ```console
 git clone <repository-url> SecurityMasker
@@ -12,8 +12,9 @@ cd SecurityMasker
 ```
 
 setupは固定lockからruntimeを導入し、固定revisionの日本語NER modelを取得してSHA-256を
-検証します。既定の `python3` が古い環境ではPATH上の `python3.12` を自動選択します。
-別のinterpreterを使う場合だけ `PYTHON_COMMAND=/path/to/python3.12` を指定します。
+検証します。既定の `python3` が古い環境ではPATH上の `python3.12`、次に `python3.11` を
+自動選択します。別のinterpreterを使う場合だけ
+`PYTHON_COMMAND=/path/to/python3.11` を指定します。
 通常運用中にdownloadは行いません。
 
 配布済みone-file版を使う場合、Pythonとsetupは不要です。以下の `python3 securitymasker.py` を

@@ -7,7 +7,7 @@ name = "securitymasker"
 version = "0.1.0"
 description = "Reversible pseudonymization security boundary (transparent proxy for Codex / Claude Code)."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "SecurityMasker maintainers" }]
@@ -52,7 +52,7 @@ securitymasker = ["resources/*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
@@ -71,7 +71,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 "tests/integration/test_live_gateway.py" = ["SIM115"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 packages = ["securitymasker"]
 mypy_path = "src"

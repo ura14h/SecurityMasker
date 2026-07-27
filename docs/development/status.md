@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-07-26
+最終更新: 2026-07-27
 
 この文書を、現行構成の `done` / `partial` / `blocked` の正とします。`done` は実装、製品配線、
 回帰test、利用/運用手順が揃った項目だけです。
@@ -29,7 +29,9 @@ tag、GitHub Releaseなどownerの公開操作だけです。
 
 2026-07-26に次をrelease candidate `0.1.0` で確認しました。
 
-- macOS arm64とLinux arm64のclean cloneで、環境変数なしの `scripts/setup` が成功
+- macOS arm64のPython 3.11ではcleanな一時展開から
+  `PYTHON_COMMAND=/opt/homebrew/bin/python3.11 scripts/test-setup`、Python 3.12では
+  環境変数なしの `scripts/setup` が成功。Linux arm64のPython 3.12でもclean setup成功
 - Linuxでは公式CPU版Torch `2.13.0+cpu` を選択し、CUDA runtimeへ依存しないこと
 - `ruff`、`mypy`、固定NER必須unit/evaluation 586件、mock Gateway 3件が成功
 - 外部networkなしのLinuxでCodex CLI 0.145.0 / Claude Code 2.1.212実E2E 2件が成功

@@ -15,6 +15,13 @@ def _layout(tmp_path: Path, *, port: int = 49153):
     return initialize_layout(tmp_path, mode="chatgpt", port=port)
 
 
+def test_python_311_is_supported_but_310_is_not() -> None:
+    assert doctor.check_python((3, 11, 0)).status is Status.OK
+    unsupported = doctor.check_python((3, 10, 99))
+    assert unsupported.status is Status.FAIL
+    assert "3.11+ is required" in unsupported.detail
+
+
 def test_v2_layout_passes_without_creating_database(tmp_path: Path) -> None:
     layout = _layout(tmp_path)
 

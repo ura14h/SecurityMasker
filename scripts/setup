@@ -7,18 +7,20 @@ VENV_DIRECTORY="$PROJECT_DIRECTORY/.venv"
 
 if [ -z "${PYTHON_COMMAND:-}" ]; then
     if command -v python3 >/dev/null 2>&1 &&
-       python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 12))'; then
+       python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
         PYTHON_COMMAND=python3
     elif command -v python3.12 >/dev/null 2>&1; then
         PYTHON_COMMAND=python3.12
+    elif command -v python3.11 >/dev/null 2>&1; then
+        PYTHON_COMMAND=python3.11
     else
         printf '%s\n' \
-            "error: Python 3.12+ was not found (set PYTHON_COMMAND explicitly)" >&2
+            "error: Python 3.11+ was not found (set PYTHON_COMMAND explicitly)" >&2
         exit 2
     fi
 fi
 
-"$PYTHON_COMMAND" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else "SecurityMasker requires Python 3.12+")'
+"$PYTHON_COMMAND" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else "SecurityMasker requires Python 3.11+")'
 
 if [ ! -x "$VENV_DIRECTORY/bin/python" ]; then
     "$PYTHON_COMMAND" -m venv "$VENV_DIRECTORY"

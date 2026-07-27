@@ -18,7 +18,8 @@
   feature header
 - protocol-native file/image/audio添付とprovider file search: 未検査転送せずlocal block
 - SQLite: process restart後のalias復元、wrong key/mode、tamper、二重writer
-- source: Python 3.12（macOS arm64 / Linux arm64 clean setup）
+- source最小要件: Python 3.11
+- clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64 / Linux arm64）
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
 - one-file spike: macOS arm64、PyInstaller 6.21.0
 
@@ -39,7 +40,18 @@ ChatGPT Desktop/Codex surfaceとCodex CLI、Claude Code DesktopとClaude Code CL
 - 外部MCP/hosted toolへの原文復元
 - OpenAI Chat Completions
 - public bind、multi-user/multi-tenant、multi-worker
-- Python 3.11以下
+- Python 3.10以下
+
+## Python最小versionの根拠
+
+SecurityMaskerが使用する最も新しい標準library機能は、`enum.StrEnum`、`tomllib`、
+`datetime.UTC`で、いずれもPython 3.11から利用できます。固定runtime依存もPython 3.11を
+許容し、3.12固有のsyntaxやAPIは使っていません。このため3.12に限定する製品上の理由はなく、
+3.11をsource版の最小要件とします。
+
+Python 3.10以下へ広げるには、これらのbackportまたは互換実装、追加dependency、対応versionごとの
+clean setup・NER・Gateway回帰testが必要です。保護境界のtest matrixを未検証のまま広げないため、
+現時点では3.10以下を対象外とします。one-file版の利用者にはPython runtimeの導入は不要です。
 
 ## binary
 

@@ -60,11 +60,15 @@ def _skip(name: str, detail: str) -> CheckResult:
 # --- environment -------------------------------------------------------------------
 
 
-def check_python() -> CheckResult:
-    version = sys.version_info
-    text = f"{version.major}.{version.minor}.{version.micro}"
-    if version < (3, 12):
-        return _fail("python", f"{text} — 3.12+ is required")
+def check_python(version: tuple[int, int, int] | None = None) -> CheckResult:
+    current = version or (
+        sys.version_info.major,
+        sys.version_info.minor,
+        sys.version_info.micro,
+    )
+    text = ".".join(str(part) for part in current)
+    if current < (3, 11):
+        return _fail("python", f"{text} — 3.11+ is required")
     return _ok("python", text)
 
 

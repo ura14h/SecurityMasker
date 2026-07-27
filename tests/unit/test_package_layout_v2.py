@@ -262,6 +262,8 @@ def test_standard_setup_does_not_install_redis() -> None:
     assert "pytest" not in setup
     assert "\nredis==" not in f"\n{standard_lock}"
     assert "python3.12" in setup
+    assert "python3.11" in setup
+    assert "requires Python 3.11+" in setup
     assert "--no-build-isolation --no-deps -e" in setup
     assert 'if [ "$(uname -s)" = "Linux" ]' in setup
     assert "requirements-torch-cpu.lock" in setup
@@ -269,6 +271,14 @@ def test_standard_setup_does_not_install_redis() -> None:
     cpu_lock = (ROOT / "requirements-torch-cpu.lock").read_text(encoding="utf-8")
     assert "https://download.pytorch.org/whl/cpu" in cpu_lock
     assert "torch==2.13.0+cpu" in cpu_lock
+
+
+def test_source_package_declares_python_311_minimum() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'requires-python = ">=3.11"' in project
+    assert 'target-version = "py311"' in project
+    assert 'python_version = "3.11"' in project
 
 
 def test_initialized_product_files_are_ignored_at_repository_root() -> None:
@@ -307,7 +317,7 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
     assert "requirements-build.lock" in build
     assert "requirements-torch-cpu.lock" in build
     assert "requirements-dev.lock" not in build
-    assert "binary build requires Python 3.12+" in build
+    assert "binary build requires Python 3.11+" in build
     assert "--no-build-isolation --no-deps -e" in build
     assert "securitymasker.spec" in build
     assert "securitymasker_model" in spec
