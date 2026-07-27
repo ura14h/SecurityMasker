@@ -27,6 +27,7 @@ from securitymasker.sessions.store import (
 )
 
 _SCHEMA_VERSION = "1"
+_JOURNAL_SIZE_LIMIT = 8 * 1024 * 1024
 
 
 def _now() -> datetime:
@@ -101,6 +102,7 @@ class SQLiteSessionStore:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA synchronous = FULL")
         connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute(f"PRAGMA journal_size_limit = {_JOURNAL_SIZE_LIMIT}")
         return connection
 
     def _acquire_database_lease(self) -> None:
@@ -133,6 +135,7 @@ class SQLiteSessionStore:
         self._database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         connection = self._connect()
         try:
+            self._enable_page_reclamation(connection)
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS metadata "
@@ -157,7 +160,9 @@ class SQLiteSessionStore:
                 "kind TEXT NOT NULL, lookup BLOB NOT NULL, sealed BLOB NOT NULL, "
                 "expires REAL NOT NULL, PRIMARY KEY(kind, lookup))"
             )
+            self._purge_expired(connection)
             connection.execute("COMMIT")
+            self._reclaim_pages(connection)
             self._database_id = metadata["database_id"]
             if os.name == "posix":
                 os.chmod(self._database, 0o600)
@@ -167,6 +172,34 @@ class SQLiteSessionStore:
             raise
         finally:
             connection.close()
+
+    @staticmethod
+    def _enable_page_reclamation(connection: sqlite3.Connection) -> None:
+        """既存DBを含め、削除済みpageを末尾から縮小できる形式にする。"""
+        mode = int(connection.execute("PRAGMA auto_vacuum").fetchone()[0])
+        if mode != 2:  # 2 = INCREMENTAL
+            connection.execute("PRAGMA auto_vacuum = INCREMENTAL")
+            # 既存DBはVACUUMでfile formatを書き換えないと設定が有効にならない。
+            connection.execute("VACUUM")
+
+    @staticmethod
+    def _reclaim_pages(connection: sqlite3.Connection) -> None:
+        """freelist pageをDB末尾から回収する。"""
+        remaining = int(connection.execute("PRAGMA freelist_count").fetchone()[0])
+        while remaining > 0:
+            connection.execute(f"PRAGMA incremental_vacuum({remaining})")
+            current = int(connection.execute("PRAGMA freelist_count").fetchone()[0])
+            if current >= remaining:
+                break
+            remaining = current
+
+    @staticmethod
+    def _purge_expired(connection: sqlite3.Connection) -> int:
+        """期限切れsessionとresponse bindingを一括削除する。"""
+        cursor = connection.execute(
+            "DELETE FROM records WHERE expires<=?", (_now().timestamp(),)
+        )
+        return max(cursor.rowcount, 0)
 
     def _key_check(self, database_id: str) -> str:
         message = f"securitymasker-key-check\0{database_id}\0{self._mode}".encode()
@@ -234,6 +267,7 @@ class SQLiteSessionStore:
             active.execute(
                 "DELETE FROM records WHERE kind=? AND lookup=?", (kind, lookup)
             )
+            self._reclaim_pages(active)
         finally:
             if owned_connection:
                 active.close()
@@ -244,11 +278,13 @@ class SQLiteSessionStore:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._purge_expired(connection)
             connection.execute(
                 "INSERT OR REPLACE INTO records(kind,lookup,sealed,expires) VALUES(?,?,?,?)",
                 (kind, lookup, sealed, expires.timestamp()),
             )
             connection.execute("COMMIT")
+            self._reclaim_pages(connection)
         except BaseException:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
@@ -347,7 +383,43 @@ class SQLiteSessionStore:
         lock.check()
         lookup = self._lookup("session", session_id)
         try:
-            self._delete_record("session", lookup)
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                self._purge_expired(connection)
+                response_rows = connection.execute(
+                    "SELECT lookup,sealed FROM records WHERE kind='response'"
+                ).fetchall()
+                response_lookups = []
+                for response_lookup, sealed in response_rows:
+                    response_lookup = bytes(response_lookup)
+                    try:
+                        bound_session = decrypt(
+                            self._master_key,
+                            bytes(sealed),
+                            self._aad("response", response_lookup),
+                        )
+                    except CryptoError:
+                        raise SessionError(
+                            "SQLite record authentication failed (tamper or wrong key)"
+                        ) from None
+                    if hmac.compare_digest(bound_session, session_id):
+                        response_lookups.append(response_lookup)
+                connection.execute(
+                    "DELETE FROM records WHERE kind='session' AND lookup=?", (lookup,)
+                )
+                connection.executemany(
+                    "DELETE FROM records WHERE kind='response' AND lookup=?",
+                    ((item,) for item in response_lookups),
+                )
+                connection.execute("COMMIT")
+                self._reclaim_pages(connection)
+            except BaseException:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise
+            finally:
+                connection.close()
         except sqlite3.Error as exc:
             raise SessionError(f"SQLite delete failed: {type(exc).__name__}") from None
 
@@ -364,10 +436,17 @@ class SQLiteSessionStore:
     async def list_ids(self) -> list[str]:
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._purge_expired(connection)
             rows = connection.execute(
-                "SELECT lookup,sealed FROM records WHERE kind='session' AND expires>?",
-                (_now().timestamp(),),
+                "SELECT lookup,sealed FROM records WHERE kind='session'",
             ).fetchall()
+            connection.execute("COMMIT")
+            self._reclaim_pages(connection)
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
         result = []

@@ -16,6 +16,7 @@ provider側hosted toolです。元の機密情報は非信頼領域へ出して�
 | session間で対応表が混ざる | session固有鍵、response binding、別mode/別DB、同一DBのsingle-writer lease |
 | DBだけが漏れる | keyed lookup、session blobのAES-256-GCM、master keyをDB外へ分離 |
 | DB改竄・wrong key | metadata key checkとAAD認証、起動拒否 |
+| 使い捨てsessionによるstate肥大化 | TTL一括削除、response binding連動削除、incremental vacuum、WAL保持上限 |
 | provider credentialが誤った上流へ出る | mode別route、provider別header allowlist、wrong-protocol route拒否 |
 | 未知field/headerがegressになる | block-only payload/header guard後だけ透過 |
 | model/aliasが構造を壊す | context segmentation、valueだけの置換、tool JSON再検証、完全一致復元 |

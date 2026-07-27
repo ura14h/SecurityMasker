@@ -109,3 +109,10 @@ API key、password、秘密鍵は平文の `values` より `value_from_env` を�
 `session_idle_ttl` は最終利用からの期限、`session_absolute_ttl` は作成からの上限です。
 idle TTLがabsolute TTLを超える設定は拒否します。TTL満了後は同じ会話の過去aliasを復元できない
 ため、新しい会話を開始してください。
+
+期限切れのsessionとresponse bindingはGateway起動時および通常の書込み時に一括削除されます。
+sessionを明示的に削除した場合は、そのsessionを指すresponse bindingも同時に削除します。
+SQLiteは削除済みpageを回収する形式で作成し、既存DBも起動時に同形式へ移行します。WALは
+再利用され、保持上限を8 MiBに設定します。このため、使い捨てsession IDの累積だけを理由に
+DBが無制限に増え続けることはありません。DBの実サイズは同時に保持した有効sessionの最大量や
+SQLiteのpage単位による高水位を含むため、常に最小サイズになるとは限りません。

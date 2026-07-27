@@ -173,8 +173,50 @@ async def test_expired_session_stays_expired_after_restart(
         idle_ttl=idle_ttl,
         absolute_ttl=absolute_ttl,
     )
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT count(*) FROM records").fetchone()[0] == 0
     assert await reopened.get(RAW_SESSION_ID) is None
     reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_expired_records_are_pruned_during_normal_writes(tmp_path: Path) -> None:
+    database, key = _paths(tmp_path)
+    store = SQLiteSessionStore(
+        database,
+        key,
+        mode="chatgpt",
+        idle_ttl=timedelta(milliseconds=20),
+    )
+    for index in range(40):
+        session_id = f"synthetic-session-{index}"
+        await store.create(session_id)
+        await store.bind_response(f"synthetic-response-{index}", session_id)
+    await asyncio.sleep(0.05)
+
+    await store.create("live-session")
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT count(*) FROM records").fetchone()[0] == 1
+        assert connection.execute("PRAGMA auto_vacuum").fetchone()[0] == 2
+        assert connection.execute("PRAGMA freelist_count").fetchone()[0] == 0
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_deleting_session_also_deletes_its_response_bindings(tmp_path: Path) -> None:
+    database, key = _paths(tmp_path)
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    await store.create(RAW_SESSION_ID)
+    await store.bind_response("synthetic-response", RAW_SESSION_ID)
+
+    await store.delete(RAW_SESSION_ID)
+
+    assert await store.get(RAW_SESSION_ID) is None
+    assert await store.resolve_response("synthetic-response") is None
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT count(*) FROM records").fetchone()[0] == 0
+    store.close()
 
 
 def test_duplicate_active_writer_is_refused(tmp_path: Path) -> None:
