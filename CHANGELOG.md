@@ -6,7 +6,7 @@ SecurityMaskerの最初のsource release候補です。
 
 ### 主な機能
 
-- ChatGPT/CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesに対応する、
+- CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesに対応する、
   mode別のlocal可逆マスキングGateway
 - buffered/streaming responseとtool argumentの復元
 - user dictionary、secret/format/日本固有detector、標準日本語NERの多層検出

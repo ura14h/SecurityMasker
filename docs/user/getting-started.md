@@ -26,13 +26,13 @@ setupは固定lockからruntimeを導入し、固定revisionの日本語NER mode
 
 ## 2. 初期化して辞書を調整する
 
-ChatGPT/Codex用:
+Codex用:
 
 ```console
 python3 securitymasker.py init --mode chatgpt --port 4000
 ```
 
-Claude Code/Desktop用:
+Claude Code用:
 
 ```console
 python3 securitymasker.py init --mode claude --port 4001
@@ -80,9 +80,9 @@ hostは `127.0.0.1`、`::1`、`localhost` だけです。public bind、複数wor
 python3 securitymasker.py client-config
 ```
 
-### ChatGPT/Codex
+### Codex
 
-出力を、使用中のChatGPT/Codexが読む `config.toml` へ手動で反映します。
+出力を、Codex CLIまたはCodex appが読む `config.toml` へ手動で反映します。
 
 ```toml
 model_provider = "securitymasker"
@@ -103,9 +103,9 @@ modelはクライアント側で選択します。SecurityMaskerはrequestの `m
 使い続けます。top-level fieldは最初の `[table]` より前へ置いてください。誤例と確認方法は
 [clientがproxyを通らない](troubleshooting.md#clientがproxyを通らない)を参照してください。
 
-### Claude Code/Desktop
+### Claude Code
 
-Claudeを起動する環境へ設定します。
+Claude Code CLIまたはClaude Code Desktopを起動する環境へ設定します。
 
 ```console
 export ANTHROPIC_BASE_URL="http://127.0.0.1:4001"

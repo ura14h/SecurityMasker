@@ -78,7 +78,7 @@ weightをrepository/release artifactへ含めないため、このbinary固有bl
 - source版: GitHub repositoryの公開設定、tag、GitHub Release、source archive/checksum upload
 - binary版も公開する場合: 公開対象OSの選択、model weight再配布判断、必要なcode
   signing/notarization、対象OSごとのartifact upload
-- 可能なら合成promptだけを使うChatGPT Desktop / Claude Code Desktop手動smoke test
+- 可能なら合成promptだけを使うCodex app / Claude Code Desktop手動smoke test
 
 Desktop smoke testを行わなくてもCLIによるprotocol検証は可能ですが、その場合の公開表現は
 「CLIと共有設定で検証済み」に限定します。

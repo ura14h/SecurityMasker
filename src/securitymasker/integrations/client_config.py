@@ -26,13 +26,13 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
     base_url = gateway_url(config)
     if config.runtime.mode == "chatgpt":
         return (
-            "# ChatGPT/Codex の config.toml へ追記してください。\n"
+            "# Codex CLIまたはCodex appが読むconfig.tomlへ追記してください。\n"
             "# modelはclient側で選択し、このsnippetでは変更しません。\n"
             f"{codex_config_toml(base_url)}"
         )
     environment = client_environment(config)
     return (
-        "# Claude Code/Desktopを起動する環境へ設定してください。\n"
+        "# Claude Code CLIまたはClaude Code Desktopを起動する環境へ設定してください。\n"
         + "".join(f'export {name}="{value}"\n' for name, value in environment.items())
     )
 

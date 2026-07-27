@@ -1,6 +1,6 @@
 # SecurityMasker
 
-SecurityMasker は、ローカルの ChatGPT/Codex または Claude Code と外部サービスの間で動く、
+SecurityMasker は、ローカルの Codex または Claude Code と外部サービスの間で動く、
 可逆マスキングプロキシです。送信前に機密情報をセッション固有の仮名へ置き換え、応答に含まれる
 仮名をローカルで元の値へ戻します。認証情報はクライアントから上流へ透過し、保存しません。
 
@@ -60,9 +60,10 @@ SecurityMasker は利用者の設定ファイルを自動変更しません。�
 python3 securitymasker.py client-config
 ```
 
-`chatgpt` modeでは ChatGPT/Codex が使用する `config.toml` に custom provider を追加します。
+`chatgpt` modeでは、Codex CLIまたはCodex appが使用する `config.toml` にcustom providerを
+追加します。
 認証は `requires_openai_auth = true` によりクライアント自身の ChatGPT 認証を透過します。
-`claude` modeでは、Claude Code/Desktopを起動する環境へ
+`claude` modeでは、Claude Code CLIまたはClaude Code Desktopを起動する環境へ
 `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>` を設定します。
 
 設定後に Gateway の状態を確認してください。

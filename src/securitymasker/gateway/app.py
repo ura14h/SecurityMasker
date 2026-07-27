@@ -1,6 +1,6 @@
 """SecurityMasker proxyのASGI application。
 
-ChatGPT/CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesをmasking coreへ
+CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesをmasking coreへ
 接続する。未知route、不正・過大なJSON、未対応Content-Encodingはlocalで拒否する。
 内部headerは除去し、client認証情報は対応providerへだけ透過してログへ残さない。
 一つのhandlerがsession解決、requestのマスク、転送、responseの復元までを所有する。

@@ -5,7 +5,7 @@
 
 ## 製品
 
-SecurityMaskerは、ローカルのChatGPT/CodexまたはClaude Codeと外部LLMの間に立つ
+SecurityMaskerは、ローカルのCodexまたはClaude Codeと外部LLMの間に立つ
 可逆マスキングproxyです。
 
 - package/CLI: `securitymasker`

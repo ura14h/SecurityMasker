@@ -3,7 +3,7 @@
 SecurityMaskerは、単一利用者のローカルPCで動く可逆マスキング境界です。
 
 ```text
-ChatGPT/Codex または Claude Code
+Codex または Claude Code
               │  provider protocol + client auth
               ▼
 SecurityMasker Gateway（loopback、1 mode、1 worker）
@@ -32,7 +32,7 @@ ChatGPT backend または Anthropic API
 
 ## modeとprotocol
 
-- `chatgpt`: OpenAI Responses互換routeだけを公開し、ChatGPT/Codex認証を
+- `chatgpt`: OpenAI Responses互換routeだけを公開し、CodexのChatGPT認証を
   `https://chatgpt.com/backend-api/codex` へ透過する。
 - `claude`: Anthropic Messages互換routeだけを公開し、Claudeの認証を
   `https://api.anthropic.com` へ透過する。

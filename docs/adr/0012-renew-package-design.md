@@ -15,14 +15,14 @@
 現行実装は初期briefと監査是正を積み重ねた結果、個人がローカルPCへ展開してすぐ使う製品に
 対して、次の運用要素を抱えている。
 
-- ChatGPT/CodexとClaude Codeのrouteを一つのGatewayが同時公開する
+- CodexとClaude Codeのrouteを一つのGatewayが同時公開する
 - wrapperがprocessごとのclient設定と独自session headerを注入する
 - 再起動を越えた永続化にはRedis、暗号鍵、Docker/Composeを使う
 - GitHub Actions、Docker、PyPI installを中心にした文書が利用者導線と混在する
 - 未登録の日本語人名・法人名・地名を補完するNERがoptional・既定OFFである
 - sourceから使う利用者とone-file binaryを使う利用者の契約が定まっていない
 
-目標利用者は、ローカルのChatGPTデスクトップアプリまたはClaude Code Desktopを
+目標利用者は、ローカルのCodex appまたはClaude Code Desktopを
 SecurityMaskerへ向け、promptをmaskして送り、responseを同じ対応表で復元したい個人である。
 複数worker、複数host、複数利用者の共有基盤は目標ではない。
 
@@ -430,7 +430,7 @@ Redis backend、Docker/Compose、GitHub Actions、multi-tenant/public-bind、`se
 |---|---|---|
 | 品質基準 | ruff成功、mypy strict 67 files成功、unit/evaluation 707 tests成功 | masking coreの移行基準線 |
 | 実client CLI | `codex-cli 0.145.0`、Claude Code `2.1.212` | Desktop共有設定のprotocol surrogate |
-| ChatGPT設定層 | 公式manualでDesktop、CLI、IDEが同じconfiguration layersを共有 | user modeは`chatgpt`、自動gateはCodex CLI |
+| Codex設定層 | 公式manualでCodex app、CLI、IDE extensionが同じconfiguration layersを共有 | user modeは`chatgpt`、自動gateはCodex CLI |
 | 現行route | 両provider routeを常時公開し、`/v1/models`はOpenAI固定 | mode別route tableが必須 |
 | Claude session | 現resolverは`x-claude-code-session-id`を未使用 | Phase 3 blocker |
 | Claude endpoint | `/v1/messages/count_tokens`が未実装 | Phase 3 gap |
@@ -467,7 +467,7 @@ Redis backend、Docker/Compose、GitHub Actions、multi-tenant/public-bind、`se
 
 1. GitHub repositoryの公開設定、tag、GitHub Release、binary upload
 2. 必要なApple Developer ID/notarization、Windows code signing
-3. 実アカウントを使うChatGPT Desktop / Claude Code Desktopの手動smoke test
+3. 実アカウントを使うCodex app / Claude Code Desktopの手動smoke test
 
 ## 影響
 

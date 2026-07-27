@@ -51,7 +51,7 @@ source版ではnetworkを使用できるsetup時に再取得・検証します�
 
 `client-config` の出力と、実際にクライアントが読む設定を比較してください。
 
-- ChatGPT/Codex: `model_provider = "securitymasker"` と `base_url` を確認。
+- Codex: `model_provider = "securitymasker"` と `base_url` を確認。
 - Claude: Claudeを起動したprocess環境の `ANTHROPIC_BASE_URL` を確認。
 - `OPENAI_BASE_URL`、`OPENAI_API_BASE`、`ANTHROPIC_API_URL` が別の直通先を指していないか確認。
 

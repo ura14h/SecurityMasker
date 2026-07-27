@@ -1,4 +1,4 @@
-"""ChatGPT/CodexとClaude Code専用の透過masking proxy。
+"""CodexとClaude Code専用の透過masking proxy。
 
 client requestを受け取り、機密値をマスクしてから対応providerへ転送し、responseを
 同じsessionの対応表で復元する。clientの認証情報は対応するproviderへだけ透過し、

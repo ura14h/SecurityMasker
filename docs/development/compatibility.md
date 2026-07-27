@@ -4,7 +4,7 @@
 
 | mode | local route | upstream | 認証 | 自動検証 |
 |---|---|---|---|---|
-| `chatgpt` | `/responses`, `/v1/responses`, models | ChatGPT Codex backend | ChatGPT/Codex bearer passthrough | Codex CLI + mock upstream |
+| `chatgpt` | `/responses`, `/v1/responses`, models | `chatgpt.com/backend-api/codex` | CodexのChatGPT bearer passthrough | Codex CLI + mock upstream |
 | `claude` | `/v1/messages`, count_tokens, models, `HEAD /` | Anthropic API | bearer/API key passthrough | Claude Code CLI + mock upstream |
 
 各processは一方のrouteだけを公開します。未知field/eventは、構造を壊さずleak guardを通過できる場合に
@@ -42,7 +42,7 @@ release時に最新対象versionでE2Eを再実行します。0.1.0ではLinux a
 
 ## Desktopについて
 
-ChatGPT Desktop/Codex surfaceとCodex CLI、Claude Code DesktopとClaude Code CLIは設定・protocolを
+Codex appとCodex CLI、Claude Code DesktopとClaude Code CLIは設定・protocolを
 共有するため、CLIを自動testの代用にしています。Desktop UIの手動確認が未実施のreleaseでは、
 「CLIと共有設定で検証済み」とだけ表現し、Desktop実証済みとは表現しません。
 

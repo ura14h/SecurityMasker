@@ -1,1 +1,1 @@
-"""ChatGPT/CodexとClaude CodeをSecurityMaskerへ向ける設定生成helper。"""
+"""CodexとClaude CodeをSecurityMaskerへ向ける設定生成helper。"""

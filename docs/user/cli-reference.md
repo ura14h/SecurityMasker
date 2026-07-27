@@ -78,7 +78,7 @@ generate-prompt | securitymasker preview
 
 ## `securitymasker client-config`
 
-現在のmodeとportに対応するChatGPT/CodexまたはClaude Code/Desktopの設定snippetをstdoutへ
+現在のmodeとportに対応するCodexまたはClaude Codeの設定snippetをstdoutへ
 表示します。利用者の設定fileは変更しません。
 
 ```console
