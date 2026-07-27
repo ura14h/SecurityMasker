@@ -7,6 +7,19 @@ SecurityMasker は、ローカルの ChatGPT/Codex または Claude Code と外�
 1プロセスは `chatgpt` または `claude` の一方だけを、loopback上の1ポートで扱います。
 両方を使う場合は、別config・別DB・別keyで2プロセス起動してください。
 
+## 対応環境
+
+source版の検証済み環境は、macOS arm64（Python 3.11 / 3.12）とLinux arm64
+（Python 3.12）です。その他のOS・architectureは検証済みの対応環境ではありません。
+
+**Windowsは現在非対応です。** Windows用setup、機密fileのACL検査、PowerShell向けclient設定、
+native E2Eが未実装・未検証です。コードの一部にWindows分岐はありますが、安全性を保証できない
+ため、Windows上で実際の機密情報を扱わないでください。
+
+one-file binaryはmacOS arm64での技術検証に留まり、現時点では公開配布対象ではありません。
+詳細は[互換性](docs/development/compatibility.md)と
+[開発・リリース状況](docs/development/status.md)を参照してください。
+
 ## 5分で試す（source版）
 
 必要条件は Python 3.11 以上です。setup時だけ依存パッケージと固定済み日本語NER modelを

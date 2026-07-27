@@ -19,14 +19,18 @@
 | 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
 | one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
 | 旧Redis/Docker/CI/multi-tenant/run撤去 | done | 製品code/artifact削除、文書再編、回帰test |
-| source release candidate | done | 0.1.0、clean setup、全gate、展開artifact、再現可能checksumを検証 |
+| source release candidate | done（macOS/Linux arm64） | 0.1.0、clean setup、全gate、展開artifact、再現可能checksumを検証 |
 | binary公開 | blocked | model再配布判断、署名、対象OS別clean-machine gateが未完 |
 
 ## source版の判断
 
-source checkout/archiveは、固定dependencyと固定NER modelを利用者環境へ取得する形で技術的に
-公開可能です。PyPI登録、Docker、GitHub Actionsは必要ありません。残っているのはrepository公開、
-tag、GitHub Releaseなどownerの公開操作だけです。
+source checkout/archiveは、検証済みのmacOS arm64 / Linux arm64で、固定dependencyと固定NER
+modelを利用者環境へ取得する形なら技術的に公開可能です。PyPI登録、Docker、GitHub Actionsは
+必要ありません。残っているのはrepository公開、tag、GitHub Releaseなどownerの公開操作だけです。
+
+Windowsはsource版を含めて公開対応範囲外です。Windows用setup、ACLによる機密file保護、
+PowerShell向けclient設定、native dependency・SQLite・CLI E2Eが揃うまでは、Windows上で
+実際の機密情報を扱えるとは表明しません。
 
 2026-07-26に次をrelease candidate `0.1.0` で確認しました。
 

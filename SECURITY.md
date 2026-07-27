@@ -9,6 +9,10 @@ SecurityMaskerは、単一利用者のローカルPCで、loopbackにbindした1
 終わるまで公開対象ではありません。詳しくは
 [development status](docs/development/status.md) を参照してください。
 
+検証済みplatformはmacOS arm64とLinux arm64です。WindowsはACLによる機密file保護、
+setup、client設定、native E2Eが未実装・未検証のため、source版を含めて対応対象外です。
+Windows上で実際の機密情報を扱わないでください。
+
 ## Sensitive local files
 
 次を機密として扱ってください。
