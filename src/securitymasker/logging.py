@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import sys
+from collections.abc import Mapping, MutableMapping
 from typing import Any, TextIO, cast
 
 import structlog
@@ -29,6 +30,16 @@ class _StderrProxy:
 _STDERR = cast(TextIO, _StderrProxy())
 
 
+def _drop_redundant_provider(
+    _: Any,
+    __: str,
+    event_dict: MutableMapping[str, Any],
+) -> Mapping[str, Any]:
+    """1 process・1 modeのterminalでは自明なprovider fieldを省く。"""
+    event_dict.pop("provider", None)
+    return event_dict
+
+
 def configure_logging(level: str = "INFO") -> None:
     """Gatewayのstderrへ簡潔な一行logを出すようstructlogを初期化する。"""
     structlog.configure(
@@ -39,6 +50,7 @@ def configure_logging(level: str = "INFO") -> None:
         processors=[
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
+            _drop_redundant_provider,
             structlog.dev.ConsoleRenderer(
                 colors=False,
                 pad_event_to=0,

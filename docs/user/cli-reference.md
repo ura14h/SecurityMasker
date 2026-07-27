@@ -123,12 +123,12 @@ CLI overrideはconfig fileを書き換えません。優先順位はCLI、config
 ChatGPTとClaudeを同時に使う場合は、別config・別DB・別key・別portで2process起動します。
 
 Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の一行形式で標準errorへ表示します。
-監査eventにはprovider、検出件数、不可逆なsession fingerprintなどの固定fieldだけを含め、
-prompt、元の機密値、alias対応表、認証情報は表示しません。
+監査eventには検出件数、不可逆なsession fingerprintなどの固定fieldだけを含め、processのmodeから
+自明なprovider、prompt、元の機密値、alias対応表、認証情報は表示しません。
 
 ```text
 2026-07-27 21:21:03 [info] gateway_started url=http://127.0.0.1:4000 mode=chatgpt
-2026-07-27 21:22:06 [info] request_masked provider=openai entity_count=3 session_fp=3ed714a9735a
+2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
 ```
 
 foregroundで起動したGatewayは、クライアント操作を終えてから起動terminalで`Ctrl+C`を1回
