@@ -34,6 +34,7 @@ from securitymasker.config import (
     resolve_config_path,
 )
 from securitymasker.errors import ConfigError, SecurityMaskerError
+from securitymasker.logging import configure_logging, get_logger
 from securitymasker.sessions.memory import InMemorySessionStore
 
 
@@ -175,6 +176,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
     from securitymasker.gateway.app import create_app
 
+    configure_logging()
     config_path = resolve_config_path(args.config)
     config = load_config(config_path)
     os.environ["SECURITYMASKER_CONFIG"] = str(config_path)
@@ -187,9 +189,10 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     product_mode = args.mode or runtime.mode
     os.environ["SECURITYMASKER_PRODUCT_MODE"] = product_mode
 
-    print(
-        f"[securitymasker] gateway on http://{host}:{port} (masking/{product_mode})",
-        file=sys.stderr,
+    get_logger().info(
+        "gateway_started",
+        url=f"http://{host}:{port}",
+        mode=product_mode,
     )
     # create_app()は必須設定を再検証し、不足時は外部へ接続せず起動を拒否する。
     uvicorn.run(create_app(), host=host, port=port, log_level="warning")

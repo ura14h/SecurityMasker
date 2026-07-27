@@ -359,6 +359,7 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
 def test_gateway_cli_runtime_overrides_take_priority_over_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     arguments: list[str],
     expected_mode: str,
     expected_port: int,
@@ -379,3 +380,9 @@ def test_gateway_cli_runtime_overrides_take_priority_over_config(
     assert os.environ["SECURITYMASKER_PRODUCT_MODE"] == expected_mode
     assert observed["host"] == "127.0.0.1"
     assert observed["port"] == expected_port
+    log = capsys.readouterr().err
+    assert (
+        f"[info] gateway_started url=http://127.0.0.1:{expected_port} "
+        f"mode={expected_mode}"
+    ) in log
+    assert "[securitymasker] gateway on" not in log

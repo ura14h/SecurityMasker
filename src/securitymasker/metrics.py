@@ -19,7 +19,7 @@ from enum import StrEnum
 from securitymasker.logging import get_logger, safe_fingerprint
 from securitymasker.models import EntityType
 
-_audit_log = get_logger(component="securitymasker.audit")
+_audit_log = get_logger()
 
 
 @dataclass
