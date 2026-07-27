@@ -118,6 +118,64 @@ python3 securitymasker.py doctor --require-ready
 `doctor` はconfig、辞書、key、port、NER、client設定、Gateway readinessをread-onlyで検査し、
 実providerへrequestを送りません。
 
+### 実Codexでマスクと復元を目視確認する
+
+最初の確認には実在人物や実際のsecretを使わず、辞書へ登録した合成値だけを使います。次の例では
+test suiteでも合成fixtureとして使う `山田太郎` を利用します。先にlocal `preview` を実行し、
+`PERSON: 1` と `SM_PERSON_...` が表示されることを確認してください。検出されない場合は実Codexへ
+送らず、合成値を `securitymasker.dict` へ登録してGatewayを再起動します。
+
+```console
+python3 securitymasker.py preview "担当者: 山田太郎"
+```
+
+SecurityMaskerをproviderにした新しいCodex taskへ、次の診断promptを送ります。このpromptは、
+modelへplaceholderを変形させずlocal shell toolの引数へ渡させ、決定論的なPythonで文字列を
+分解します。標準設定の `tool_trust.trusted_local_tools: []` を前提とし、shell toolをtrusted
+local toolへ追加している場合はこの確認方法を使えません。
+
+````text
+これは通信経路の診断です。
+
+「診断対象」の値について、あなたが実際に受け取った表記を一切変更せず、
+下記コマンドの最後の引数 VALUE として渡してください。
+
+自分で文字列を分解・変換・推測してはいけません。
+必ずlocal shell toolを1回だけ使用してください。
+VALUEを、あなたが受け取った値で完全に置き換えてください。
+
+```console
+python3 -c 'import json,sys; s=sys.argv[1]; print(json.dumps({"route":"MASKED_ALIAS" if s.startswith("SM_PERSON_") else "UNMASKED_TEXT","length":len(s),"ascii":s.isascii(),"characters":list(s)},ensure_ascii=False))' 'VALUE'
+```
+
+最後の回答は、shellの標準出力を変更せずJSON code blockで返してください。
+説明は不要です。
+
+診断対象: 山田太郎
+````
+
+マスク済みaliasをmodelが受け取っていれば、shell出力は次の形になります。文字間にJSONの区切りが
+入るため、完全一致だけを対象とするresponse復元で元の値へ戻りません。
+
+```json
+{
+  "route": "MASKED_ALIAS",
+  "length": 22,
+  "ascii": true,
+  "characters": ["S", "M", "_", "P", "E", "R", "S", "O", "N", "_", "..."]
+}
+```
+
+`route` が `UNMASKED_TEXT` になった場合は実データへ進まず、Codexが実際に読むuser-level
+`config.toml` の `model_provider` とGatewayの `base_url`、起動時の `CODEX_HOME` を確認します。
+続けて同じ合成値を「一字一句そのまま返す」よう依頼し、Codex画面で `山田太郎` に戻ることを
+確認すればresponse復元も目視できます。
+
+この手順は、実Codexの通常経路でmodelがaliasを受け取り、local表示で復元されることを利用者が
+確認するsmoke testです。LLMとtoolの動作を利用するためwire-levelの証明ではありません。厳密な
+egress検証は、外向きnetworkを遮断した環境で実CLIとlocal mock upstreamを使うrelease gateで
+行います。
+
 ## 6. Gatewayを終了する
 
 通常はクライアントでの操作を終えてから、Gatewayを起動したterminalへ戻り、`Ctrl+C`を1回

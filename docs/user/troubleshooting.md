@@ -58,6 +58,10 @@ source版ではnetworkを使用できるsetup時に再取得・検証します�
 SecurityMaskerはクライアント設定を自動更新しません。Web会話、remote session、外部MCPなど
 localhostを通らない通信は保護できません。
 
+実Codexでaliasの受信とresponse復元を合成値だけで目視確認する手順は、導入ガイドの
+[実Codexでマスクと復元を目視確認する](getting-started.md#実codexでマスクと復元を目視確認する)
+を参照してください。
+
 ## one-file版の起動が遅い
 
 標準NER、Python、torch等を含むため、macOS arm64の検証値で約917 MiB、cold helpで約25.5秒、
