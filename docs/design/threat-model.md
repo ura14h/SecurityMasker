@@ -13,6 +13,7 @@ provider側hosted toolです。元の機密情報は非信頼領域へ出して�
 | 脅威 | 主な緩和策 |
 |---|---|
 | 原文が外部LLMへ送られる | request mask、全文字列の最終leak guard、fail-closed、mock leakage test |
+| 添付file/image内の原文が未検査で送られる | protocol-native添付、file ID/URL、provider file searchを転送前に一律block |
 | session間で対応表が混ざる | session固有鍵、response binding、別mode/別DB、同一DBのsingle-writer lease |
 | DBだけが漏れる | keyed lookup、session blobのAES-256-GCM、master keyをDB外へ分離 |
 | DB改竄・wrong key | metadata key checkとAAD認証、起動拒否 |
@@ -32,6 +33,7 @@ provider側hosted toolです。元の機密情報は非信頼領域へ出して�
 - public server、multi-user、multi-tenant、multi-worker、複数host間の共有
 - 未登録の組織固有語をmodelだけで100%推測すること
 - providerやmodelがaliasを改変した場合の近似復元
+- file、image、audioの内容を解析・再構築してマスクすること。protocol-native添付はblockする
 
 ## 残存リスク
 
@@ -42,3 +44,14 @@ false negativeがあります。重要な組織固有語は辞書へ登録し、
 クライアント設定は自動変更しないため、routingの正しさは利用者が確認する必要があります。
 `doctor` は静的設定とGateway到達性を確認できますが、実Desktopの全通信がproxyを通ることまで
 強制できません。
+
+## 添付ファイル
+
+SecurityMaskerが安全に扱えるのは、request JSON内へ通常のtextとして展開された内容です。
+OpenAI Responsesの`input_file`／`input_image`／`input_audio`、Anthropic Messagesの
+`document`／`image`／`container_upload`、base64、URL、provider上のfile IDは、内容全体を
+detectorへ通して構造を保ったまま置換できません。providerのfile searchも同じ理由で対象外です。
+これらを検出したrequestは上流へ転送せず、localで明示的にblockします。
+
+CLIがlocal fileを読み、その内容を通常のprompt textとして埋め込む場合はtext maskingの対象です。
+ただし「添付UIを使ったからtext化される」とは仮定せず、実際のprotocol payloadで判定します。

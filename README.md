@@ -84,6 +84,11 @@ one-file版も同じコマンドと隣接ファイルを使います。
 `securitymasker.dict` に登録し、`preview` で期待するmaskを確認してください。障害時は既定で
 fail-closedとなり、上流へ送りません。
 
+file・image・audioのprotocol-native添付は、base64、URL、provider上のfile IDを含めて内容を
+完全検査できないため、上流へ送らずblockします。local fileの内容が通常のprompt textとして
+展開された場合はマスク対象です。添付を使う必要がある場合は、必要な部分をtextとして入力して
+ください。
+
 詳しい利用方法は [導入ガイド](docs/user/getting-started.md)、
 [設定リファレンス](docs/user/configuration.md)、
 [トラブルシューティング](docs/user/troubleshooting.md) を参照してください。

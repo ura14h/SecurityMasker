@@ -19,6 +19,7 @@ from securitymasker.protocols.base import (
     MaskingSummary,
     MaskTransform,
     RestoreTransform,
+    reject_unsupported_attachments,
 )
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
 
@@ -29,6 +30,22 @@ async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> MaskingSummary:
     """Responses requestを構造を保ったままin-placeでマスクする。"""
+    reject_unsupported_attachments(
+        data,
+        block_types=frozenset(
+            {
+                "input_image",
+                "input_file",
+                "input_audio",
+                "computer_screenshot",
+                "computer_call_output",
+                "file_search",
+            }
+        ),
+        reference_fields=frozenset(
+            {"file_data", "file_id", "file_url", "image_url", "audio_url"}
+        ),
+    )
     summary = MaskingSummary()
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:

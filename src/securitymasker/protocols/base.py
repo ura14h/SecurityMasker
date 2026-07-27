@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
+from securitymasker.errors import UnsupportedAttachmentError
 from securitymasker.models import DetectionResult
 
 
@@ -34,6 +35,40 @@ class MaskingSummary:
 
 # OpenAI／Anthropic message構造でuser textを保持するcontent-part key。
 TEXT_KEYS = frozenset({"text", "input_text", "output_text"})
+
+
+def reject_unsupported_attachments(
+    node: Any,
+    *,
+    block_types: frozenset[str],
+    reference_fields: frozenset[str],
+) -> None:
+    """添付content blockと外部file参照を再帰検出してfail-closedにする。
+
+    base64、URL、file IDの内容は通常の文字列detectorでは完全検査できない。既知typeに加えて
+    添付固有fieldも見ることで、providerが新しいenvelopeを追加しても黙って透過しない。
+    """
+    if isinstance(node, list):
+        for item in node:
+            reject_unsupported_attachments(
+                item,
+                block_types=block_types,
+                reference_fields=reference_fields,
+            )
+        return
+    if not isinstance(node, dict):
+        return
+    if node.get("type") in block_types or any(
+        isinstance(node.get(field), str) for field in reference_fields
+    ):
+        raise UnsupportedAttachmentError
+    for value in node.values():
+        reject_unsupported_attachments(
+            value,
+            block_types=block_types,
+            reference_fields=reference_fields,
+        )
+
 
 # modelがplaceholderをverbatimに保持するよう任意で注入する指示。
 # restoration fidelity. Contains no secrets.

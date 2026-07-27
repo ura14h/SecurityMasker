@@ -7,6 +7,7 @@ import pytest
 from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
 from securitymasker.detectors.regex import RegexDetector, RegexEntry
 from securitymasker.engine import MaskingEngine
+from securitymasker.errors import UnsupportedAttachmentError
 from securitymasker.models import EntityType, ReplacementProfile, RestorePolicy
 from securitymasker.protocols import anthropic_messages as adapter
 from securitymasker.sessions.memory import InMemorySessionStore
@@ -94,17 +95,25 @@ async def test_mask_tool_description_not_schema() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_block_passes_through() -> None:
+@pytest.mark.parametrize(
+    "attachment",
+    [
+        {"type": "image", "source": {"type": "base64", "data": "c3ludGhldGlj"}},
+        {"type": "image", "source": {"type": "url", "url": "https://files.invalid/a.png"}},
+        {"type": "document", "source": {"type": "file", "file_id": "file_synthetic"}},
+        {"type": "document", "source": {"type": "text", "data": "山田太郎"}},
+        {"type": "container_upload", "file_id": "file_synthetic"},
+    ],
+)
+async def test_protocol_native_attachments_are_blocked(attachment: dict) -> None:
     eng, s = build_engine(), await _session()
     data = {"max_tokens": 10, "messages": [{"role": "user", "content": [
-        {"type": "image", "source": {"type": "base64", "data": "山田太郎ish-but-binary"}},
+        attachment,
         {"type": "text", "text": "山田太郎"},
     ]}]}
-    await adapter.mask_request(eng, s, data)
-    blocks = data["messages"][0]["content"]
-    assert blocks[0]["type"] == "image"  # unknown block untouched
-    assert blocks[0]["source"]["data"] == "山田太郎ish-but-binary"
-    assert "山田太郎" not in blocks[1]["text"]
+
+    with pytest.raises(UnsupportedAttachmentError, match="cannot be inspected"):
+        await adapter.mask_request(eng, s, data)
 
 
 @pytest.mark.asyncio

@@ -99,3 +99,29 @@ async def test_responses_stream_mask_and_restore(app_client) -> None:
                 deltas += ev["delta"]
     assert PERSON in deltas and HOST in deltas         # streaming restoration reaches client
     assert PERSON.encode() not in captured["body"]
+
+
+@pytest.mark.asyncio
+async def test_attachment_is_blocked_before_upstream_forwarding(app_client) -> None:
+    client, captured = app_client
+    async with client:
+        response = await client.post(
+            "/responses",
+            headers={"X-SecurityMasker-Session-ID": "attachment-session"},
+            json={
+                "model": "m",
+                "input": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_file", "file_id": "file_synthetic"}
+                        ],
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "securitymasker_blocked"
+    assert "cannot be inspected" in response.json()["error"]["message"]
+    assert "body" not in captured

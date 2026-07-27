@@ -7,6 +7,7 @@ import pytest
 from securitymasker.detectors.dictionary import DictionaryDetector, DictionaryEntry
 from securitymasker.detectors.regex import RegexDetector, RegexEntry
 from securitymasker.engine import MaskingEngine
+from securitymasker.errors import UnsupportedAttachmentError
 from securitymasker.models import EntityType, ReplacementProfile, RestorePolicy
 from securitymasker.protocols import openai_responses as adapter
 from securitymasker.sessions.memory import InMemorySessionStore
@@ -57,6 +58,44 @@ async def test_mask_responses_input_items_only_text() -> None:
     assert data["input"][0]["role"] == "user"  # structural
     assert "山田太郎" not in part["text"]
     assert "prod-db01.internal.example" not in part["text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "attachment",
+    [
+        {"type": "input_image", "image_url": "data:image/png;base64,AAAA"},
+        {"type": "input_file", "file_data": "c3ludGhldGlj", "filename": "secret.txt"},
+        {"type": "input_file", "file_id": "file_synthetic"},
+        {"type": "input_audio", "audio_url": "https://files.invalid/audio.wav"},
+    ],
+)
+async def test_protocol_native_attachments_are_blocked(attachment: dict) -> None:
+    eng, s = build_engine(), await _session()
+    data = {
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "説明"}, attachment],
+            }
+        ]
+    }
+
+    with pytest.raises(UnsupportedAttachmentError, match="cannot be inspected"):
+        await adapter.mask_request(eng, s, data)
+
+
+@pytest.mark.asyncio
+async def test_provider_file_search_is_blocked() -> None:
+    eng, s = build_engine(), await _session()
+    data = {
+        "input": "資料を検索",
+        "tools": [{"type": "file_search", "vector_store_ids": ["vs_synthetic"]}],
+    }
+
+    with pytest.raises(UnsupportedAttachmentError, match="cannot be inspected"):
+        await adapter.mask_request(eng, s, data)
 
 
 @pytest.mark.asyncio

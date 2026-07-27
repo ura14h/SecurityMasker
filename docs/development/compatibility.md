@@ -16,6 +16,7 @@
   `previous_response_id`
 - Anthropic Messages: buffered/streaming text、tool use input、count_tokens、
   feature header
+- protocol-native file/image/audio添付とprovider file search: 未検査転送せずlocal block
 - SQLite: process restart後のalias復元、wrong key/mode、tamper、二重writer
 - source: Python 3.12（macOS arm64 / Linux arm64 clean setup）
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu

@@ -28,6 +28,17 @@ class MaskingError(SecurityMaskerError):
     """安全にマスクできない値（安全な置換形式がない場合など）。"""
 
 
+class UnsupportedAttachmentError(MaskingError):
+    """内容を完全検査できない添付を外部送信前に拒否した。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "SecurityMasker blocked this request because protocol-native file, "
+            "image, or audio attachments cannot be inspected and masked safely. "
+            "Provide the required content as text instead."
+        )
+
+
 class LeakageError(SecurityMaskerError):
     """送信前の再scanで登録済みsecretの残存を検出した。"""
 

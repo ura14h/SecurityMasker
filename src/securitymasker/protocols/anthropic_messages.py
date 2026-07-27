@@ -11,7 +11,12 @@ from typing import Any
 
 from securitymasker.engine import MaskingEngine
 from securitymasker.models import ContextKind, MaskingSession
-from securitymasker.protocols.base import ALIAS_INSTRUCTION, MaskingSummary, MaskTransform
+from securitymasker.protocols.base import (
+    ALIAS_INSTRUCTION,
+    MaskingSummary,
+    MaskTransform,
+    reject_unsupported_attachments,
+)
 from securitymasker.protocols.structured_walker import (
     transform_all_string_values,
     transform_all_string_values_sync,
@@ -31,6 +36,11 @@ async def mask_request(
     engine: MaskingEngine, session: MaskingSession, data: dict[str, Any]
 ) -> MaskingSummary:
     """Anthropic Messages requestをin-placeでマスクする。"""
+    reject_unsupported_attachments(
+        data,
+        block_types=frozenset({"image", "document", "container_upload"}),
+        reference_fields=frozenset({"file_id"}),
+    )
     summary = MaskingSummary()
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
@@ -96,7 +106,7 @@ async def _mask_block(block: dict[str, Any], mask: MaskTransform) -> None:
         )
     elif btype == "tool_result":
         block["content"] = await _mask_content(block.get("content"), mask)
-    # 未知block type（image、textなしthinking、citationなど）は透過する。
+    # 添付以外の未知block type（textなしthinking、citationなど）は透過する。
 
 
 # ------------------------------------------------------------------------ restore
