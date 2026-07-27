@@ -16,12 +16,14 @@
 |---|---|---|---|
 | macOS arm64 | Python 3.11 / 3.12で検証済み | 技術spikeのみ | source版の対応環境 |
 | Linux arm64 | Python 3.12で検証済み | 未検証 | source版の対応環境 |
-| Windows | 非対応 | 非対応 | setup、ACL検査、PowerShell設定、native E2E、build・署名が未実装 |
+| Windows | 非対応 | 非対応 | [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)。setup、ACL検査、PowerShell設定、native E2E、build・署名が未実装 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
 Windows向けコード分岐が存在することは、製品対応を意味しません。機密fileのWindows ACLを
 検査しておらず、POSIX用setup scriptとClaude向け`export`形式の設定案内もそのままでは使えません。
-安全性をWindows実機で確認するまでは、実際の機密情報を扱う用途に使用しないでください。
+部分的に動く状態をbest-effort対応として公開する方針は
+[ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しています。安全性を
+Windows実機で確認するまでは、実際の機密情報を扱う用途に使用しないでください。
 
 ## 検証済み範囲
 

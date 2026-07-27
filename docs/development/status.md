@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-07-27
+最終更新: 2026-07-28
 
 この文書を、現行構成の `done` / `partial` / `blocked` の正とします。`done` は実装、製品配線、
 回帰test、利用/運用手順が揃った項目だけです。
@@ -28,9 +28,10 @@ source checkout/archiveは、検証済みのmacOS arm64 / Linux arm64で、固�
 modelを利用者環境へ取得する形なら技術的に公開可能です。PyPI登録、Docker、GitHub Actionsは
 必要ありません。残っているのはrepository公開、tag、GitHub Releaseなどownerの公開操作だけです。
 
-Windowsはsource版を含めて公開対応範囲外です。Windows用setup、ACLによる機密file保護、
-PowerShell向けclient設定、native dependency・SQLite・CLI E2Eが揃うまでは、Windows上で
-実際の機密情報を扱えるとは表明しません。
+Windowsはsource版を含めて公開対応範囲外です。部分的に動くことを根拠としたbest-effort対応は
+[ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しました。Windows用setup、
+ACLによる機密file保護、PowerShell向けclient設定、native dependency・SQLite・CLI E2Eが
+すべて揃うまでは、Windows上で実際の機密情報を扱えるとは表明しません。
 
 2026-07-26に次をrelease candidate `0.1.0` で確認しました。
 
