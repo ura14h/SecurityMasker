@@ -97,6 +97,12 @@ supports_websockets = false
 
 modelはクライアント側で選択します。SecurityMaskerはrequestの `model` を変更しません。
 
+`model_provider` はTOMLのtop-level fieldです。既存 `config.toml` の末尾が
+`[shell_environment_policy.set]` などのtableである場合、その直後へ
+`model_provider = "securitymasker"` だけを追記すると直前のtable所属になり、Codexは既定providerを
+使い続けます。top-level fieldは最初の `[table]` より前へ置いてください。誤例と確認方法は
+[clientがproxyを通らない](troubleshooting.md#clientがproxyを通らない)を参照してください。
+
 ### Claude Code/Desktop
 
 Claudeを起動する環境へ設定します。

@@ -55,6 +55,46 @@ source版ではnetworkを使用できるsetup時に再取得・検証します�
 - Claude: Claudeを起動したprocess環境の `ANTHROPIC_BASE_URL` を確認。
 - `OPENAI_BASE_URL`、`OPENAI_API_BASE`、`ANTHROPIC_API_URL` が別の直通先を指していないか確認。
 
+Codexの `model_provider` はTOMLのtop-level fieldです。TOMLにはtableを閉じてtop-levelへ戻る
+記法がないため、既存fileの末尾へsnippetを追記すると、意図せず直前のtable所属になることが
+あります。例えば次は構文上有効ですが、`model_provider` は
+`shell_environment_policy.set.model_provider` になり、Codexのprovider選択には使われません。
+
+```toml
+[shell_environment_policy.set]
+EXAMPLE = "value"
+
+# 誤り：top-levelではなく、直前のtable所属になる
+model_provider = "securitymasker"
+```
+
+`model_provider` は最初のtable宣言より前へ置きます。
+
+```toml
+model_provider = "securitymasker"
+
+[shell_environment_policy.set]
+EXAMPLE = "value"
+
+[model_providers.securitymasker]
+name = "SecurityMasker Gateway"
+base_url = "http://127.0.0.1:4000"
+wire_api = "responses"
+requires_openai_auth = true
+supports_websockets = false
+```
+
+別の `CODEX_HOME` を使う場合は、Codex起動時と診断時の両方へ同じ値を指定します。
+
+```console
+CODEX_HOME=/path/to/codex-home codex doctor --json
+CODEX_HOME=/path/to/codex-home codex
+```
+
+診断結果の `config.load` で、読み込んだ `config.toml` のpathと
+`"model provider": "securitymasker"` を確認します。fileに文字列が存在するだけでは、top-level
+fieldとして有効になっている証明にはなりません。
+
 SecurityMaskerはクライアント設定を自動更新しません。Web会話、remote session、外部MCPなど
 localhostを通らない通信は保護できません。
 
