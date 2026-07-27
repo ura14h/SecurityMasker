@@ -122,6 +122,10 @@ securitymasker gateway [--mode chatgpt|claude] [--host HOST] [--port PORT] \
 CLI overrideはconfig fileを書き換えません。優先順位はCLI、config、組込み既定値です。
 ChatGPTとClaudeを同時に使う場合は、別config・別DB・別key・別portで2process起動します。
 
+foregroundで起動したGatewayは、クライアント操作を終えてから起動terminalで`Ctrl+C`を1回
+入力し、shellのpromptが戻るまで待って終了します。background processには`SIGTERM`を送ります。
+通常の終了で応答しない場合を除き、`SIGKILL`やterminalの強制終了は使用しないでください。
+
 次の省略形も同じ意味です。
 
 ```console

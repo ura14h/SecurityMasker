@@ -74,6 +74,13 @@ python3 securitymasker.py doctor
 クライアントが本当にこのbase URLへ向いている場合だけ通信が保護されます。通常のWeb版ChatGPT、
 remote session、外部MCPなど、localhost Gatewayを通らない通信は対象外です。
 
+## Gatewayを終了する
+
+クライアントでの操作を終えてから、Gatewayを起動したterminalで`Ctrl+C`を1回入力し、
+shellのpromptが戻るまで待ちます。2つのmodeを別processで起動している場合は、それぞれ終了します。
+background processには`SIGTERM`を送り、通常の終了で応答しない場合を除いて強制終了しないで
+ください。
+
 ## binary版
 
 one-file版も同じコマンドと隣接ファイルを使います。

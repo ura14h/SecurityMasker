@@ -118,6 +118,16 @@ python3 securitymasker.py doctor --require-ready
 `doctor` はconfig、辞書、key、port、NER、client設定、Gateway readinessをread-onlyで検査し、
 実providerへrequestを送りません。
 
+## 6. Gatewayを終了する
+
+通常はクライアントでの操作を終えてから、Gatewayを起動したterminalへ戻り、`Ctrl+C`を1回
+入力します。shutdown処理が終わってshellのpromptが戻るまで待ってください。ChatGPT用と
+Claude用を別processで起動している場合は、それぞれのterminalで終了します。
+
+バックグラウンドで起動した場合は、そのGateway processへ`SIGTERM`を送ります。通常の終了で
+応答しない場合を除き、`SIGKILL`やterminalの強制終了は使用しないでください。Gatewayの終了後も
+client設定は残るため、次に利用するときは同じconfigでGatewayを再起動します。
+
 ## 両方を同時に使う
 
 同じ辞書を共有しても構いませんが、config、state directory、DB、key、portはmodeごとに分けます。
