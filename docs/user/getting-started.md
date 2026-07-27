@@ -1,5 +1,7 @@
 # 導入ガイド
 
+全commandとoptionは[CLIリファレンス](cli-reference.md)を参照してください。
+
 ## 1. 展開する
 
 source版は Python 3.11 以上を使います。

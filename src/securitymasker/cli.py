@@ -210,8 +210,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="target directory (default: beside the executable or root script)",
     )
-    p_init_layout.add_argument("--mode", choices=["chatgpt", "claude"], default="chatgpt")
-    p_init_layout.add_argument("--port", type=int, default=4000)
+    p_init_layout.add_argument(
+        "--mode",
+        choices=["chatgpt", "claude"],
+        default="chatgpt",
+        help="product mode written to the new config (default: chatgpt)",
+    )
+    p_init_layout.add_argument(
+        "--port",
+        type=int,
+        default=4000,
+        help="loopback port written to the new config (default: 4000)",
+    )
     p_init_layout.set_defaults(func=cmd_init)
 
     p_config = sub.add_parser("config", help="config operations")
@@ -225,14 +235,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_config(p_list)
     p_list.set_defaults(func=cmd_entities_list)
     p_test = entities_sub.add_parser("test", help="mask a sample string and show detections")
-    p_test.add_argument("text")
+    p_test.add_argument("text", help="sample text to mask locally")
     add_config(p_test)
     p_test.set_defaults(func=cmd_entities_test)
 
     p_preview = sub.add_parser(
         "preview", help="mask text locally with the Gateway pipeline (no external send)"
     )
-    p_preview.add_argument("text")
+    p_preview.add_argument("text", help="text to mask locally; the original is not printed")
     add_config(p_preview)
     p_preview.set_defaults(func=cmd_preview)
 
@@ -254,19 +264,40 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_gateway = sub.add_parser("gateway", help="run the SecurityMasker proxy")
-    p_gateway.add_argument("--mode", choices=["chatgpt", "claude"], default=None)
     p_gateway.add_argument(
-        "--host", choices=["127.0.0.1", "::1", "localhost"], default=None
+        "--mode",
+        choices=["chatgpt", "claude"],
+        default=None,
+        help="temporarily override runtime.mode from the config",
     )
-    p_gateway.add_argument("--port", type=int, default=None)
+    p_gateway.add_argument(
+        "--host",
+        choices=["127.0.0.1", "::1", "localhost"],
+        default=None,
+        help="temporarily override the loopback host from the config",
+    )
+    p_gateway.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="temporarily override runtime.port from the config",
+    )
     add_config(p_gateway)
     p_gateway.set_defaults(func=cmd_gateway)
 
     p_models = sub.add_parser("models", help="model preparation (offline runtime)")
     models_sub = p_models.add_subparsers(dest="subaction", required=True)
     p_fetch = models_sub.add_parser("fetch", help="download + verify a pinned NER model")
-    p_fetch.add_argument("--model", default=None)
-    p_fetch.add_argument("--revision", default=None)
+    p_fetch.add_argument(
+        "--model",
+        default=None,
+        help="model ID (default: detectors.japanese_ner.model from the config)",
+    )
+    p_fetch.add_argument(
+        "--revision",
+        default=None,
+        help="model revision (default: detectors.japanese_ner.revision from the config)",
+    )
     p_fetch.add_argument("--allow-unverified", action="store_true",
                          help="DANGEROUS: accept a model with no artifact manifest")
     add_config(p_fetch)

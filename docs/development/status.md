@@ -15,6 +15,7 @@
 | 暗号化SQLite | done | keyed lookup、AES-GCM、wrong key/mode/tamper、restart、writer lease test |
 | 標準日本語NER | done（source） | setupへ固定model/digest検証、既定ON、silent downgrade禁止 |
 | preview / client snippet / read-only doctor | done | Gateway同一pipeline、設定非変更test |
+| 利用者向けCLIリファレンス | done | parserの全leaf command・optionとの網羅性test |
 | 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
 | one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
 | 旧Redis/Docker/CI/multi-tenant/run撤去 | done | 製品code/artifact削除、文書再編、回帰test |

@@ -90,6 +90,7 @@ file・image・audioのprotocol-native添付は、base64、URL、provider上のf
 ください。
 
 詳しい利用方法は [導入ガイド](docs/user/getting-started.md)、
+[CLIリファレンス](docs/user/cli-reference.md)、
 [設定リファレンス](docs/user/configuration.md)、
 [トラブルシューティング](docs/user/troubleshooting.md) を参照してください。
 設計は [architecture](docs/design/architecture.md)、開発状況は
