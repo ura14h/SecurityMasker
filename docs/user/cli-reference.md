@@ -131,6 +131,33 @@ Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の�
 2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
 ```
 
+### ログの読み方
+
+先頭はlocal時刻、`[info]`や`[warning]`はlevel、その次がevent名、残りが
+`key=value`形式のfieldです。1 processは一つのmodeだけを扱うため、各監査eventで自明な
+providerは表示しません。modeは起動時の`gateway_started`で確認します。
+
+| event | 意味 |
+|---|---|
+| `gateway_started` | `url`と`mode`でGatewayを起動した |
+| `request_masked` | providerへの転送前にrequestのマスク処理が完了した |
+| `request_blocked` | 安全検査、request形式、session解決などに失敗し、providerへ転送せず拒否した |
+| `store_error` | session DBのreadiness、request処理、response bindingのいずれかに失敗した |
+| `stream_error` | streaming responseの処理、取消し、response bindingのいずれかに失敗した |
+
+`request_masked`はマスク処理の完了を示し、providerからのresponse成功までは意味しません。
+`request_blocked`、`store_error`、`stream_error`の`reason`は、機密値ではなく固定された原因分類です。
+`sm_`で始まるwarningはblock箇所を示す補助eventで、直前の監査eventと同じ一件を表す場合があります。
+
+- `entity_count`: 現在のrequestでマスクした出現箇所数。同じ機密値が3箇所にあれば`3`であり、
+  ユニーク値数やsession累計ではありません。クライアントが過去の会話をrequestへ再掲すると、
+  過去の出現箇所もそのrequestで改めて数えます。
+- `session_fp`: 元のsession IDを表示せず、同じマスキングsessionのlogを照合するための短い
+  fingerprint。同じ値なら同じsessionとして処理されたことを示しますが、利用者IDや永続的な
+  一意IDとしては使用できません。
+- `mode`: `chatgpt`または`claude`。一つのprocessでは起動中に変わりません。
+- `url`: clientが接続するloopback URLです。
+
 foregroundで起動したGatewayは、クライアント操作を終えてから起動terminalで`Ctrl+C`を1回
 入力し、shellのpromptが戻るまで待って終了します。background processには`SIGTERM`を送ります。
 通常の終了で応答しない場合を除き、`SIGKILL`やterminalの強制終了は使用しないでください。

@@ -8,6 +8,8 @@ python3 securitymasker.py config-check
 ```
 
 `doctor --json` はticketへ貼れるsecret非表示の形式です。実providerには接続しません。
+Gatewayが表示するeventとfieldの意味は、CLIリファレンスの
+[ログの読み方](cli-reference.md#ログの読み方)を参照してください。
 
 ## configが見つからない
 
