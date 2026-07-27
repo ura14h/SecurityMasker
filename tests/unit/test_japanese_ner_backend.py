@@ -9,6 +9,8 @@ a runtime fault — each of which would otherwise look like a clean, empty run.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from securitymasker.detectors import japanese_ner as mod
@@ -17,6 +19,7 @@ from securitymasker.detectors.japanese_ner import (
     JapaneseNerDetector,
     UnsupportedLabelSchemaError,
     _coarse,
+    _suppress_cpu_device_notice,
 )
 from securitymasker.errors import DetectionError
 from securitymasker.models import ContextKind, EntityType
@@ -25,6 +28,20 @@ from securitymasker.normalization import normalize
 
 def ctx(text: str, kind: str = ContextKind.PROSE.value) -> DetectionContext:
     return DetectionContext(norm=normalize(text, "nfkc"), context_kind=kind)
+
+
+def test_only_redundant_cpu_device_notice_is_suppressed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger("transformers.pipelines.base")
+
+    with caplog.at_level(logging.WARNING, logger=logger.name), _suppress_cpu_device_notice():
+        logger.warning("Device set to use cpu")
+        logger.warning("model artifact is incomplete")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Device set to use cpu" not in messages
+    assert "model artifact is incomplete" in messages
 
 
 class _StubPipeline:

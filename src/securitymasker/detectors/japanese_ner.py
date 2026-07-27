@@ -29,6 +29,9 @@ ways that are silent:
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from securitymasker.detectors.base import DetectionContext
@@ -69,6 +72,28 @@ _IGNORED_LABELS = frozenset({"O", "EVT", "PRD", "イベント名", "製品名", 
 _PERSON_CONTEXT = (
     "氏名", "名前", "契約者", "申込者", "担当者", "代表者", "連絡先", "お客様", "患者", "従業員", "さん", "様",
 )
+
+_TRANSFORMERS_PIPELINE_LOGGER = "transformers.pipelines.base"
+_CPU_DEVICE_NOTICE = "Device set to use cpu"
+
+
+class _CpuDeviceNoticeFilter(logging.Filter):
+    """既定CPU選択の通知だけを除外し、実際のmodel警告は残す。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage() != _CPU_DEVICE_NOTICE
+
+
+@contextmanager
+def _suppress_cpu_device_notice() -> Iterator[None]:
+    """Transformers pipeline生成中の冗長なCPU通知だけを一時抑制する。"""
+    logger = logging.getLogger(_TRANSFORMERS_PIPELINE_LOGGER)
+    notice_filter = _CpuDeviceNoticeFilter()
+    logger.addFilter(notice_filter)
+    try:
+        yield
+    finally:
+        logger.removeFilter(notice_filter)
 
 
 def _coarse(label: str) -> str:
@@ -211,13 +236,16 @@ class JapaneseNerDetector:
                 weights = AutoModelForTokenClassification.from_pretrained(
                     source, use_safetensors=True, **load_kwargs
                 )
-            self._pipeline = pipeline(
-                "token-classification",
-                model=weights,
-                tokenizer=tokenizer,
-                aggregation_strategy="simple",
-                device=-1,
-            )
+            # Transformers 4.57は意図どおりのCPU指定までwarningとして表示する。
+            # その一文だけを抑制し、model破損などの実警告は利用者へ残す。
+            with _suppress_cpu_device_notice():
+                self._pipeline = pipeline(
+                    "token-classification",
+                    model=weights,
+                    tokenizer=tokenizer,
+                    aggregation_strategy="simple",
+                    device=-1,
+                )
         except Exception as exc:  # noqa: BLE001 - model missing/corrupt/incompatible
             self._pipeline = None
             if required:
