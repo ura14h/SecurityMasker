@@ -36,8 +36,8 @@ def _runtime() -> GatewayRuntime:
         leak_scanners=[build_secret_detector()],
     )
     return GatewayRuntime(engine, InMemorySessionStore(),
-                          openai_upstream="http://oai.test",
-                          anthropic_upstream="http://anthropic.test",
+                          openai_upstream="http://127.0.0.1:48001",
+                          anthropic_upstream="http://127.0.0.1:48002",
                           product_mode="chatgpt")
 
 
@@ -129,7 +129,7 @@ async def test_internal_session_header_not_forwarded(app_and_calls) -> None:
     assert len(calls) == 1
     fwd = {k.lower() for k in calls[0]["headers"]}
     assert "x-securitymasker-session-id" not in fwd
-    assert calls[0]["url"].startswith("http://oai.test")  # correct upstream
+    assert calls[0]["url"].startswith("http://127.0.0.1:48001")  # correct upstream
 
 
 @pytest.mark.asyncio
@@ -227,8 +227,8 @@ async def test_oversized_field_fails_closed(monkeypatch) -> None:
                     ReplacementProfile.PROSE_IDENTIFIER.value, RestorePolicy.LITERAL.value)],
         name="user")])
     rt = GatewayRuntime(engine, InMemorySessionStore(),
-                        openai_upstream="http://oai.test",
-                        anthropic_upstream="http://anthropic.test",
+                        openai_upstream="http://127.0.0.1:48001",
+                        anthropic_upstream="http://127.0.0.1:48002",
                         product_mode="chatgpt")
     app = gwapp.create_app(rt)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:

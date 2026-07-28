@@ -38,8 +38,8 @@ def _runtime(product_mode: str = "chatgpt") -> GatewayRuntime:
         ],
     })
     return GatewayRuntime(build_engine(config), InMemorySessionStore(),
-                          openai_upstream="http://oai.test",
-                          anthropic_upstream="http://anthropic.test",
+                          openai_upstream="http://127.0.0.1:48001",
+                          anthropic_upstream="http://127.0.0.1:48002",
                           product_mode=product_mode)
 
 

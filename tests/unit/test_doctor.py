@@ -79,6 +79,7 @@ def test_removed_flat_config_is_rejected(tmp_path: Path) -> None:
     [
         "ftp://provider.invalid",
         "http://provider.invalid",
+        "https://provider.invalid",
         "https://user:password@provider.invalid",
     ],
 )

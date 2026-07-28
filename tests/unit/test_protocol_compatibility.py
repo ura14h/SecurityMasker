@@ -40,8 +40,8 @@ def _claude_runtime() -> GatewayRuntime:
     return GatewayRuntime(
         _engine(),
         InMemorySessionStore(),
-        openai_upstream="http://openai.invalid",
-        anthropic_upstream="http://anthropic.invalid",
+        openai_upstream="http://127.0.0.1:48001",
+        anthropic_upstream="http://127.0.0.1:48002",
         product_mode="claude",
     )
 
@@ -192,6 +192,6 @@ async def test_claude_models_and_head_root_are_mode_local(
     assert models.status_code == 200
     assert len(calls) == 1
     url, forwarded_headers = calls[0]
-    assert url == "http://anthropic.invalid/v1/models"
+    assert url == "http://127.0.0.1:48002/v1/models"
     assert forwarded_headers["x-api-key"] == "synthetic-auth-value"
     assert forwarded_headers["anthropic-version"] == "2023-06-01"

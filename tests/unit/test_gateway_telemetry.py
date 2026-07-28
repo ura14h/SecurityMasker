@@ -64,8 +64,8 @@ def _runtime(
     return GatewayRuntime(
         engine,
         store or InMemorySessionStore(),
-        openai_upstream="http://up.test",
-        anthropic_upstream="http://up.test",
+        openai_upstream="http://127.0.0.1:48001",
+        anthropic_upstream="http://127.0.0.1:48002",
         product_mode="chatgpt",
         telemetry=telemetry,
     )

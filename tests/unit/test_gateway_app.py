@@ -35,7 +35,8 @@ def _runtime() -> GatewayRuntime:
                                   ReplacementProfile.HOSTNAME.value, LITERAL, 150)], name="host"),
     ])
     return GatewayRuntime(engine, InMemorySessionStore(),
-                          openai_upstream="http://up.test", anthropic_upstream="http://up.test",
+                          openai_upstream="http://127.0.0.1:48001",
+                          anthropic_upstream="http://127.0.0.1:48002",
                           product_mode="chatgpt")
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 from securitymasker.config import (
     SecurityMaskerConfig,
@@ -20,6 +21,48 @@ from securitymasker.sessions.store import SessionStore
 DEFAULT_OPENAI_UPSTREAM = "https://chatgpt.com/backend-api/codex"
 DEFAULT_ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
 PRODUCT_MODES = frozenset({"chatgpt", "claude"})
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def validate_upstream_url(value: str, *, provider: str) -> str:
+    """providerの公式endpointまたはloopbackだけをupstreamとして受理する。
+
+    環境変数で任意のHTTPS hostへ差し替えられると、認証headerを誤った接続先へ
+    転送し得る。local integration test用のloopbackは許可するが、その他のhostは
+    HTTPSであっても起動前に拒否する。
+    """
+    expected_by_provider = {
+        "openai": DEFAULT_OPENAI_UPSTREAM,
+        "anthropic": DEFAULT_ANTHROPIC_UPSTREAM,
+    }
+    expected = expected_by_provider.get(provider)
+    if expected is None:
+        raise ConfigError("unknown upstream provider")
+
+    try:
+        parts = urlsplit(value)
+        # ``parts.port``は範囲外・非数値portでValueErrorを送出する。
+        _ = parts.port
+    except ValueError:
+        raise ConfigError(f"{provider} upstream has an invalid port") from None
+
+    if parts.scheme not in {"http", "https"}:
+        raise ConfigError(f"{provider} upstream scheme must be http or https")
+    if not parts.hostname:
+        raise ConfigError(f"{provider} upstream must include a host")
+    if parts.username or parts.password:
+        raise ConfigError(f"{provider} upstream must not contain credentials")
+    if parts.query or parts.fragment:
+        raise ConfigError(f"{provider} upstream must not contain a query or fragment")
+
+    normalized = value.rstrip("/")
+    if normalized == expected:
+        return normalized
+    if parts.hostname in _LOOPBACK_HOSTS:
+        return normalized
+    raise ConfigError(
+        f"{provider} upstream must be the official endpoint or a loopback test endpoint"
+    )
 
 
 def _build_store(
@@ -56,8 +99,12 @@ class GatewayRuntime:
             )
         self.engine = engine
         self.store = store
-        self.openai_upstream = openai_upstream.rstrip("/")
-        self.anthropic_upstream = anthropic_upstream.rstrip("/")
+        self.openai_upstream = validate_upstream_url(
+            openai_upstream, provider="openai"
+        )
+        self.anthropic_upstream = validate_upstream_url(
+            anthropic_upstream, provider="anthropic"
+        )
         self.product_mode = product_mode
         self.telemetry = telemetry or GatewayTelemetry()
 
@@ -86,15 +133,23 @@ class GatewayRuntime:
             )
         if engine is None:
             engine = build_engine(config)
+        openai_upstream = validate_upstream_url(
+            os.environ.get(
+                "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
+            ),
+            provider="openai",
+        )
+        anthropic_upstream = validate_upstream_url(
+            os.environ.get(
+                "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
+            ),
+            provider="anthropic",
+        )
         store = _build_store(config, product_mode=product_mode)
         return cls(
             engine,
             store,
-            openai_upstream=os.environ.get(
-                "SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM
-            ),
-            anthropic_upstream=os.environ.get(
-                "SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM
-            ),
+            openai_upstream=openai_upstream,
+            anthropic_upstream=anthropic_upstream,
             product_mode=product_mode,
         )

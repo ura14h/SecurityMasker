@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 
 class Status(str, Enum):
@@ -315,29 +314,28 @@ async def check_store_probe(store: Any) -> CheckResult:
 
 
 def check_upstreams(environ: dict[str, str]) -> CheckResult:
-    """構文だけを検証し、doctorからproviderへは接続しない。"""
+    """構文と接続先allowlistを検証し、doctorからproviderへは接続しない。"""
+    from securitymasker.errors import ConfigError
     from securitymasker.gateway.runtime import (
         DEFAULT_ANTHROPIC_UPSTREAM,
         DEFAULT_OPENAI_UPSTREAM,
+        validate_upstream_url,
     )
 
     problems = []
-    for name, default in (("SECURITYMASKER_OPENAI_UPSTREAM", DEFAULT_OPENAI_UPSTREAM),
-                          ("SECURITYMASKER_ANTHROPIC_UPSTREAM", DEFAULT_ANTHROPIC_UPSTREAM)):
+    for name, provider, default in (
+        ("SECURITYMASKER_OPENAI_UPSTREAM", "openai", DEFAULT_OPENAI_UPSTREAM),
+        ("SECURITYMASKER_ANTHROPIC_UPSTREAM", "anthropic", DEFAULT_ANTHROPIC_UPSTREAM),
+    ):
         url = environ.get(name, default)
-        parts = urlsplit(url)
-        if parts.scheme not in ("http", "https"):
-            problems.append(f"{name}: scheme must be http/https")
-        elif not parts.hostname:
-            problems.append(f"{name}: no host")
-        elif parts.username or parts.password:
-            # Never echo the URL itself here: it contains the credential.
-            problems.append(f"{name}: contains embedded credentials — remove them")
-        elif parts.scheme == "http" and parts.hostname not in ("127.0.0.1", "localhost", "::1"):
-            problems.append(f"{name}: plaintext http to a non-loopback host")
+        try:
+            validate_upstream_url(url, provider=provider)
+        except ConfigError as exc:
+            # validatorはURLを再表示しない。環境変数名だけを付けて安全に報告する。
+            problems.append(f"{name}: {exc}")
     if problems:
         return _fail("upstreams", "; ".join(problems))
-    return _ok("upstreams", "scheme/host valid (not contacted)")
+    return _ok("upstreams", "official provider or loopback endpoint (not contacted)")
 
 
 def check_gateway_ready(gateway: str, *, required: bool = False) -> CheckResult:

@@ -20,8 +20,8 @@ def _runtime(mode: str) -> GatewayRuntime:
     return GatewayRuntime(
         MaskingEngine([]),
         InMemorySessionStore(),
-        openai_upstream="http://openai.invalid",
-        anthropic_upstream="http://anthropic.invalid",
+        openai_upstream="http://127.0.0.1:48001",
+        anthropic_upstream="http://127.0.0.1:48002",
         product_mode=mode,
     )
 
@@ -76,9 +76,9 @@ async def test_mode_exposes_only_its_provider_route(
     assert allowed_response.status_code == 200
     assert len(forwarded) == 1
     if mode == "chatgpt":
-        assert forwarded[0] == "http://openai.invalid/responses"
+        assert forwarded[0] == "http://127.0.0.1:48001/responses"
     else:
-        assert forwarded[0] == "http://anthropic.invalid/v1/messages"
+        assert forwarded[0] == "http://127.0.0.1:48002/v1/messages"
 
 
 @pytest.mark.asyncio
@@ -108,7 +108,33 @@ async def test_claude_mode_models_use_only_anthropic_upstream(
 
     assert supported.status_code == 200
     assert openai_variant.status_code == 404
-    assert calls == ["http://anthropic.invalid/v1/models"]
+    assert calls == ["http://127.0.0.1:48002/v1/models"]
+
+
+@pytest.mark.parametrize(
+    ("provider", "url"),
+    [
+        ("openai", "https://provider.invalid"),
+        ("anthropic", "http://provider.invalid"),
+        ("openai", "https://user:password@chatgpt.com/backend-api/codex"),
+    ],
+)
+def test_runtime_rejects_unsafe_upstream_before_use(
+    provider: str, url: str
+) -> None:
+    kwargs = {
+        "openai_upstream": "https://chatgpt.com/backend-api/codex",
+        "anthropic_upstream": "https://api.anthropic.com",
+    }
+    kwargs[f"{provider}_upstream"] = url
+
+    with pytest.raises(ConfigError, match=rf"{provider} upstream"):
+        GatewayRuntime(
+            MaskingEngine([]),
+            InMemorySessionStore(),
+            product_mode="chatgpt",
+            **kwargs,
+        )
 
 
 def test_combined_product_mode_is_rejected() -> None:
