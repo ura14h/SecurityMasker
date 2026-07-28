@@ -33,6 +33,11 @@ Windowsはsource版を含めて公開対応範囲外です。部分的に動く�
 ACLによる機密file保護、PowerShell向けclient設定、native dependency・SQLite・CLI E2Eが
 すべて揃うまでは、Windows上で実際の機密情報を扱えるとは表明しません。
 
+Windows上のLinux-hosted deploymentについては、
+[ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) に従い、WSL2直接実行と
+Docker Composeを同一gateで比較します。これは検証方針だけの採用であり、どちらも未実装・未検証、
+公開対応範囲外です。
+
 2026-07-26に次をrelease candidate `0.1.0` で確認しました。
 
 - macOS arm64のPython 3.11ではcleanな一時展開から

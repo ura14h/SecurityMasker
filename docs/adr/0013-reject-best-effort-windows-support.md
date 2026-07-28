@@ -3,6 +3,7 @@
 - 状態：却下
 - 日付：2026-07-28
 - 関連：[ADR-0012](0012-renew-package-design.md)（パッケージ設計）、
+  [ADR-0015](0015-evaluate-windows-linux-hosted-deployments.md)（Linux-hosted検証方針）、
   [development status](../development/status.md)、
   [compatibility](../development/compatibility.md)
 - 対象：Windows向けsource版、one-file版、Windows上のCodex / Claude Code連携
@@ -46,7 +47,9 @@ file path aliasもWindows driveとUNCの形状を扱い、SQLite writer leaseに
 - ACLは利用者が`icacls`等で設定する前提とし、製品は警告だけを出す。
 - 実client E2Eを省略し、unit testとmock protocol testだけで互換性を判断する。
 - unsigned one-fileを`experimental`として配布し、起動できた環境だけを事例として扱う。
-- WSL上で動くことをWindows native対応の代替とする。
+- WSL上で動くことをWindows native対応の証拠とする。WSL2直接実行とDocker Composeを
+  Windows向けLinux-hosted deploymentとして別途検証する方針は
+  [ADR-0015](0015-evaluate-windows-linux-hosted-deployments.md)で扱う。
 
 ## 判断
 
@@ -177,4 +180,5 @@ source版が対応済みでも、これらが未完ならone-file版は非対応
 - **unsigned binaryをexperimental配布する**：保護境界の未検証をlabelで補えず、one-file特有の
   展開・終了・antivirus挙動も未確認なため却下。
 - **WSLをWindows native対応とみなす**：filesystem permission、process、client設定、Desktop連携が
-  Windows nativeと異なり、native利用者の安全性を証明しないため却下。
+  Windows nativeと異なり、native利用者の安全性を証明しないため却下。WSL2 / Docker Composeを
+  独立したLinux-hosted targetとして比較することは却下対象ではなく、ADR-0015へ分離する。

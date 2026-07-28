@@ -25,6 +25,10 @@ Windows向けコード分岐が存在することは、製品対応を意味し�
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しています。安全性を
 Windows実機で確認するまでは、実際の機密情報を扱う用途に使用しないでください。
 
+WSL2直接実行とDocker Desktop上のDocker Composeは、Windows nativeとは別のLinux-hosted候補として
+[ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) で同一gateによる比較を
+決定しました。現時点ではtechnical spikeの対象であり、どちらも対応環境ではありません。
+
 ## 検証済み範囲
 
 - OpenAI Responses: buffered/streaming text、tool argument、response binding、
