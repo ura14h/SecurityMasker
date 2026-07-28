@@ -12,6 +12,7 @@ entities:
     replacement_profile: prose_identifier
     restore_policy: literal
     priority: 100
+    case_sensitive: true
 
   - id: example_person
     type: PERSON
@@ -22,10 +23,12 @@ entities:
     replacement_profile: prose_identifier
     restore_policy: literal
     priority: 100
+    case_sensitive: true
 
 patterns:
   - id: example_ticket
     pattern: 'INC-[0-9]{6}'
+    group: 0
     type: CUSTOMER_ID
     replacement_profile: numeric
     restore_policy: literal

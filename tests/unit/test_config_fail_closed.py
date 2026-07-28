@@ -170,6 +170,24 @@ def test_preserve_aliases_toggles_detector() -> None:
     assert "existing_alias" not in names_off
 
 
+def test_secret_and_format_detector_flags_are_independent() -> None:
+    defaults = SecurityMaskerConfig.model_validate({"version": 1})
+    disabled = SecurityMaskerConfig.model_validate(
+        {
+            "version": 1,
+            "enable_secret_detector": False,
+            "enable_format_detectors": False,
+        }
+    )
+
+    default_names = {getattr(d, "name", "") for d in build_detectors(defaults)}
+    disabled_names = {getattr(d, "name", "") for d in build_detectors(disabled)}
+
+    assert {"secret_patterns", "formats"} <= default_names
+    assert "secret_patterns" not in disabled_names
+    assert "formats" not in disabled_names
+
+
 # --- required detector that cannot load fails startup ------------------------
 
 

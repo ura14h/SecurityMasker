@@ -25,7 +25,7 @@ ChatGPT backend または Anthropic API
 1. 元の機密情報を外部へ送らない。
 2. session間で秘密やaliasを混ぜない。
 3. JSON、code、tool call、patch、shell commandの構造を壊さない。
-4. 不明・障害時はfail-closedとする。重大secretは常にblockする。
+4. 不明・障害時はfail-closedとする。検出した重大secretはfail-openしない。
 5. protocol adapterとmasking coreを分離する。
 6. 未知field/event/headerは、leak guard通過後だけ可能な限り透過する。
 7. log、error、audit、telemetryへ原文、鍵、平文対応表を残さない。
