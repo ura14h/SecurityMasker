@@ -58,7 +58,12 @@ removable driveは使用しません。
 ```console
 mkdir -p ~/src
 cd ~/src
-git clone <repository-url> SecurityMasker
+```
+
+公開repositoryの `Code` メニューから得たURLでWSL内へcloneするか、Releaseのsource archiveを
+`~/src/SecurityMasker`へ展開します。Windows側で展開して`/mnt/c`からコピーする方法は使いません。
+
+```console
 cd SecurityMasker
 ./scripts/setup
 . .venv/bin/activate

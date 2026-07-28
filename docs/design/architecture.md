@@ -74,6 +74,8 @@ SecurityMaskerへのrouting設定が必要です。
 ## 設計判断
 
 現行パッケージ方針は [ADR-0012](../adr/0012-renew-package-design.md)、
+config schemaをv1とする判断は
+[ADR-0016](../adr/0016-reset-config-schema-version.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
 model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、

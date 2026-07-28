@@ -21,15 +21,30 @@ one-file binaryはmacOS arm64での技術検証に留まり、現時点では公
 詳細は[互換性](docs/development/compatibility.md)と
 [開発・リリース状況](docs/development/status.md)を参照してください。
 
-## 5分で試す（source版）
+## 目的別の入口
+
+- まず動かす: [導入ガイド](docs/user/getting-started.md)
+- commandや設定を確認する:
+  [CLIリファレンス](docs/user/cli-reference.md)、
+  [設定リファレンス](docs/user/configuration.md)
+- sourceの処理を追う: [コード読解ガイド](docs/development/codebase-guide.md)
+- 安全性と対応範囲を確認する:
+  [Security policy](SECURITY.md)、
+  [脅威モデル](docs/design/threat-model.md)、
+  [開発・リリース状況](docs/development/status.md)
+
+文書全体の地図と、現行文書・履歴文書の区別は[文書案内](docs/README.md)にあります。
+
+## source版を試す
 
 必要条件は Python 3.11 以上です。setup時だけ依存パッケージと固定済み日本語NER modelを
 取得します。`python3` が古くても `python3.12` または `python3.11` がPATHにあれば自動選択
 します。prompt処理中にmodelをdownloadすることはありません。
 
+公開repositoryの `Code` メニューからcloneするか、Releaseのsource archiveを展開し、
+repository rootで次を実行します。
+
 ```console
-git clone <repository-url> SecurityMasker
-cd SecurityMasker
 ./scripts/setup
 . .venv/bin/activate
 python3 securitymasker.py init --mode chatgpt --port 4000
@@ -112,14 +127,11 @@ file・image・audioのprotocol-native添付は、base64、URL、provider上のf
 展開された場合はマスク対象です。添付を使う必要がある場合は、必要な部分をtextとして入力して
 ください。
 
-詳しい利用方法は [導入ガイド](docs/user/getting-started.md)、
-[Windows番外編](docs/user/getting-started-windows.md)、
-[CLIリファレンス](docs/user/cli-reference.md)、
-[設定リファレンス](docs/user/configuration.md)、
-[トラブルシューティング](docs/user/troubleshooting.md) を参照してください。
-設計は [architecture](docs/design/architecture.md)、開発状況は
-[status](docs/development/status.md)、最新の大規模変更は
-[ADR-0012](docs/adr/0012-renew-package-design.md) にあります。
+詳しい利用方法、設計、開発文書、ADRは[文書案内](docs/README.md)から辿れます。
+現行の正は[architecture](docs/design/architecture.md)と
+[status](docs/development/status.md)です。config schemaをv1とした最新判断は
+[ADR-0016](docs/adr/0016-reset-config-schema-version.md)、現行package設計は
+[ADR-0012](docs/adr/0012-renew-package-design.md)にあります。
 
 ## 開発
 
@@ -131,4 +143,5 @@ file・image・audioのprotocol-native添付は、base64、URL、provider上のf
 ```
 
 実providerへテストpromptを送りません。開発手順と必須gateは
-[testing](docs/development/testing.md) を参照してください。
+[testing](docs/development/testing.md)、実装を読む順序は
+[コード読解ガイド](docs/development/codebase-guide.md)を参照してください。

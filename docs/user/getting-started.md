@@ -10,9 +10,10 @@ Windowsはsetup、Windows ACLによる機密file保護、PowerShell向けclient�
 Windows 11上のWSL2またはDocker DesktopでLinux版を評価する未サポートの手順は、
 [Windows番外編](getting-started-windows.md)へ分離しています。
 
+公開repositoryの `Code` メニューからcloneするか、Releaseのsource archiveを展開します。
+以降はrepository rootで実行します。
+
 ```console
-git clone <repository-url> SecurityMasker
-cd SecurityMasker
 ./scripts/setup
 . .venv/bin/activate
 ```
