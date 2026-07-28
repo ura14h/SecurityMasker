@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- SecurityMasker自身のlicenseをApache-2.0からMITへ変更
+- project license、setup時に取得する第三者component、binary再配布条件の境界を明文化
+
 ## 0.1.0 — 2026-07-26
 
 SecurityMaskerの最初のsource release候補です。

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Reversible pseudonymization security boundary (transparent proxy for Codex / Claude Code)."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "Apache-2.0"
+license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SecurityMasker maintainers" }]
 keywords = ["pii", "masking", "security", "llm-proxy", "pseudonymization"]

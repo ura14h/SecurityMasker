@@ -2,7 +2,7 @@ FROM docker.io/library/python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b047
 
 LABEL org.opencontainers.image.title="SecurityMasker Windows Linux-hosted spike"
 LABEL org.opencontainers.image.version="0.1.0"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -20,7 +20,7 @@ RUN python3 -m pip install -r requirements.lock \
     && python3 -m pip install --no-deps -r requirements-torch-cpu.lock \
     && python3 -m pip install --no-deps -r requirements-ner.lock
 
-COPY pyproject.toml README.md LICENSE securitymasker.py ./
+COPY pyproject.toml README.md LICENSE THIRD_PARTY_NOTICES.md securitymasker.py ./
 COPY src ./src
 RUN python3 -m pip install --no-build-isolation --no-deps . \
     && groupadd --gid 10001 securitymasker \

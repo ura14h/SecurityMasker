@@ -133,6 +133,14 @@ file・image・audioのprotocol-native添付は、base64、URL、provider上のf
 [ADR-0016](docs/adr/0016-reset-config-schema-version.md)、現行package設計は
 [ADR-0012](docs/adr/0012-renew-package-design.md)にあります。
 
+## License
+
+SecurityMasker自身のsource codeと文書は[MIT License](LICENSE)で提供します。setupが取得する
+Python packageと日本語NER modelはそれぞれのlicenseに従い、SecurityMaskerのMIT Licenseへ
+変更されません。出典、source releaseとbinary releaseの違いは
+[Third-party notices](THIRD_PARTY_NOTICES.md)と
+[model licenses](docs/model-licenses.md)を参照してください。
+
 ## 開発
 
 利用者向けsetupとtest setupは分離しています。

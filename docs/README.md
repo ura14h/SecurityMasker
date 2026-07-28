@@ -21,6 +21,7 @@ SecurityMaskerの文書は、利用、設計、実装の読解、release判断�
 - [コード読解ガイド](development/codebase-guide.md) — sourceの入口、module対応、testの辿り方
 - [日本固有PII](design/japanese-pii.md) — 日本向け決定論的detector
 - [日本語NER modelの出典](model-licenses.md) — 固定modelと再配布判断
+- [Third-party notices](../THIRD_PARTY_NOTICES.md) — project licenseとの境界、配布形態
 
 ## 現在の状態とrelease
 
@@ -41,6 +42,7 @@ ADRは採用時点の比較、却下理由、後続判断による変更を残�
 - [ADR-0014](adr/0014-reject-non-python-port-for-current-product.md) — Python実装の維持
 - [ADR-0015](adr/0015-evaluate-windows-linux-hosted-deployments.md) — Windows上のLinux-hosted評価
 - [ADR-0016](adr/0016-reset-config-schema-version.md) — 現行configをschema v1とする
+- [ADR-0017](adr/0017-use-mit-license.md) — project自身をMIT Licenseで公開する
 
 個別の暗号、alias、protocol、model供給網の判断は[`docs/adr/`](adr/)にあります。各ADR冒頭の
 状態と置換先を確認してください。
