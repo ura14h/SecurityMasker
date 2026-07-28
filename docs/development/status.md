@@ -18,7 +18,8 @@
 | 利用者向けCLIリファレンス | done | parserの全leaf command・optionとの網羅性test |
 | 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
 | one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
-| 旧Redis/Docker/CI/multi-tenant/run撤去 | done | 製品code/artifact削除、文書再編、回帰test |
+| 旧Redis/Docker標準経路/CI/multi-tenant/run撤去 | done | 旧製品code/artifact削除、文書再編、回帰test |
+| Windows Linux-hosted spike | partial | WSL2番外編とmode別Compose artifactを追加。Windows実機gate未完 |
 | source release candidate | done（macOS/Linux arm64） | 0.1.0、clean setup、全gate、展開artifact、再現可能checksumを検証 |
 | binary公開 | blocked | model再配布判断、署名、対象OS別clean-machine gateが未完 |
 
@@ -35,7 +36,8 @@ ACLによる機密file保護、PowerShell向けclient設定、native dependency�
 
 Windows上のLinux-hosted deploymentについては、
 [ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) に従い、WSL2直接実行と
-Docker Composeを同一gateで比較します。これは検証方針だけの採用であり、どちらも未実装・未検証、
+Docker Composeを同一gateで比較します。WSL2番外編とCodex / Claude別Compose artifactは
+technical spikeとして追加しましたが、Windows実機の共通gateは未完であり、どちらも
 公開対応範囲外です。
 
 2026-07-26に次をrelease candidate `0.1.0` で確認しました。

@@ -14,7 +14,8 @@ source版の検証済み環境は、macOS arm64（Python 3.11 / 3.12）とLinux 
 
 **Windowsは現在非対応です。** Windows用setup、機密fileのACL検査、PowerShell向けclient設定、
 native E2Eが未実装・未検証です。コードの一部にWindows分岐はありますが、安全性を保証できない
-ため、Windows上で実際の機密情報を扱わないでください。
+ため、Windows nativeを対応済みとは扱いません。WSL2またはDocker DesktopでLinux版を評価する
+未サポートの手順と免責は[Windows番外編](docs/user/getting-started-windows.md)にあります。
 
 one-file binaryはmacOS arm64での技術検証に留まり、現時点では公開配布対象ではありません。
 詳細は[互換性](docs/development/compatibility.md)と
@@ -112,6 +113,7 @@ file・image・audioのprotocol-native添付は、base64、URL、provider上のf
 ください。
 
 詳しい利用方法は [導入ガイド](docs/user/getting-started.md)、
+[Windows番外編](docs/user/getting-started-windows.md)、
 [CLIリファレンス](docs/user/cli-reference.md)、
 [設定リファレンス](docs/user/configuration.md)、
 [トラブルシューティング](docs/user/troubleshooting.md) を参照してください。

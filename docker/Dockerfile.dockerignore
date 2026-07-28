@@ -1,0 +1,10 @@
+**
+!LICENSE
+!README.md
+!pyproject.toml
+!securitymasker.py
+!requirements.lock
+!requirements-ner.lock
+!requirements-torch-cpu.lock
+!src
+!src/**

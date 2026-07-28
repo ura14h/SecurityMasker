@@ -23,11 +23,14 @@ Windows向けコード分岐が存在することは、製品対応を意味し�
 検査しておらず、POSIX用setup scriptとClaude向け`export`形式の設定案内もそのままでは使えません。
 部分的に動く状態をbest-effort対応として公開する方針は
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しています。安全性を
-Windows実機で確認するまでは、実際の機密情報を扱う用途に使用しないでください。
+Windows実機で確認するまでは、実データ利用の安全性を保証しません。利用者が評価する場合のriskと
+免責は[Windows番外編](../user/getting-started-windows.md)を参照してください。
 
 WSL2直接実行とDocker Desktop上のDocker Composeは、Windows nativeとは別のLinux-hosted候補として
 [ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) で同一gateによる比較を
-決定しました。現時点ではtechnical spikeの対象であり、どちらも対応環境ではありません。
+決定しました。[Windows番外編](../user/getting-started-windows.md)とmode別Compose artifactは
+technical spikeとして用意していますが、Windows実機gateは未完であり、どちらも対応環境では
+ありません。
 
 ## 検証済み範囲
 

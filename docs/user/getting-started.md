@@ -6,7 +6,9 @@
 
 source版はPython 3.11以上を使います。検証済み環境はmacOS arm64とLinux arm64です。
 Windowsはsetup、Windows ACLによる機密file保護、PowerShell向けclient設定、native E2Eが
-未実装・未検証のため、現在は対応対象外です。Windows上で実際の機密情報を扱わないでください。
+未実装・未検証のため、現在は対応対象外です。Windows上の実データ利用について安全性を保証しません。
+Windows 11上のWSL2またはDocker DesktopでLinux版を評価する未サポートの手順は、
+[Windows番外編](getting-started-windows.md)へ分離しています。
 
 ```console
 git clone <repository-url> SecurityMasker
