@@ -226,7 +226,7 @@ class JapaneseNerDetector:
                     source, use_safetensors=True, **load_kwargs
                 )
             else:
-                # legacy/source互換経路。v2標準設定は上の固定model以外を拒否する。
+                # 内部test経路。標準設定は上の固定model以外を拒否する。
                 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
                 tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)  # type: ignore[no-untyped-call]

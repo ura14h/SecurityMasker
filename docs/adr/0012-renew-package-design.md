@@ -1,5 +1,9 @@
 # ADR-0012 — ローカルデスクトップ向けパッケージ設計の再構築
 
+> config schemaの番号と旧形式の互換性については、後続の
+> [ADR-0016](0016-reset-config-schema-version.md)が本ADRを置き換える。本書のv2表記は
+> 採用時点の履歴として残す。
+
 - 状態：採用
 - 日付：2026-07-26
 - 変更対象：現行の両provider同居Gateway、`securitymasker run` 中心の起動、memory/Redis store、

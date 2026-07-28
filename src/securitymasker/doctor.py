@@ -122,8 +122,8 @@ def check_config(path: str | None) -> tuple[CheckResult, Any, Any]:
         # An unreadable path is an ordinary operator mistake and must produce a
         # diagnostic, not a traceback. errno text names the path only.
         return _fail("config", f"cannot read {path!r}: {exc.strerror}"), None, None
-    if config.version != 2:
-        return _fail("config", "version 2 configuration is required"), config, None
+    if config.version != 1:
+        return _fail("config", "version 1 configuration is required"), config, None
     try:
         # Env references, detector models, regex safety — the startup checks.
         engine = build_engine(config)
@@ -214,12 +214,12 @@ def check_session_ttls(config: Any) -> CheckResult:
                               f"absolute={config.defaults.session_absolute_ttl}")
 
 
-def check_v2_layout(config: Any) -> tuple[CheckResult, CheckResult]:
-    """v2の辞書・state/keyを、書込みを行わず確認する。"""
-    if config is None or config.version != 2:
+def check_layout(config: Any) -> tuple[CheckResult, CheckResult]:
+    """辞書・state/keyを、書込みを行わず確認する。"""
+    if config is None or config.version != 1:
         return (
-            _skip("dictionary", "version 2 config not loaded"),
-            _skip("state", "version 2 config not loaded"),
+            _skip("dictionary", "version 1 config not loaded"),
+            _skip("state", "version 1 config not loaded"),
         )
     dictionary = config.dictionary
     if dictionary is None or not Path(dictionary).is_file():
@@ -248,7 +248,7 @@ def check_v2_layout(config: Any) -> tuple[CheckResult, CheckResult]:
 def check_runtime_port(config: Any) -> CheckResult:
     """configured portを一時bindして利用可否を確認する。listenはしない。"""
     if config is None or config.runtime is None:
-        return _skip("port", "version 2 runtime not loaded")
+        return _skip("port", "version 1 runtime not loaded")
     import errno
     import socket
 
@@ -450,8 +450,8 @@ def _run_checks(
     yield check_fail_mode(config)
     yield check_session_ttls(config)
 
-    if config is not None and config.version == 2:
-        dictionary_result, state_result = check_v2_layout(config)
+    if config is not None and config.version == 1:
+        dictionary_result, state_result = check_layout(config)
         yield dictionary_result
         yield state_result
         yield check_runtime_port(config)
@@ -460,7 +460,7 @@ def _run_checks(
         yield check_gateway_ready(gateway_target, required=require_ready)
         yield check_client_proxy_config(environ, config)
         return
-    yield _skip("runtime", "version 2 configuration was not available")
+    yield _skip("runtime", "version 1 configuration was not available")
 
 
 _SYMBOL: dict[Status, str] = {

@@ -1,5 +1,8 @@
 # ADR-0014 — 現行製品のPython以外への全面移植を採用しない
 
+> config schemaの番号については、後続の
+> [ADR-0016](0016-reset-config-schema-version.md)が本ADRのv2維持という記述を置き換える。
+
 - 状態：却下
 - 日付：2026-07-28
 - 検討対象：Rust、Go、Node.js／TypeScript、C++、.NET、JVMへの全面移植、

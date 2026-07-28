@@ -1,6 +1,6 @@
 """永続client設定を使う実Codex／Claude Code CLIのE2E検証。
 
-通常運用と同じv2 config/dict/state/key、`client-config`と同じ生成元の永続設定を使う。
+通常運用と同じconfig/dict/state/key、`client-config`と同じ生成元の永続設定を使う。
 
 **Egress.** Pointing a CLI at a local URL is a routing choice, not a containment
 boundary: both tools have update checks, analytics and crash reporting that do not

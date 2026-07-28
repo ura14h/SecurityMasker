@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from securitymasker.bootstrap import initialize_layout
 from securitymasker.config import (
     SecurityMaskerConfig,
     build_detectors,
@@ -24,29 +25,40 @@ from securitymasker.errors import ConfigError, DetectionError
 
 
 def _load_raw(tmp_path, text: str):
-    p = tmp_path / "c.yaml"
-    p.write_text(text, encoding="utf-8")
-    return load_config(p)
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49161)
+    layout.dictionary.write_text(text, encoding="utf-8")
+    return load_config(layout.config)
+
+
+def _load_modified_config(tmp_path, old: str, new: str):
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49161)
+    text = layout.config.read_text(encoding="utf-8").replace(old, new)
+    layout.config.write_text(text, encoding="utf-8")
+    return load_config(layout.config)
 
 
 def test_unknown_top_level_field_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 1\nentitiez: []\n")
+        _load_modified_config(tmp_path, "version: 1", "version: 1\nentitiez: []")
 
 
 def test_unknown_defaults_field_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 1\ndefaults:\n  fail_mdoe: closed\n")
+        _load_modified_config(tmp_path, "fail_mode: closed", "fail_mdoe: closed")
 
 
 def test_unsupported_version_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 999\n")
+        _load_modified_config(tmp_path, "version: 1", "version: 999")
 
 
 def test_invalid_duration_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 1\ndefaults:\n  session_idle_ttl: 4 fortnights\n")
+        _load_modified_config(
+            tmp_path,
+            "session_idle_ttl: 4h",
+            "session_idle_ttl: 4 fortnights",
+        )
 
 
 def test_regex_group_out_of_range_rejected(tmp_path) -> None:
@@ -101,7 +113,7 @@ def test_out_of_range_priority_rejected(tmp_path) -> None:
 
 def test_out_of_range_min_score_rejected(tmp_path) -> None:
     with pytest.raises(ConfigError):
-        _load_raw(tmp_path, "version: 1\nner:\n  min_score: 4.2\n")
+        _load_modified_config(tmp_path, "min_score: 0.7", "min_score: 4.2")
 
 
 def test_parse_duration_units() -> None:

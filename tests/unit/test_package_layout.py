@@ -44,7 +44,7 @@ patterns: []
     _write_private(
         config,
         f"""
-version: 2
+version: 1
 runtime:
   mode: {mode}
   host: 127.0.0.1
@@ -65,7 +65,7 @@ detectors:
     return config
 
 
-def test_v2_loads_one_dictionary_and_resolves_paths_from_config(
+def test_loads_one_dictionary_and_resolves_paths_from_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     layout = tmp_path / "layout"
@@ -77,7 +77,7 @@ def test_v2_loads_one_dictionary_and_resolves_paths_from_config(
 
     config = load_config(config_path)
 
-    assert config.version == 2
+    assert config.version == 1
     assert config.runtime is not None
     assert config.runtime.mode == "claude"
     assert config.runtime.port == 4001
@@ -85,6 +85,24 @@ def test_v2_loads_one_dictionary_and_resolves_paths_from_config(
     assert config.state is not None
     assert config.state.database == (layout / "securitymasker.state/securitymasker.db").resolve()
     assert [entry.id for entry in config.entities] == ["example_person"]
+
+
+def test_removed_flat_schema_is_not_inferred_from_version_one(tmp_path: Path) -> None:
+    config_path = tmp_path / "removed-flat.config"
+    _write_private(
+        config_path,
+        """
+version: 1
+entities:
+  - id: old
+    type: PERSON
+    values: ["合成人物"]
+    replacement_profile: prose_identifier
+""",
+    )
+
+    with pytest.raises(ConfigError):
+        load_config(config_path)
 
 
 def test_discovery_does_not_read_current_working_directory(
@@ -125,7 +143,7 @@ def test_discovery_priority_is_cli_then_environment_then_adjacent(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
 @pytest.mark.parametrize("target", ["config", "dictionary", "key"])
-def test_v2_refuses_files_readable_by_other_users(tmp_path: Path, target: str) -> None:
+def test_refuses_files_readable_by_other_users(tmp_path: Path, target: str) -> None:
     config_path = _write_layout(tmp_path)
     paths = {
         "config": config_path,
@@ -139,7 +157,7 @@ def test_v2_refuses_files_readable_by_other_users(tmp_path: Path, target: str) -
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
-def test_v2_refuses_state_directory_accessible_by_other_users(tmp_path: Path) -> None:
+def test_refuses_state_directory_accessible_by_other_users(tmp_path: Path) -> None:
     config_path = _write_layout(tmp_path)
     (tmp_path / "securitymasker.state").chmod(0o755)
 
@@ -147,7 +165,7 @@ def test_v2_refuses_state_directory_accessible_by_other_users(tmp_path: Path) ->
         load_config(config_path)
 
 
-def test_v2_refuses_unknown_config_and_dictionary_fields(tmp_path: Path) -> None:
+def test_refuses_unknown_config_and_dictionary_fields(tmp_path: Path) -> None:
     config_path = _write_layout(tmp_path)
     with config_path.open("a", encoding="utf-8") as stream:
         stream.write("unknown: true\n")

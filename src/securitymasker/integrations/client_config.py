@@ -1,4 +1,4 @@
-"""v2 configから永続client設定snippetを生成する。"""
+"""configから永続client設定snippetを生成する。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from securitymasker.integrations.codex import codex_config_toml
 def gateway_url(config: SecurityMaskerConfig) -> str:
     """設定されたloopback Gateway URLを返す。"""
     if config.runtime is None:
-        raise ConfigError("client configuration requires a version 2 runtime section")
+        raise ConfigError("client configuration requires a version 1 runtime section")
     host = config.runtime.host
     rendered_host = f"[{host}]" if ":" in host else host
     return f"http://{rendered_host}:{config.runtime.port}"
@@ -22,7 +22,7 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
     この関数は文字列を生成するだけで、利用者の設定fileや環境を変更しない。
     """
     if config.runtime is None:
-        raise ConfigError("client configuration requires a version 2 runtime section")
+        raise ConfigError("client configuration requires a version 1 runtime section")
     base_url = gateway_url(config)
     if config.runtime.mode == "chatgpt":
         return (
@@ -40,7 +40,7 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
 def client_environment(config: SecurityMaskerConfig) -> dict[str, str]:
     """永続設定を環境変数で受け取るmodeの値を返す。"""
     if config.runtime is None:
-        raise ConfigError("client configuration requires a version 2 runtime section")
+        raise ConfigError("client configuration requires a version 1 runtime section")
     if config.runtime.mode == "claude":
         return {"ANTHROPIC_BASE_URL": gateway_url(config)}
     return {}

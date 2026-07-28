@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from securitymasker.bootstrap import initialize_layout
 from securitymasker.config import load_config
 from securitymasker.detectors.base import DetectionContext
 from securitymasker.detectors.safety import UnsafeRegexError, check_regex_safety
@@ -48,28 +49,28 @@ def test_ordinary_patterns_pass(pattern) -> None:
 
 
 def test_unsafe_pattern_fails_config_load(tmp_path) -> None:
-    p = tmp_path / "c.yaml"
-    p.write_text(
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49162)
+    layout.dictionary.write_text(
         "version: 1\n"
         "patterns:\n"
         "  - id: bad\n    pattern: '(a+)+$'\n    type: HOSTNAME\n"
         "    replacement_profile: hostname\n",
         encoding="utf-8")
     with pytest.raises(ConfigError):
-        load_config(p)
+        load_config(layout.config)
 
 
 def test_unsafe_pattern_error_does_not_leak_the_pattern(tmp_path) -> None:
     secret = "Zettai-Himitsu-9876"
-    p = tmp_path / "c.yaml"
-    p.write_text(
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49162)
+    layout.dictionary.write_text(
         "version: 1\n"
         "patterns:\n"
         f"  - id: bad\n    pattern: '({secret}+)+'\n    type: HOSTNAME\n"
         "    replacement_profile: hostname\n",
         encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
-        load_config(p)
+        load_config(layout.config)
     assert secret not in str(exc.value)
 
 

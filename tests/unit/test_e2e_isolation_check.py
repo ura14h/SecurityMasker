@@ -145,7 +145,7 @@ def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None
     assert attempts == []
 
 
-def test_e2e_uses_persistent_v2_client_settings_not_the_run_wrapper() -> None:
+def test_e2e_uses_persistent_client_settings_not_the_run_wrapper() -> None:
     source = MODULE.read_text(encoding="utf-8")
     assert "initialize_layout" in source
     assert "client_setup_snippet" in source

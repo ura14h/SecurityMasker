@@ -6,13 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from securitymasker.bootstrap import initialize_layout
 from securitymasker.config import build_engine, load_config
 from securitymasker.errors import ConfigError
 
 VALID = """
 version: 1
-defaults:
-  normalization: nfkc
 entities:
   - id: org
     type: ORGANIZATION
@@ -28,9 +27,9 @@ patterns:
 
 
 def _write(tmp_path: Path, text: str) -> Path:
-    p = tmp_path / "config.yaml"
-    p.write_text(text, encoding="utf-8")
-    return p
+    layout = initialize_layout(tmp_path, mode="chatgpt", port=49160)
+    layout.dictionary.write_text(text, encoding="utf-8")
+    return layout.config
 
 
 def test_load_valid_config(tmp_path: Path) -> None:

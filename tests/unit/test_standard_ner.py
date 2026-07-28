@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from securitymasker.config import (
-    JapaneseNerV2Config,
+    JapaneseNerConfig,
     SecurityMaskerConfig,
     build_engine,
 )
@@ -30,8 +30,8 @@ def _missing_model() -> None:
     pytest.skip(message)
 
 
-def test_v2_standard_ner_is_enabled_and_pinned() -> None:
-    configured = JapaneseNerV2Config()
+def test_standard_ner_is_enabled_and_pinned() -> None:
+    configured = JapaneseNerConfig()
     assert configured.enabled is True
     assert configured.model == ADOPTED_MODEL
     assert configured.revision == ADOPTED_REVISION
@@ -39,11 +39,11 @@ def test_v2_standard_ner_is_enabled_and_pinned() -> None:
     assert configured.allow_unverified_model is False
 
 
-def test_v2_enabled_ner_cannot_silently_drop_or_replace_the_standard_model() -> None:
+def test_enabled_ner_cannot_silently_drop_or_replace_the_standard_model() -> None:
     with pytest.raises(ValidationError):
-        JapaneseNerV2Config.model_validate({"enabled": True, "model": None})
+        JapaneseNerConfig.model_validate({"enabled": True, "model": None})
     with pytest.raises(ValidationError):
-        JapaneseNerV2Config.model_validate(
+        JapaneseNerConfig.model_validate(
             {
                 "enabled": True,
                 "model": "someone/unverified-model",
@@ -51,7 +51,7 @@ def test_v2_enabled_ner_cannot_silently_drop_or_replace_the_standard_model() -> 
             }
         )
     with pytest.raises(ValidationError):
-        JapaneseNerV2Config.model_validate({"allow_unverified_model": True})
+        JapaneseNerConfig.model_validate({"allow_unverified_model": True})
 
 
 @pytest.fixture(scope="module")

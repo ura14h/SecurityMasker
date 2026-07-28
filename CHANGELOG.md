@@ -11,7 +11,7 @@ SecurityMaskerの最初のsource release候補です。
 - buffered/streaming responseとtool argumentの復元
 - user dictionary、secret/format/日本固有detector、標準日本語NERの多層検出
 - session固有aliasと、AES-256-GCMで封緘したSQLite永続store
-- strict v2 `securitymasker.config`、単一 `securitymasker.dict`、安全な `init`
+- strict v1 `securitymasker.config`、単一 `securitymasker.dict`、安全な `init`
 - 外部送信しない `preview`、手動client設定生成、read-only `doctor`
 - source setup、local release gate、PyInstaller one-file build/test script
 

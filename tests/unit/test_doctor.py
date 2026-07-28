@@ -1,4 +1,4 @@
-"""version 2のローカル運用だけを対象にしたdoctor検証。"""
+"""現行設定のローカル運用だけを対象にしたdoctor検証。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def test_python_311_is_supported_but_310_is_not() -> None:
     assert "3.11+ is required" in unsupported.detail
 
 
-def test_v2_layout_passes_without_creating_database(tmp_path: Path) -> None:
+def test_layout_passes_without_creating_database(tmp_path: Path) -> None:
     layout = _layout(tmp_path)
 
     results, artifacts = doctor.run_checks_with_engine(
@@ -37,7 +37,7 @@ def test_v2_layout_passes_without_creating_database(tmp_path: Path) -> None:
     assert by_name["state"].status is Status.OK
     assert by_name["crypto"].status is Status.OK
     assert by_name["gateway"].status is Status.WARN
-    assert artifacts.config.version == 2
+    assert artifacts.config.version == 1
     assert artifacts.engine is not None
     assert not (layout.state_directory / "securitymasker.db").exists()
 
@@ -61,15 +61,16 @@ def test_missing_dictionary_fails_without_echoing_values(tmp_path: Path) -> None
     assert secret not in rendered
 
 
-def test_non_v2_config_is_rejected(tmp_path: Path) -> None:
-    path = tmp_path / "legacy.yaml"
+def test_removed_flat_config_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "removed-flat.config"
     path.write_text("version: 1\n", encoding="utf-8")
+    path.chmod(0o600)
 
     result, config, engine = doctor.check_config(str(path))
 
     assert result.status is Status.FAIL
-    assert "version 2" in result.detail
-    assert config.version == 1
+    assert "invalid" in result.detail
+    assert config is None
     assert engine is None
 
 

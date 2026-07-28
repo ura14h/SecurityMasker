@@ -4,7 +4,7 @@
 相対pathはconfigのdirectoryを基準に解決します。
 
 ```yaml
-version: 2
+version: 1
 
 runtime:
   mode: chatgpt
@@ -99,7 +99,7 @@ API key、password、秘密鍵は平文の `values` より `value_from_env` を�
 ## detector
 
 ユーザー辞書を最優先に、秘密/形式/日本固有の決定論的検出器、日本語NERを重ねます。
-標準v2設定では日本語NERを有効にし、固定model以外や未検証modelへの切替を許可しません。
+標準設定では日本語NERを有効にし、固定model以外や未検証modelへの切替を許可しません。
 
 `fail_mode: closed` が標準です。`open` は一部のfuzzy detector障害を許容しますが、重大secretと
 最終leak guardは常にblockします。通常利用では変更しないでください。

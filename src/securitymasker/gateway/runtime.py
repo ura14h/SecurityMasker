@@ -25,9 +25,9 @@ PRODUCT_MODES = frozenset({"chatgpt", "claude"})
 def _build_store(
     config: SecurityMaskerConfig, *, product_mode: str
 ) -> SQLiteSessionStore:
-    """v2 configが明示するDB/keyから標準SQLite storeだけを構築する。"""
-    if config.version != 2 or config.state is None or config.runtime is None:
-        raise ConfigError("Gateway requires version 2 runtime and state settings")
+    """configが明示するDB/keyから標準SQLite storeだけを構築する。"""
+    if config.version != 1 or config.state is None or config.runtime is None:
+        raise ConfigError("Gateway requires version 1 runtime and state settings")
     return SQLiteSessionStore(
         config.state.database,
         config.state.key,
@@ -68,14 +68,14 @@ class GatewayRuntime:
         engine: MaskingEngine | None = None,
         config: SecurityMaskerConfig | None = None,
     ) -> GatewayRuntime:
-        """必須のv2 configからfail-closedでruntimeを構築する。"""
+        """必須configからfail-closedでruntimeを構築する。"""
         config_path = os.environ.get("SECURITYMASKER_CONFIG")
         if not config_path:
             raise ConfigError("SECURITYMASKER_CONFIG is required")
         if config is None:
             config = load_config(config_path)
-        if config.version != 2 or config.runtime is None or config.state is None:
-            raise ConfigError("Gateway requires a version 2 securitymasker.config")
+        if config.version != 1 or config.runtime is None or config.state is None:
+            raise ConfigError("Gateway requires a version 1 securitymasker.config")
 
         product_mode = os.environ.get(
             "SECURITYMASKER_PRODUCT_MODE", config.runtime.mode

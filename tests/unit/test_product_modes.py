@@ -116,7 +116,7 @@ def test_combined_product_mode_is_rejected() -> None:
         _runtime("both")
 
 
-def test_runtime_uses_v2_config_mode_and_allows_cli_environment_override(
+def test_runtime_uses_config_mode_and_allows_cli_environment_override(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

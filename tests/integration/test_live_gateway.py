@@ -1,4 +1,4 @@
-"""v2 configのmode別Gatewayをmock upstream相手に検証するlive test。"""
+"""現行configのmode別Gatewayをmock upstream相手に検証するlive test。"""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def _stop(*processes: subprocess.Popen[bytes]) -> None:
 
 @pytest.fixture(scope="module")
 def gateways(tmp_path_factory: pytest.TempPathFactory):
-    root = tmp_path_factory.mktemp("livegw-v2")
+    root = tmp_path_factory.mktemp("livegw")
     record = root / "record.jsonl"
     mock_port, chatgpt_port, claude_port = _port(), _port(), _port()
     chatgpt = initialize_layout(

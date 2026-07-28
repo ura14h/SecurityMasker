@@ -44,8 +44,8 @@ def _load(path: str | None) -> SecurityMaskerConfig:
 
 def cmd_config_check(args: argparse.Namespace) -> int:
     config = _load(args.config)
-    if config.version != 2:
-        raise ConfigError("version 2 securitymasker.config is required")
+    if config.version != 1:
+        raise ConfigError("version 1 securitymasker.config is required")
     runtime = (
         f", mode={config.runtime.mode}, port={config.runtime.port}"
         if config.runtime is not None
@@ -182,8 +182,8 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     os.environ["SECURITYMASKER_CONFIG"] = str(config_path)
 
     runtime = config.runtime
-    if config.version != 2 or runtime is None:
-        raise ConfigError("Gateway requires a version 2 securitymasker.config")
+    if config.version != 1 or runtime is None:
+        raise ConfigError("Gateway requires a version 1 securitymasker.config")
     host = args.host or runtime.host
     port = args.port or runtime.port
     product_mode = args.mode or runtime.mode

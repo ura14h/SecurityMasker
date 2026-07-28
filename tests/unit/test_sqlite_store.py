@@ -279,7 +279,7 @@ async def test_sqlite_write_failure_is_fail_closed(
 
 
 @pytest.mark.asyncio
-async def test_v2_runtime_creates_database_on_first_gateway_start(
+async def test_runtime_creates_database_on_first_gateway_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

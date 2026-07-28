@@ -41,8 +41,6 @@ from securitymasker.tool_trust import ToolTrustPolicy
 
 _VALID_PROFILES = {p.value for p in ReplacementProfile}
 _VALID_POLICIES = {p.value for p in RestorePolicy}
-_LEGACY_SCHEMA_VERSION = 1
-_CURRENT_SCHEMA_VERSION = 2
 _PRIVATE_FILE_BITS = stat.S_IRWXG | stat.S_IRWXO
 
 _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
@@ -216,7 +214,7 @@ class JapanesePiiConfig(BaseModel):
 
 
 class NerConfig(BaseModel):
-    """HF日本語NER設定。v1互換設定では``model``未指定時に無効。"""
+    """HF日本語NERの内部設定。``model``未指定時は無効。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -278,7 +276,7 @@ class DetectorToggle(BaseModel):
     enabled: bool = True
 
 
-class JapaneseNerV2Config(NerConfig):
+class JapaneseNerConfig(NerConfig):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
@@ -290,7 +288,7 @@ class JapaneseNerV2Config(NerConfig):
     allow_unverified_model: Literal[False] = False
 
     @model_validator(mode="after")
-    def _enabled_requires_standard_model(self) -> JapaneseNerV2Config:
+    def _enabled_requires_standard_model(self) -> JapaneseNerConfig:
         if self.enabled and (self.model is None or self.revision is None):
             raise ValueError(
                 "enabled japanese_ner requires the pinned standard model and revision"
@@ -298,13 +296,13 @@ class JapaneseNerV2Config(NerConfig):
         return self
 
 
-class DetectorsV2Config(BaseModel):
+class DetectorsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     secrets: DetectorToggle = Field(default_factory=DetectorToggle)
     formats: DetectorToggle = Field(default_factory=DetectorToggle)
     japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
-    japanese_ner: JapaneseNerV2Config = Field(default_factory=JapaneseNerV2Config)
+    japanese_ner: JapaneseNerConfig = Field(default_factory=JapaneseNerConfig)
 
 
 class UserDictionaryConfig(BaseModel):
@@ -325,17 +323,17 @@ class UserDictionaryConfig(BaseModel):
         return self
 
 
-class SecurityMaskerConfigV2(BaseModel):
-    """利用者向け``securitymasker.config`` v2 schema。"""
+class SecurityMaskerFileConfig(BaseModel):
+    """利用者向け``securitymasker.config`` schema。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[2]
+    version: Literal[1]
     runtime: RuntimeConfig
     state: StateConfig
     dictionary: str
     defaults: Defaults = Field(default_factory=Defaults)
-    detectors: DetectorsV2Config = Field(default_factory=DetectorsV2Config)
+    detectors: DetectorsConfig = Field(default_factory=DetectorsConfig)
     tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
 
     @field_validator("dictionary")
@@ -347,9 +345,11 @@ class SecurityMaskerConfigV2(BaseModel):
 
 
 class SecurityMaskerConfig(BaseModel):
+    """検出pipelineとruntimeが共有する解決済みの内部設定。"""
+
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 1
+    version: Literal[1] = 1
     defaults: Defaults = Field(default_factory=Defaults)
     entities: list[EntityConfig] = Field(default_factory=list)
     patterns: list[RegexConfig] = Field(default_factory=list)
@@ -358,21 +358,11 @@ class SecurityMaskerConfig(BaseModel):
     japanese_pii: JapanesePiiConfig = Field(default_factory=JapanesePiiConfig)
     ner: NerConfig = Field(default_factory=NerConfig)
     tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
-    # v2だけが持つ利用者向けruntime/state metadata。engine側は従来fieldを使う。
+    # file schemaから解決した利用者向けruntime/state metadata。
     runtime: RuntimeConfig | None = None
     state: StateConfig | None = None
     dictionary: Path | None = None
     config_path: Path | None = Field(default=None, exclude=True, repr=False)
-
-    @field_validator("version")
-    @classmethod
-    def _version(cls, v: int) -> int:
-        if v not in {_LEGACY_SCHEMA_VERSION, _CURRENT_SCHEMA_VERSION}:
-            raise ValueError(
-                f"unsupported config version {v}; this build understands versions "
-                f"{_LEGACY_SCHEMA_VERSION} and {_CURRENT_SCHEMA_VERSION}"
-            )
-        return v
 
     @model_validator(mode="after")
     def _unique_ids(self) -> SecurityMaskerConfig:
@@ -446,7 +436,7 @@ def _read_yaml_mapping(path: Path, *, label: str) -> dict[str, Any]:
 
 
 def _require_private_file(path: Path, *, label: str) -> None:
-    """user以外が読めるv2機密fileを拒否する。"""
+    """user以外が読める機密fileを拒否する。"""
     try:
         file_stat = path.stat()
     except OSError as exc:
@@ -487,16 +477,16 @@ def _resolve_from_config(config_path: Path, configured_path: str | Path) -> Path
     return candidate.resolve()
 
 
-def _load_v2(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
+def _load_current(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
     _require_private_file(config_path, label="config")
     try:
-        v2 = SecurityMaskerConfigV2.model_validate(raw)
+        file_config = SecurityMaskerFileConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(
             f"invalid config {config_path.name}: {_safe_validation_message(exc)}"
         ) from None
 
-    dictionary_path = _resolve_from_config(config_path, v2.dictionary)
+    dictionary_path = _resolve_from_config(config_path, file_config.dictionary)
     _require_private_file(dictionary_path, label="dictionary")
     dictionary_raw = _read_yaml_mapping(dictionary_path, label="dictionary")
     try:
@@ -507,8 +497,8 @@ def _load_v2(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
         ) from None
 
     state = StateConfig(
-        database=_resolve_from_config(config_path, v2.state.database),
-        key=_resolve_from_config(config_path, v2.state.key),
+        database=_resolve_from_config(config_path, file_config.state.database),
+        key=_resolve_from_config(config_path, file_config.state.key),
     )
     _require_private_directory(state.key.parent, label="state directory")
     if state.database.parent != state.key.parent:
@@ -524,26 +514,26 @@ def _load_v2(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
     if state.database.exists():
         _require_private_file(state.database, label="state database")
 
-    ner = v2.detectors.japanese_ner.model_copy(
+    ner = file_config.detectors.japanese_ner.model_copy(
         update={
             "model": (
-                v2.detectors.japanese_ner.model
-                if v2.detectors.japanese_ner.enabled
+                file_config.detectors.japanese_ner.model
+                if file_config.detectors.japanese_ner.enabled
                 else None
             )
         }
     )
     return SecurityMaskerConfig(
-        version=2,
-        defaults=v2.defaults,
+        version=1,
+        defaults=file_config.defaults,
         entities=dictionary.entities,
         patterns=dictionary.patterns,
-        enable_secret_detector=v2.detectors.secrets.enabled,
-        enable_format_detectors=v2.detectors.formats.enabled,
-        japanese_pii=v2.detectors.japanese_pii,
+        enable_secret_detector=file_config.detectors.secrets.enabled,
+        enable_format_detectors=file_config.detectors.formats.enabled,
+        japanese_pii=file_config.detectors.japanese_pii,
         ner=NerConfig.model_validate(ner.model_dump(exclude={"enabled"})),
-        tool_trust=v2.tool_trust,
-        runtime=v2.runtime,
+        tool_trust=file_config.tool_trust,
+        runtime=file_config.runtime,
         state=state,
         dictionary=dictionary_path,
         config_path=config_path,
@@ -553,15 +543,7 @@ def _load_v2(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
 def load_config(path: str | Path) -> SecurityMaskerConfig:
     config_path = Path(path).expanduser().resolve()
     raw = _read_yaml_mapping(config_path, label="config")
-    if raw.get("version") == _CURRENT_SCHEMA_VERSION:
-        return _load_v2(config_path, raw)
-    try:
-        return SecurityMaskerConfig.model_validate(raw)
-    except ValidationError as exc:
-        # chained tracebackで入力値を再露出させないため`from exc`を使わない。
-        raise ConfigError(
-            f"invalid config {Path(path).name}: {_safe_validation_message(exc)}"
-        ) from None
+    return _load_current(config_path, raw)
 
 
 def _require_env_values(config: SecurityMaskerConfig) -> None:
