@@ -1,5 +1,8 @@
 # 設定リファレンス
 
+`securitymasker.config`と`securitymasker.dict`の全fieldを扱う仕様書です。会社名やproject名を
+追加するだけなら、先に[辞書のカスタマイズ](../guides/customize-dictionary.md)を参照してください。
+
 `securitymasker.config`はstrict YAMLです。未知fieldは誤記として拒否されます。相対pathはconfigの
 directoryを基準に解決します。CLI `--config`、`SECURITYMASKER_CONFIG`、実行ファイルに隣接する
 `securitymasker.config`の順で探索し、current working directoryや親directoryは探索しません。

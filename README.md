@@ -1,155 +1,158 @@
 # SecurityMasker
 
-SecurityMasker は、ローカルの Codex または Claude Code と外部サービスの間で動く、
-可逆マスキングプロキシです。送信前に機密情報をセッション固有の仮名へ置き換え、応答に含まれる
-仮名をローカルで元の値へ戻します。認証情報はクライアントから上流へ透過し、保存しません。
+SecurityMaskerは、CodexやClaude CodeなどのコーディングAIエージェントが外部LLMへ送る
+プロンプトから、機密情報を自分のPC内でマスクするGatewayです。検出した会社名、人名、project名
+などを会話ごとの仮名へ置き換え、回答が戻るとPC内で元の表記へ復元します。
 
-1プロセスは `chatgpt` または `claude` の一方だけを、loopback上の1ポートで扱います。
-両方を使う場合は、別config・別DB・別keyで2プロセス起動してください。
+検査を完了できない場合は、保護能力を下げて送信を続けず、その通信を止めます。ChatGPTや
+Claude Codeの認証情報は保存しません。
 
-## 対応環境
+```mermaid
+block
+  %% SecurityMaskerが機密情報をPC内でマスクし復元する流れ
+  %% 利用者の原文をローカルのSecurityMaskerが仮名へ置換し、外部LLMの回答に含まれる仮名をPC内の対応表で元の表記へ復元します。
+  columns 4
 
-source版の検証済み環境は、macOS arm64（Python 3.11 / 3.12）とLinux arm64
-（Python 3.12）です。その他のOS・architectureは検証済みの対応環境ではありません。
+  block:group1
+    columns 1
+    T1["利用者<br/>(ローカル入出力)"]
+    A["株式会社極秘技研の<br/>山田太郎が<br/>担当します"]
+    space
+    H["こんにちは!<br/>株式会社極秘技研の<br/>山田太郎さん。<br/>よろしくお願いします！"]
+  end
 
-**Windowsは現在非対応です。** Windows用setup、機密fileのACL検査、PowerShell向けclient設定、
-native E2Eが未実装・未検証です。コードの一部にWindows分岐はありますが、安全性を保証できない
-ため、Windows nativeを対応済みとは扱いません。WSL2またはDocker DesktopでLinux版を評価する
-未サポートの手順と免責は[Windows番外編](docs/user/getting-started-windows.md)にあります。
+  block:group2
+    columns 1
+    T2["Codex / Claude Code<br/>(ローカル実行)"]
+    B("入力された原文を<br/>設定したlocalhostの<br/>SecurityMaskerへ送信")
+    space
+    G("復元した文を<br/>そのまま出力")
+  end
 
-one-file binaryはmacOS arm64での技術検証に留まり、現時点では公開配布対象ではありません。
-詳細は[互換性](docs/development/compatibility.md)と
-[開発・リリース状況](docs/development/status.md)を参照してください。
+  block:group3
+    columns 1
+    T3["SecurityMasker<br/>(ローカル実行)"]
+    C("機密情報を検知し<br/>仮名へ置換して<br/>外部LLMへ送信")
+    X["(PC内の対応表)<br/>SM_ORG_A1B2C3D4E5F6 =<br/>株式会社極秘技研<br/>SM_PERSON_1A2B3C4D5E6F =<br/>山田太郎"]
+    F("外部LLMから受信し<br/>同じ対応表を使って<br/>元の表記へ復元")
+  end
 
-## 目的別の入口
+  block:group4
+    columns 1
+    T4["外部LLM<br/>(クラウド実行)"]
+    D["SM_ORG_A1B2C3D4E5F6の<br/>SM_PERSON_1A2B3C4D5E6Fが<br/>担当します"]
+    Y("<br/>仮名を含む文を<br/>外部LLMが推論<br/><br/>(元の表記は受け取らない)")
+    E["こんにちは!<br/>SM_ORG_A1B2C3D4E5F6の<br/>SM_PERSON_1A2B3C4D5E6Fさん。<br/>よろしくお願いします！"]
+  end
 
-- まず動かす: [導入ガイド](docs/user/getting-started.md)
-- commandや設定を確認する:
-  [CLIリファレンス](docs/user/cli-reference.md)、
-  [設定リファレンス](docs/user/configuration.md)
-- sourceの処理を追う: [コード読解ガイド](docs/development/codebase-guide.md)
-- 安全性と対応範囲を確認する:
-  [Security policy](SECURITY.md)、
-  [脅威モデル](docs/design/threat-model.md)、
-  [開発・リリース状況](docs/development/status.md)
+  A --> B
+  B --> C
+  C --> D
+  E --> F
+  F --> G
+  G --> H
 
-文書全体の地図と、現行文書・履歴文書の区別は[文書案内](docs/README.md)にあります。
+  C --> X
+  X --> F
 
-## source版を試す
+  D --> Y
+  Y --> E
 
-必要条件は Python 3.11 以上です。setup時だけ依存パッケージと固定済み日本語NER modelを
-取得します。`python3` が古くても `python3.12` または `python3.11` がPATHにあれば自動選択
-します。prompt処理中にmodelをdownloadすることはありません。
+  style group1 fill:#fafafa,stroke:#888,stroke-width:1px,color:#1f2328
+  style group2 fill:#fafafa,stroke:#888,stroke-width:1px,color:#1f2328
+  style group3 fill:#fafafa,stroke:#888,stroke-width:3px,color:#1f2328
+  style group4 fill:#fafafa,stroke:#888,stroke-width:1px,color:#1f2328
 
-公開repositoryの `Code` メニューからcloneするか、Releaseのsource archiveを展開し、
-repository rootで次を実行します。
+  style T1 fill:transparent,stroke:transparent,color:#1f2328
+  style T2 fill:transparent,stroke:transparent,color:#1f2328
+  style T3 fill:transparent,stroke:transparent,color:#1f2328
+  style T4 fill:transparent,stroke:transparent,color:#1f2328
+
+  style A fill:#fff,color:#1f2328;
+  style D fill:#fff,color:#1f2328;
+  style X fill:#fff,color:#1f2328;
+  style E fill:#fff,color:#1f2328;
+  style H fill:#fff,color:#1f2328;
+
+```
+
+利用者が入力した原文はPC内でマスクされ、外部LLMは仮名を含むプロンプトを受け取ります。外部LLMが
+回答で仮名をそのまま使った場合、SecurityMaskerがPC内で元の表記へ戻してクライアントへ返します。
+
+## 何を外部へ送り、何をPC内に残すか
+
+| PC内に残す | 外部LLMへ送る |
+|---|---|
+| 元の機密情報 | マスク済みの仮名 |
+| 仮名と原文の対応表 | 通常のプロンプト構造 |
+| 暗号化SQLiteとmaster key | clientが選んだmodel ID |
+| ユーザー辞書 | 対応providerの認証header |
+
+送信直前にrequest全体を再検査し、元の値が残っている場合や検査を完了できない場合は通信を
+blockします。未知の組織内用語を自動で100%推測することはできないため、重要語はユーザー辞書へ
+登録します。
+
+詳しい流れは[SecurityMaskerの仕組み](docs/concepts/how-it-works.md)、利用前の確認事項は
+[安全な使い方](docs/security/safe-use.md)を参照してください。
+
+## 利用できる環境
+
+現在はsource版を利用します。
+
+| 環境 | 状態 |
+|---|---|
+| macOS arm64、Python 3.11／3.12 | 検証済み |
+| Linux arm64、Python 3.12 | 検証済み |
+| Windows native | 非対応 |
+| one-file binary | 技術検証のみ。未公開 |
+
+Windows用のfile ACL、setup、client設定、native E2Eが揃うまでは、Windowsで実際の機密情報を
+扱わないでください。platformとclientの詳細は[対応環境](docs/reference/compatibility.md)にあります。
+
+## 合成データで試す
+
+初回setupでは固定済みPython packageと日本語NER modelを取得するため、ネットワーク接続と数GBの
+空き容量が必要です。通常利用中にmodelをdownloadすることはありません。
 
 ```console
 ./scripts/setup
 . .venv/bin/activate
 python3 securitymasker.py init --mode chatgpt --port 4000
 python3 securitymasker.py preview \
-  "株式会社極秘技研の山田太郎です。key=sk-abcdefghijklmnopqrstuvwxyz0"
+  "株式会社極秘技研の山田太郎が担当します"
 python3 securitymasker.py gateway
 ```
 
-`init` は実行ファイルの隣に次を作ります。既存ファイルは上書きしません。
+この例は合成データだけを使います。実データを入力する前に、client接続、辞書の調整、期待する
+結果、元へ戻す方法を[導入ガイド](docs/getting-started.md)で確認してください。
 
-```text
-SecurityMasker/
-├── securitymasker.py
-├── securitymasker.config
-├── securitymasker.dict
-└── securitymasker.state/
-    └── securitymasker.key
-```
+Claude Codeを使う場合は`--mode claude --port 4001`で初期化します。1 processは1 modeだけを扱い、
+両方を使う場合は別config、別DB、別key、別portで起動します。
 
-`securitymasker.db` は Gateway の初回起動時に作成されます。`securitymasker.dict` の合成例を
-自分の組織名・人名・project名へ置き換えてから通常利用してください。
+## 保護範囲の要点
 
-## クライアントを手動設定する
+- ユーザー辞書が、会社名、顧客名、project名などの組織固有語を最優先で検出します。
+- 決定論的detectorが、API key、秘密鍵、メール、電話、公的識別子などを検出します。
+- 固定済み日本語NERが、未登録の一般的な人名、組織名、地名を補完します。
+- JSON、code、shell command、patch、tool callの構造を保つ仮名を使います。
+- sessionとmodeをまたいで仮名や対応表を共有しません。
+- file、image、audioのprotocol-native添付は、内容を完全検査できないためblockします。
+- Web版ChatGPT、remote session、外部MCPなど、localhost Gatewayを通らない通信は保護しません。
 
-SecurityMasker は利用者の設定ファイルを自動変更しません。別terminalで次を実行し、表示された
-設定を適用します。
+## 次に読む
 
-```console
-python3 securitymasker.py client-config
-```
+- 初めて使う: [導入ガイド](docs/getting-started.md)
+- 組織固有語を登録する: [辞書のカスタマイズ](docs/guides/customize-dictionary.md)
+- 毎日の起動、backup、更新、復旧: [運用ガイド](docs/README.md#運用する)
+- commandと設定を調べる: [Reference](docs/README.md#仕様を調べる)
+- 安全性と設計を確認する: [Security文書](docs/README.md#安全性を確認する)
+- sourceを読む・開発する: [開発文書](docs/README.md#開発する)
 
-`chatgpt` modeでは、Codex CLIまたはCodex appが使用する `config.toml` にcustom providerを
-追加します。
-認証は `requires_openai_auth = true` によりクライアント自身の ChatGPT 認証を透過します。
-`claude` modeでは、Claude Code CLIまたはClaude Code Desktopを起動する環境へ
-`ANTHROPIC_BASE_URL=http://127.0.0.1:<port>` を設定します。
-
-設定後に Gateway の状態を確認してください。
-
-```console
-python3 securitymasker.py doctor
-```
-
-クライアントが本当にこのbase URLへ向いている場合だけ通信が保護されます。通常のWeb版ChatGPT、
-remote session、外部MCPなど、localhost Gatewayを通らない通信は対象外です。
-
-## Gatewayを終了する
-
-クライアントでの操作を終えてから、Gatewayを起動したterminalで`Ctrl+C`を1回入力し、
-shellのpromptが戻るまで待ちます。2つのmodeを別processで起動している場合は、それぞれ終了します。
-background processには`SIGTERM`を送り、通常の終了で応答しない場合を除いて強制終了しないで
-ください。
-
-## binary版
-
-one-file版も同じコマンドと隣接ファイルを使います。
-
-```console
-./securitymasker init --mode chatgpt --port 4000
-./securitymasker preview "確認したい合成テキスト"
-./securitymasker preview < prompt.txt
-./securitymasker gateway
-```
-
-現在は macOS arm64 で技術検証済みですが、署名・notarization、他OSのclean-machine検証、
-同梱NER weightの再配布確認が未完了です。このため、現時点の公開可能な経路はsource版です。
-
-## 保護層と限界
-
-- ユーザー辞書: 組織固有の人名、会社名、project名。最優先で検出します。
-- 決定論的検出: API key、秘密鍵、メール、電話、カード、公的識別子など。
-- 標準日本語NER: 辞書未登録の一般的な人名・組織名・地名を補完します。
-
-未知の組織内用語まで100%推測することはできません。重要語は必ず
-`securitymasker.dict` に登録し、`preview` で期待するmaskを確認してください。障害時は既定で
-fail-closedとなり、上流へ送りません。
-
-file・image・audioのprotocol-native添付は、base64、URL、provider上のfile IDを含めて内容を
-完全検査できないため、上流へ送らずblockします。local fileの内容が通常のprompt textとして
-展開された場合はマスク対象です。添付を使う必要がある場合は、必要な部分をtextとして入力して
-ください。
-
-詳しい利用方法、設計、開発文書、ADRは[文書案内](docs/README.md)から辿れます。
-現行の正は[architecture](docs/design/architecture.md)と
-[status](docs/development/status.md)です。config schemaをv1とした最新判断は
-[ADR-0016](docs/adr/0016-reset-config-schema-version.md)、現行package設計は
-[ADR-0012](docs/adr/0012-renew-package-design.md)にあります。
+文書全体は[文書案内](docs/README.md)から目的別に辿れます。
 
 ## License
 
 SecurityMasker自身のsource codeと文書は[MIT License](LICENSE)で提供します。setupが取得する
-Python packageと日本語NER modelはそれぞれのlicenseに従い、SecurityMaskerのMIT Licenseへ
-変更されません。出典、source releaseとbinary releaseの違いは
-[Third-party notices](THIRD_PARTY_NOTICES.md)と
-[model licenses](docs/model-licenses.md)を参照してください。
-
-## 開発
-
-利用者向けsetupとtest setupは分離しています。
-
-```console
-./scripts/test-setup
-./scripts/release-check
-```
-
-実providerへテストpromptを送りません。開発手順と必須gateは
-[testing](docs/development/testing.md)、実装を読む順序は
-[コード読解ガイド](docs/development/codebase-guide.md)を参照してください。
+Python packageと日本語NER modelは、それぞれのlicenseに従います。出典とsource／binary配布の
+違いは[Third-party notices](THIRD_PARTY_NOTICES.md)と
+[model licenses](docs/reference/model-licenses.md)を参照してください。

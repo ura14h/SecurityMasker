@@ -2,7 +2,7 @@
 
 - 状態：採用
 - 日付：2026-07-28
-- 関連：[model licenses](../model-licenses.md)、
+- 関連：[model licenses](../reference/model-licenses.md)、
   [development status](../development/status.md)
 
 ## 背景

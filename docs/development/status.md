@@ -1,103 +1,61 @@
 # 開発・リリース状況
 
-最終更新: 2026-07-28
+最終更新: 2026-07-29
 
-この文書を、現行構成の `done` / `partial` / `blocked` の正とします。`done` は実装、製品配線、
-回帰test、利用/運用手順が揃った項目だけです。
+この文書を、現行構成の`done`／`partial`／`blocked`と公開範囲の正とします。`done`は実装、
+製品配線、回帰test、利用・運用手順が揃った項目だけです。
 
 ## 現在の製品
 
-| 項目 | 状態 | 根拠・残件 |
+| 項目 | 状態 | 残件 |
 |---|---|---|
-| v1 config、単一辞書、隣接探索、safe init | done | 旧フラット形式撤去、unknown field/権限/上書き拒否test |
-| `chatgpt` / `claude` 1 process・1 route | done | wrong-protocol拒否、別port同時起動test |
-| OpenAI Responses / Anthropic Messages | done | buffered/stream、tool argument、count_tokens、header test |
-| 暗号化SQLite | done | keyed lookup、AES-GCM、wrong key/mode/tamper、restart、writer lease test |
-| 標準日本語NER | done（source） | setupへ固定model/digest検証、既定ON、silent downgrade禁止 |
-| preview / client snippet / read-only doctor | done | Gateway同一pipeline、設定非変更test |
-| 利用者向けCLIリファレンス | done | parserの全leaf command・optionとの網羅性test |
-| 通常setupとtest setupの分離 | done | scripts/setup、test-setup、release-check |
-| one-file技術spike | partial | macOS arm64 build/E2E成功。他OS・署名・物理clean machine未完 |
-| 旧Redis/Docker標準経路/CI/multi-tenant/run撤去 | done | 旧製品code/artifact削除、文書再編、回帰test |
-| Windows Linux-hosted spike | partial | WSL2番外編とmode別Compose artifactを追加。Windows実機gate未完 |
-| source release candidate | done（macOS/Linux arm64） | 0.1.0、clean setup、全gate、展開artifact、再現可能checksumを検証 |
-| application 1.0.0判断 | partial | schema v1変更後のmacOS unit/mock gate成功。Linux隔離実CLI gate再実行と公開範囲の明記が必要 |
-| binary公開 | blocked | model再配布判断、署名、対象OS別clean-machine gateが未完 |
+| strict config v1、単一辞書、safe init | done | なし |
+| `chatgpt`／`claude`の1 process・1 route | done | なし |
+| OpenAI Responses／Anthropic Messages | done | buffered、stream、tool argumentを含め検証済み |
+| 暗号化SQLiteとmode別DB/key | done | なし |
+| 標準日本語NER | done（source） | 固定revision/digest、既定ON |
+| preview、client snippet、read-only doctor | done | なし |
+| CLI・設定reference | done | schemaとparserの網羅性testあり |
+| README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
+| 通常setupとtest setupの分離 | done | なし |
+| source release candidate | partial | Linux arm64でschema v1後の隔離実CLI gate再実行が必要 |
+| application `1.0.0`判断 | partial | 上記gateとsource版だけを公開するrelease noteが必要 |
+| one-file binary公開 | blocked | 再配布判断、署名、対象OS別clean-machine gateが未完 |
+| Windows | 対応外 | native security gate一式が未実装・未検証 |
 
-## source版の判断
+## Source版
 
-source checkout/archiveは、検証済みのmacOS arm64 / Linux arm64で、固定dependencyと固定NER
-modelを利用者環境へ取得する形なら技術的に公開可能です。PyPI登録、Docker、GitHub Actionsは
-必要ありません。残っているのはrepository公開、tag、GitHub Releaseなどownerの公開操作だけです。
+現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
+Python 3.12でsource setupを検証しています。
 
-application versionは現在`0.1.0`のままです。schema v1への変更後にsource release gateを
-再実行し、source版だけが公開対応範囲であることをrelease noteへ明記できれば、最初の公開版を
-`1.0.0`とすることは妥当です。判断基準は
+2026-07-29にmacOS arm64でruff、mypy、固定NER必須unit/evaluation 628件が成功しました。
+schema v1変更後のmock Gateway 3件も成功済みです。Linux arm64で外向きnetworkを遮断した実Codex
+CLI／Claude Code CLI gateを再実行し、source版だけが公開対象であることをrelease noteへ明記
+できれば、最初の公開版を`1.0.0`とする判断は妥当です。判断理由は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
-2026-07-28のschema v1変更後、macOS arm64で`ruff`、`mypy`、固定NER必須unit/evaluation
-615件、mock Gateway 3件が成功しました。`scripts/release-check`は設計どおりLinux network
-namespaceがないmacOS上で隔離実CLI E2Eを成功扱いせず停止しました。Linux arm64での隔離実CLI
-E2E再実行は未完です。
-
 Windowsはsource版を含めて公開対応範囲外です。部分的に動くことを根拠としたbest-effort対応は
-[ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しました。Windows用setup、
-ACLによる機密file保護、PowerShell向けclient設定、native dependency・SQLite・CLI E2Eが
-すべて揃うまでは、Windows上で実際の機密情報を扱えるとは表明しません。
+[ADR-0013](../adr/0013-reject-best-effort-windows-support.md)で却下しました。
 
-Windows上のLinux-hosted deploymentについては、
-[ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) に従い、WSL2直接実行と
-Docker Composeを同一gateで比較します。WSL2番外編とCodex / Claude別Compose artifactは
-technical spikeとして追加しましたが、Windows実機の共通gateは未完であり、どちらも
-公開対応範囲外です。
+## Binary版
 
-2026-07-26に次をrelease candidate `0.1.0` で確認しました。
+macOS arm64のone-file buildとE2Eはtechnical spikeとして成功していますが、公開artifactでは
+ありません。公開には次が必要です。
 
-- macOS arm64のPython 3.11ではcleanな一時展開から
-  `PYTHON_COMMAND=/opt/homebrew/bin/python3.11 scripts/test-setup`、Python 3.12では
-  環境変数なしの `scripts/setup` が成功。Linux arm64のPython 3.12でもclean setup成功
-- Linuxでは公式CPU版Torch `2.13.0+cpu` を選択し、CUDA runtimeへ依存しないこと
-- `ruff`、`mypy`、固定NER必須unit/evaluation 586件、mock Gateway 3件が成功
-- 外部networkなしのLinuxでCodex CLI 0.145.0 / Claude Code 2.1.212実E2E 2件が成功
-- source archiveを展開した状態からsetup、init、validate、NER preview、client config生成が成功
-- 別clean worktreeから生成したsource archiveがbyte-for-byte一致
-- DB/keyのpair backup/restore、不一致拒否、再起動をまたぐidle/absolute TTLを検証
-
-## one-file実測
-
-macOS arm64、Python 3.12.13、PyInstaller 6.21.0:
-
-| 項目 | 結果 |
-|---|---|
-| artifact | arm64 thin Mach-O、961,117,984 bytes（約917 MiB） |
-| clean build | 243.6秒 |
-| cold `--help` | 約25.5秒 |
-| warm config-check | 約11.5秒 |
-| NER preview | 約46.8秒 |
-| 外部runtime link | macOS標準libSystem/libzのみ |
-| 署名 | ad-hoc |
-| 一時展開 | `TMPDIR/_MEI*`、通常終了/SIGTERM後に残存なし |
-| binary E2E | 3件成功（init、validate、NER、両mode、SQLite、mask/restore、漏えいゼロ） |
-
-## binary公開ブロッカー
-
-binaryを公開artifactとして扱うには次が必要です。
-
-1. 対象OS/architectureごとのnative buildとclean-machine binary gate。
-2. macOSではDeveloper ID署名/notarization、Windowsを出すならcode signing方針。
-3. model weightをone-fileへ同梱して再配布する条件の確認。model/baseはMIT、学習datasetは
-   CC BY-SA 3.0であり、現時点では法的結論を置かない。
+1. 対象OS／architectureごとのnative buildとclean-machine binary gate。
+2. macOSのDeveloper ID署名とnotarization。Windowsを出す場合はcode signing。
+3. model weightとtransitive componentの再配布条件の確認。
 4. version、checksum、release note、source tagとの対応。
 
-再配布確認が終わるまで、model weight同梱binaryの外部公開はblockします。source setupは
-weightをrepository/release artifactへ含めないため、このbinary固有blockerの対象外です。
+再配布確認が終わるまで、model weight同梱binaryの外部公開をblockします。
 
-## ownerに必要な操作
+## Ownerに必要な操作
 
-- source版: GitHub repositoryの公開設定、tag、GitHub Release、source archive/checksum upload
-- binary版も公開する場合: 公開対象OSの選択、model weight再配布判断、必要なcode
-  signing/notarization、対象OSごとのartifact upload
-- 可能なら合成promptだけを使うCodex app / Claude Code Desktop手動smoke test
+- Linux arm64でschema v1後のsource release gateを再実行する
+- `1.0.0`の公開範囲とrelease noteを確定する
+- repository公開、tag、GitHub Release、source archive/checksum uploadを行う
+- binaryも公開する場合だけ、対象OS、再配布、署名、artifact uploadを別途判断する
 
-Desktop smoke testを行わなくてもCLIによるprotocol検証は可能ですが、その場合の公開表現は
-「CLIと共有設定で検証済み」に限定します。
+過去のrelease candidate実測は
+[0.1.0 RC evidence](release-evidence/0.1.0-rc-2026-07-26.md)、合格条件は
+[Release gate](release.md)を参照してください。

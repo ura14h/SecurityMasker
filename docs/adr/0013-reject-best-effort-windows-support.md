@@ -5,7 +5,7 @@
 - 関連：[ADR-0012](0012-renew-package-design.md)（パッケージ設計）、
   [ADR-0015](0015-evaluate-windows-linux-hosted-deployments.md)（Linux-hosted検証方針）、
   [development status](../development/status.md)、
-  [compatibility](../development/compatibility.md)
+  [compatibility](../reference/compatibility.md)
 - 対象：Windows向けsource版、one-file版、Windows上のCodex / Claude Code連携
 
 > このADRが却下するのはWindows対応そのものではない。機密file保護とnative release gateが

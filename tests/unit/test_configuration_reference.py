@@ -22,7 +22,7 @@ from securitymasker.config import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE = ROOT / "docs" / "user" / "configuration.md"
+REFERENCE = ROOT / "docs" / "reference" / "configuration.md"
 CONFIG_TEMPLATE = ROOT / "src" / "securitymasker" / "resources" / "securitymasker.config"
 DICTIONARY_TEMPLATE = ROOT / "src" / "securitymasker" / "resources" / "securitymasker.dict"
 

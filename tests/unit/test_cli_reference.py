@@ -9,7 +9,7 @@ from pathlib import Path
 from securitymasker.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE = ROOT / "docs" / "user" / "cli-reference.md"
+REFERENCE = ROOT / "docs" / "reference" / "cli.md"
 
 
 def _leaf_parsers(

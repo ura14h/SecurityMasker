@@ -30,7 +30,7 @@ setupが第三者componentを利用者環境へdownloadすることを区別し�
 | 学習dataset | `stockmarkteam/ner-wikipedia-dataset` | CC BY-SA 3.0 |
 
 一次情報、artifact manifest、再配布判断は
-[`docs/model-licenses.md`](docs/model-licenses.md)に記録しています。
+[`docs/reference/model-licenses.md`](docs/reference/model-licenses.md)に記録しています。
 
 ## Binary release
 

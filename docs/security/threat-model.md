@@ -1,5 +1,8 @@
 # Threat model
 
+この文書はsecurity reviewerと開発者向けの正式な信頼境界です。利用者が実運用前に行う確認は
+[安全な使い方](safe-use.md)を参照してください。
+
 ## 信頼境界
 
 信頼領域は、利用者のローカルPC、SecurityMasker Gateway、config/dictionary/state/key、

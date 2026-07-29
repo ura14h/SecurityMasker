@@ -1,5 +1,7 @@
 # 日本語NER modelの出典と再配布条件
 
+この文書は、固定model、base model、学習datasetの出典と、配布形態ごとの判断を記録します。
+
 確認日: 2026-07-26
 
 SecurityMaskerの標準NERは、次のmodel revisionをbyte単位で固定する。

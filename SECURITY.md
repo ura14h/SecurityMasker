@@ -5,51 +5,46 @@
 SecurityMaskerは、単一利用者のローカルPCで、loopbackにbindした1 process・1 mode・1 workerとして
 使用してください。public bind、共有server、multi-user、multi-tenant、複数workerは対象外です。
 
-現在の公開候補はsource版です。one-file binaryは署名、他OS、model weight再配布条件の確認が
-終わるまで公開対象ではありません。詳しくは
-[development status](docs/development/status.md) を参照してください。
+検証済みplatform、client、protocol、配布形態は
+[対応環境](docs/reference/compatibility.md)を正とします。現在の公開候補はsource版です。
+one-file binaryは署名、対象OS別gate、model weight再配布条件の確認が終わるまで公開対象では
+ありません。
 
-検証済みplatformはmacOS arm64とLinux arm64です。WindowsはACLによる機密file保護、
-setup、client設定、native E2Eが未実装・未検証のため、source版を含めて対応対象外です。
-Windows上で実際の機密情報を扱わないでください。
+Windows nativeは非対応です。Windows上で実際の機密情報を扱わないでください。
 
-## Sensitive local files
+## Safe operation
 
-次を機密として扱ってください。
+実運用前の辞書、preview、routing、添付、local file、credentialに関する確認は
+[安全な使い方](docs/security/safe-use.md)にまとめています。正式な信頼境界と対象外は
+[Threat model](docs/security/threat-model.md)を参照してください。
+
+次は機密fileです。
 
 - `securitymasker.config`
 - `securitymasker.dict`
 - `securitymasker.state/securitymasker.db`
 - `securitymasker.state/securitymasker.key`
 
-POSIXではfileを `0600`、state directoryを `0700` にします。DBとkeyは1対1で、同じbackup単位に
-します。keyを失うと既存DBは復号できません。config、辞書、DB、keyをGitへcommitしないでください。
+POSIXではfileを`0600`、state directoryを`0700`にします。DBとkeyは1対1で、
+[同じbackup単位](docs/operations/backup-restore.md)にします。keyを失うと既存DBを復号できません。
+config、辞書、DB、keyをGitへcommitしないでください。
 
-SecurityMaskerはprovider credentialを保存しません。認証headerは対応providerへだけ透過し、
-log/error/telemetryへ出しません。
-
-## Safe operation
-
-1. `securitymasker.dict` に重要な組織固有語を登録する。
-2. `preview` で合成または安全なlocal入力のmask結果を確認する。
-3. `doctor` と `doctor --require-ready` を実行する。
-4. `client-config` の出力を、実際にclientが読む設定へ手動反映する。
-5. clientがlocalhost Gatewayを向いていることを確認してからpromptを入力する。
-
-client設定は自動変更されません。Web版ChatGPT、remote session、外部MCP等、Gatewayを迂回する
-通信は保護されません。
+SecurityMaskerはprovider credentialを保存しません。対応providerの認証headerだけを上流へ透過し、
+log、error、telemetryへ出しません。
 
 ## Failure behavior
 
-設定、辞書、model、DB/key、protocol、detector、leak guardに異常があれば既定でfail-closedとなり、
-上流へrequestを送りません。未知field/eventは最終leak guardを通過できる場合だけ透過します。
+config、辞書、model、DB/key、protocol、detector、leak guardに異常があれば、既定でrequestを上流へ
+送りません。検出済みの重大secretをfail-openせず、未知fieldやeventは最終leak guardを通過できる
+場合だけ透過します。
 
-日本語NERは一般的な人名・組織名・地名を補完しますが、未知の社内code nameを100%検出するとは
+日本語NERは一般的な人名、組織名、地名を補完しますが、未知の社内code nameを100%検出するとは
 保証しません。重要語はユーザー辞書へ登録してください。
 
 ## Reporting a vulnerability
 
 公開repositoryのsecurity advisory機能、またはmaintainerが指定する非公開窓口を使用してください。
 issue、log、screenshot、fixtureへ実際のcredential、原文、master key、辞書、DBを添付しないで
-ください。合成値で再現できない場合も、まずsecret非表示の `doctor --json` と影響範囲だけを
-共有してください。
+ください。
+
+合成値で再現できない場合も、まずsecret非表示の`doctor --json`と影響範囲だけを共有してください。

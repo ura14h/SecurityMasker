@@ -20,8 +20,9 @@ SecurityMaskerは、ローカルのCodexまたはClaude Codeと外部LLMの間�
 - Redis、Docker、Compose、GitHub Actions、PyPI、public bind、multi-tenant、
   `securitymasker run` は標準製品範囲外
 
-現行設計は [ADR-0012](docs/adr/0012-renew-package-design.md)、状態は
-[development status](docs/development/status.md) を正とします。
+現行仕様は[architecture](docs/development/architecture.md)、設計判断は
+[ADR-0012](docs/adr/0012-renew-package-design.md)と後続ADR、状態は
+[development status](docs/development/status.md)を正とします。
 
 ## 不変条件
 
@@ -49,9 +50,13 @@ securitymasker/
 ├── scripts/
 ├── devtools/
 ├── docs/
-│   ├── user/
-│   ├── design/
+│   ├── guides/
+│   ├── operations/
+│   ├── reference/
+│   ├── concepts/
+│   ├── security/
 │   ├── development/
+│   ├── unsupported/
 │   └── adr/
 ├── src/securitymasker/
 │   ├── gateway/
@@ -66,7 +71,7 @@ securitymasker/
 
 ## 技術
 
-- Python 3.12+
+- Python 3.11+
 - pip + venv。`uv`は採用しない
 - pydantic、cryptography、httpx、starlette、transformers、torch
 - pytest、hypothesis、ruff、mypy strict

@@ -1,4 +1,4 @@
-# Windows番外編 — Linux環境で評価する
+# Windows上のLinux環境で評価する（非対応）
 
 Windows native版は現在も非対応です。この番外編は、Windows 11 x64上のWSL2または
 Docker DesktopのLinux containerで、Linux版SecurityMaskerを評価するためのtechnical spikeです。
@@ -70,7 +70,7 @@ cd SecurityMasker
 ```
 
 この後の`init`、辞書編集、`preview`、Gateway起動は通常の
-[導入ガイド](getting-started.md)と同じです。
+[導入ガイド](../getting-started.md)と同じです。
 
 Codex用:
 
@@ -88,7 +88,7 @@ python3 securitymasker.py preview "担当者: 山田太郎"
 python3 securitymasker.py gateway
 ```
 
-両方を使う場合は、通常ガイドの[両方を同時に使う](getting-started.md#両方を同時に使う)に従い、
+両方を使う場合は、[CodexとClaude Codeを同時に使う](../guides/use-both-clients.md)に従い、
 別directory、別config、別state、別port、別processにします。
 
 ### 3. clientを接続する

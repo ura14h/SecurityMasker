@@ -1,5 +1,8 @@
 # CLIリファレンス
 
+全commandとoptionを確認するための仕様書です。初めて導入する場合は
+[導入ガイド](../getting-started.md)から始めてください。
+
 この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では
 `securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker`に
 読み替えられます。

@@ -2,6 +2,8 @@
 
 SecurityMaskerは、単一利用者のローカルPCで動く可逆マスキング境界です。
 
+利用者向けの平易な説明は[SecurityMaskerの仕組み](../concepts/how-it-works.md)を参照してください。
+
 ```text
 Codex または Claude Code
               │  provider protocol + client auth

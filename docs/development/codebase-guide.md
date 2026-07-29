@@ -1,7 +1,7 @@
 # コード読解ガイド
 
 この文書はSecurityMaskerのsourceを理解したい人向けの地図です。変更やpull requestを受け付ける
-ためのCONTRIBUTINGではありません。現行製品の不変条件は[architecture](../design/architecture.md)、
+ためのCONTRIBUTINGではありません。現行製品の不変条件は[architecture](architecture.md)、
 実装済み範囲は[development status](status.md)を正とします。
 
 ## 最初に読む順序

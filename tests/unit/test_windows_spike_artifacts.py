@@ -103,7 +103,9 @@ def test_dockerfile_uses_fixed_linux_base_and_non_root_runtime() -> None:
 
 
 def test_windows_extra_guide_keeps_unsupported_and_modified_volume_warning() -> None:
-    guide = (ROOT / "docs/user/getting-started-windows.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs/unsupported/windows-evaluation.md").read_text(
+        encoding="utf-8"
+    )
 
     for required in (
         "Windows native版は現在も非対応",

@@ -3,7 +3,7 @@
 - 状態：採用
 - 日付：2026-07-25
 - 関連: [ADR-0001](0001-litellm-guardrail-integration.md)（撤回）/
-  [現行compatibility](../development/compatibility.md)
+  [現行compatibility](../reference/compatibility.md)
 
 ## 背景
 

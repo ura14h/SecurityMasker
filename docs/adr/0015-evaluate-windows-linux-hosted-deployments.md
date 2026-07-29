@@ -5,7 +5,7 @@
 - 関連：[ADR-0012](0012-renew-package-design.md)（現行パッケージ設計）、
   [ADR-0013](0013-reject-best-effort-windows-support.md)（Windows native）、
   [development status](../development/status.md)、
-  [compatibility](../development/compatibility.md)
+  [compatibility](../reference/compatibility.md)
 - 対象：Windows host上でLinux版SecurityMaskerを動かし、WindowsまたはLinux側の
   Codex / Claude Codeから利用する構成
 

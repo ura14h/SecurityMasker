@@ -1,4 +1,7 @@
-# 日本語PII検出方針
+# 検出層と日本語PII
+
+この文書はdetectorの責任分担と、日本固有PIIの技術的な検出方針を説明します。重要語を追加する
+利用者向け手順は[辞書のカスタマイズ](../guides/customize-dictionary.md)を参照してください。
 
 一つの検出方式だけで十分とは仮定せず、三層を重ねます。
 
@@ -36,7 +39,7 @@ model、tokenizer、configの全artifactについてsizeとSHA-256をmanifestへ
 
 NERは一般的な固有表現を補いますが、社内code nameなど任意の組織固有語は保証しません。
 その用途には `securitymasker.dict` を使ってください。modelとdatasetの出典・配布判断は
-[model licenses](../model-licenses.md) に記録しています。
+[model licenses](../reference/model-licenses.md) に記録しています。
 
 ## 評価
 

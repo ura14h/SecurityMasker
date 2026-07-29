@@ -2,7 +2,7 @@
 
 - 状態：採用
 - 日付：2026-07-24
-- 関連: [現行architecture](../design/architecture.md)
+- 関連: [現行architecture](../development/architecture.md)
 
 ## 背景
 

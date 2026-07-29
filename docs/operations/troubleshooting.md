@@ -9,7 +9,7 @@ python3 securitymasker.py config-check
 
 `doctor --json` はticketへ貼れるsecret非表示の形式です。実providerには接続しません。
 Gatewayが表示するeventとfieldの意味は、CLIリファレンスの
-[ログの読み方](cli-reference.md#ログの読み方)を参照してください。
+[ログの読み方](../reference/cli.md#ログの読み方)を参照してください。
 
 ## configが見つからない
 
@@ -101,8 +101,7 @@ SecurityMaskerはクライアント設定を自動更新しません。Web会話
 localhostを通らない通信は保護できません。
 
 実Codexでaliasの受信とresponse復元を合成値だけで目視確認する手順は、導入ガイドの
-[実Codexでマスクと復元を目視確認する](getting-started.md#実codexでマスクと復元を目視確認する)
-を参照してください。
+[通信経路を詳しく検証する](../guides/verify-routing.md)を参照してください。
 
 ## one-file版の起動が遅い
 
@@ -110,14 +109,7 @@ localhostを通らない通信は保護できません。
 最初のNER previewで約46.8秒でした。one-fileは `TMPDIR` へ展開するため、空き容量と実行権限が
 必要です。`noexec` filesystemを `TMPDIR` に使わず、難しい場合はsource版を使ってください。
 
-## backup
+## Backupまたはrestoreで失敗する
 
-Gatewayを停止してから、次を同じbackup単位で保存します。
-
-- `securitymasker.config`
-- `securitymasker.dict`
-- `securitymasker.state/securitymasker.db`
-- `securitymasker.state/securitymasker.key`
-
-key、辞書、DBをrepository、ticket、chat、外部backupへ平文で置かないでください。backup先の
-暗号化とaccess controlは利用者の責任です。
+DBとkeyは同じ時点の組で扱います。手順と復旧条件は
+[Backupとrestore](backup-restore.md)を参照してください。

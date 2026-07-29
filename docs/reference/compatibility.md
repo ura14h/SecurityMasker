@@ -1,4 +1,17 @@
-# Compatibility
+# 対応環境
+
+この文書を、利用できるplatform、client、protocol、配布形態の正とします。初回導入手順は
+[導入ガイド](../getting-started.md)を参照してください。
+
+## Source版の必要条件
+
+- 対応platform上のPython 3.11以上
+- POSIX shellと`venv`を作成できる環境
+- 初回setup時のnetwork接続
+- Python runtime、PyTorch、固定日本語NER modelのための数GBの空き容量
+- clientからloopback portへ接続できること
+
+GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackageやmodelをdownloadしません。
 
 ## 製品mode
 
@@ -24,11 +37,12 @@ Windows向けコード分岐が存在することは、製品対応を意味し�
 部分的に動く状態をbest-effort対応として公開する方針は
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md) で却下しています。安全性を
 Windows実機で確認するまでは、実データ利用の安全性を保証しません。利用者が評価する場合のriskと
-免責は[Windows番外編](../user/getting-started-windows.md)を参照してください。
+免責は[Windows上のLinux環境で評価する](../unsupported/windows-evaluation.md)を参照してください。
 
 WSL2直接実行とDocker Desktop上のDocker Composeは、Windows nativeとは別のLinux-hosted候補として
 [ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md) で同一gateによる比較を
-決定しました。[Windows番外編](../user/getting-started-windows.md)とmode別Compose artifactは
+決定しました。[Windows上のLinux環境で評価する](../unsupported/windows-evaluation.md)と
+mode別Compose artifactは
 technical spikeとして用意していますが、Windows実機gateは未完であり、どちらも対応環境では
 ありません。
 
@@ -81,4 +95,4 @@ clean setup・NER・Gateway回帰testが必要です。保護境界のtest matri
 
 one-fileはOS/architecture別artifactです。macOS arm64 spikeでは約917 MiBでした。他OS、
 署名/notarization、Python未導入の物理clean machineは未検証です。公開条件は
-[status](status.md) を参照してください。
+[status](../development/status.md) を参照してください。

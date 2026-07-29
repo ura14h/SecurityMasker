@@ -36,7 +36,7 @@ datas += [
 datas += [
     (str(project / "LICENSE"), "."),
     (str(project / "THIRD_PARTY_NOTICES.md"), "."),
-    (str(project / "docs/model-licenses.md"), "docs"),
+    (str(project / "docs/reference/model-licenses.md"), "docs/reference"),
 ]
 for distribution in (
     "securitymasker",
