@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from websockets.sync.client import connect
 
 from securitymasker.bootstrap import initialize_layout
 
@@ -163,6 +164,65 @@ def test_responses_buffered_and_streaming_restore(gateways) -> None:
                 if event.get("type") == "response.output_text.delta":
                     deltas += event.get("delta", "")
     assert PERSON in deltas and HOST in deltas
+
+
+def test_responses_websocket_masks_restores_and_binds_turns(gateways) -> None:
+    base = str(gateways["chatgpt"]).replace("http://", "ws://", 1)
+    with connect(
+        f"{base}/responses",
+        additional_headers={"x-securitymasker-session-id": "chatgpt-websocket"},
+        open_timeout=10,
+        close_timeout=10,
+    ) as websocket:
+        websocket.send(
+            json.dumps(
+                {"type": "response.create", "model": "m", "input": PROMPT},
+                ensure_ascii=False,
+            )
+        )
+        deltas = ""
+        response_id = ""
+        while True:
+            event = json.loads(websocket.recv())
+            if event.get("type") == "response.created":
+                response_id = event["response"]["id"]
+            if event.get("type") == "response.output_text.delta":
+                deltas += event.get("delta", "")
+            if event.get("type") == "response.completed":
+                break
+        assert PERSON in deltas and HOST in deltas
+        assert response_id
+
+        websocket.send(
+            json.dumps(
+                {
+                    "type": "response.create",
+                    "model": "m",
+                    "previous_response_id": response_id,
+                    "input": f"もう一度 {PERSON}",
+                },
+                ensure_ascii=False,
+            )
+        )
+        second = ""
+        while True:
+            event = json.loads(websocket.recv())
+            if event.get("type") == "response.output_text.delta":
+                second += event.get("delta", "")
+            if event.get("type") == "response.completed":
+                break
+        assert PERSON in second
+
+    records = [
+        json.loads(line)
+        for line in Path(gateways["record"]).read_text(encoding="utf-8").splitlines()
+    ]
+    websocket_records = [
+        record for record in records if record.get("transport") == "websocket"
+    ]
+    assert len(websocket_records) >= 2
+    assert all(PERSON not in json.dumps(record, ensure_ascii=False) for record in websocket_records)
+    assert all(HOST not in json.dumps(record, ensure_ascii=False) for record in websocket_records)
 
 
 def test_claude_stream_restores_and_wrong_route_is_local(gateways) -> None:

@@ -22,7 +22,7 @@ from securitymasker.gateway.request_pipeline import (
     prepare_connection_session,
     prepare_request,
 )
-from securitymasker.logging import get_logger
+from securitymasker.logging import get_logger, safe_fingerprint
 from securitymasker.metrics import (
     BlockReason,
     Provider,
@@ -149,11 +149,15 @@ def _parse_text_message(message: str) -> dict[str, Any]:
 
 
 def _validate_response_create(data: dict[str, Any]) -> None:
-    if "stream" in data:
+    if data.get("stream") is True:
+        # Codex 0.145.0はWebSocket transportでもHTTP互換の``stream: true``を
+        # 付与する。上流WebSocket APIではstreamingが暗黙なのでadapter境界で除く。
+        data.pop("stream")
+    elif "stream" in data:
         raise RequestRejected(
             400,
             "invalid_websocket_field",
-            "stream is implicit in WebSocket mode and must be omitted.",
+            "stream must be true or omitted in WebSocket mode.",
             BlockReason.REQUEST_FORMAT,
         )
     if "background" in data:
@@ -405,6 +409,10 @@ async def handle_responses_websocket(websocket: WebSocket) -> None:
     try:
         async with open_upstream(url, headers, user_agent) as upstream:
             await websocket.accept()
+            _log.info(
+                "sm_websocket_connected",
+                session_fp=safe_fingerprint(session_id),
+            )
             await _relay(
                 websocket,
                 upstream,

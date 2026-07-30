@@ -414,6 +414,9 @@ def test_real_codex_with_persistent_config_sends_only_aliases(stack, tmp_path) -
     assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
     assert config_path.read_bytes() == original_config
 
+    assert _last_request(record).get("transport") == "websocket", (
+        "Codex did not use the Responses WebSocket transport"
+    )
     _assert_masked_upstream(record)
     _assert_restored_to_the_user(result.stdout, record)
 

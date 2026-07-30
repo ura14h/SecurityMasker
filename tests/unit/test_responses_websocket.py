@@ -156,7 +156,7 @@ def test_websocket_masks_request_restores_response_and_continues(
     assert "SM_PERSON_" in outbound
 
 
-def test_websocket_rejects_transport_fields_before_upstream_send(
+def test_websocket_normalizes_codex_stream_true_before_upstream_send(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     upstreams: list[FakeUpstream] = []
@@ -171,6 +171,35 @@ def test_websocket_rejects_transport_fields_before_upstream_send(
                 "type": "response.create",
                 "model": "m",
                 "stream": True,
+                "input": PERSON,
+            }
+        )
+        restored, _ = _read_response(websocket)
+
+    assert PERSON in restored
+    assert len(upstreams[0].sent) == 1
+    outbound = upstreams[0].sent[0]
+    assert "stream" not in outbound
+    assert PERSON not in json.dumps(outbound, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("stream", [False, None, 1, "true"])
+def test_websocket_rejects_invalid_stream_before_upstream_send(
+    monkeypatch: pytest.MonkeyPatch,
+    stream: object,
+) -> None:
+    upstreams: list[FakeUpstream] = []
+    _patch_upstream(monkeypatch, upstreams)
+
+    with (
+        TestClient(gateway_app.create_app(_runtime())) as client,
+        client.websocket_connect("/v1/responses") as websocket,
+    ):
+        websocket.send_json(
+            {
+                "type": "response.create",
+                "model": "m",
+                "stream": stream,
                 "input": PERSON,
             }
         )

@@ -21,7 +21,8 @@ from collections.abc import AsyncGenerator
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 ALIAS_IN_RESPONSE = "SM_ORG_7F3A91"
 
@@ -105,9 +106,9 @@ def _responses_message(text: str) -> dict:
     }
 
 
-def _responses_object(text: str) -> dict:
+def _responses_object(text: str, response_id: str = "resp-mock") -> dict:
     return {
-        "id": "resp-mock",
+        "id": response_id,
         "object": "response",
         "created_at": int(time.time()),
         "status": "completed",
@@ -120,42 +121,112 @@ def _responses_object(text: str) -> dict:
     }
 
 
+def _responses_events(body: dict, response_id: str = "resp-mock") -> list[dict]:
+    """SSEとWebSocketで共有するResponses event列を返す。"""
+    text = _reply_text(body)
+    obj = _responses_object(text, response_id)
+    item = {
+        "id": "msg-mock-0",
+        "type": "message",
+        "role": "assistant",
+        "status": "in_progress",
+        "content": [],
+    }
+    part = {"type": "output_text", "text": "", "annotations": []}
+    common = {
+        "item_id": "msg-mock-0",
+        "output_index": 0,
+        "content_index": 0,
+    }
+    return [
+        {"type": "response.created", "response": obj},
+        {"type": "response.in_progress", "response": obj},
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": item,
+        },
+        {"type": "response.content_part.added", **common, "part": part},
+        *(
+            {"type": "response.output_text.delta", **common, "delta": token}
+            for token in _chunk(text)
+        ),
+        {"type": "response.output_text.done", **common, "text": text},
+        {
+            "type": "response.content_part.done",
+            **common,
+            "part": {**part, "text": text},
+        },
+        {
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": {
+                **item,
+                "status": "completed",
+                "content": [{**part, "text": text}],
+            },
+        },
+        {"type": "response.completed", "response": obj},
+    ]
+
+
 async def responses(request: Request):
     body = await _read(request)
     text = _reply_text(body)
     if body.get("stream"):
-        obj = _responses_object(text)
         # The FULL documented item lifecycle, not just created/delta/completed.
         # A real client tracks the active item, so a bare delta is discarded
         # ("OutputTextDelta without active item") and the reply never renders —
         # which meant an end-to-end test could not observe restoration at all.
-        item = {"id": "msg-mock-0", "type": "message", "role": "assistant",
-                "status": "in_progress", "content": []}
-        part = {"type": "output_text", "text": "", "annotations": []}
-        common = {"item_id": "msg-mock-0", "output_index": 0, "content_index": 0}
-
         def ev(name: str, payload: dict) -> str:
             return f"event: {name}\ndata: {json.dumps({'type': name, **payload})}\n\n"
 
         lines = [
-            ev("response.created", {"response": obj}),
-            ev("response.in_progress", {"response": obj}),
-            ev("response.output_item.added", {"output_index": 0, "item": item}),
-            ev("response.content_part.added", {**common, "part": part}),
-            # aliasが複数deltaに分割されるよう、小さなchunkで返す。
-            *(ev("response.output_text.delta", {**common, "delta": tok})
-              for tok in _chunk(text)),
-            ev("response.output_text.done", {**common, "text": text}),
-            ev("response.content_part.done",
-               {**common, "part": {**part, "text": text}}),
-            ev("response.output_item.done",
-               {"output_index": 0,
-                "item": {**item, "status": "completed",
-                         "content": [{**part, "text": text}]}}),
-            ev("response.completed", {"response": obj}),
+            ev(str(event["type"]), {k: v for k, v in event.items() if k != "type"})
+            for event in _responses_events(body)
         ]
         return _sse(lines)
     return JSONResponse(_responses_object(text))
+
+
+async def responses_websocket(websocket: WebSocket) -> None:
+    """Responses WebSocketを模倣し、受信した最終frameを記録する。"""
+    await websocket.accept()
+    response_number = 0
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError:
+                body = {"_raw": raw}
+            _record(
+                {
+                    "path": websocket.url.path,
+                    "transport": "websocket",
+                    "headers": {
+                        key.lower(): value for key, value in websocket.headers.items()
+                    },
+                    "body": body,
+                }
+            )
+            if not isinstance(body, dict) or body.get("type") != "response.create":
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "status": 400,
+                        "error": {
+                            "code": "invalid_client_event",
+                            "message": "expected response.create",
+                        },
+                    }
+                )
+                continue
+            response_number += 1
+            for event in _responses_events(body, f"resp-mock-ws-{response_number}"):
+                await websocket.send_json(event)
+    except WebSocketDisconnect:
+        return
 
 
 # ---- Anthropic Messages ------------------------------------------------------
@@ -224,6 +295,8 @@ routes = [
     Route("/health", health, methods=["GET"]),
     Route("/responses", responses, methods=["POST"]),
     Route("/v1/responses", responses, methods=["POST"]),
+    WebSocketRoute("/responses", responses_websocket),
+    WebSocketRoute("/v1/responses", responses_websocket),
     Route("/messages", messages, methods=["POST"]),
     Route("/v1/messages", messages, methods=["POST"]),
     Route("/v1/messages/count_tokens", count_tokens, methods=["POST"]),

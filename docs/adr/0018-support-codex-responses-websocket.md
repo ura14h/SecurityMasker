@@ -60,7 +60,8 @@ hard limitで制限する。binary、不正UTF-8、不正JSON、array、過大fr
 
 `response.create`は次を満たした場合だけ上流へ送る。
 
-- `stream`と`background`を送らない。
+- Codex 0.145.0がHTTP互換のため付与する`stream: true`はtransport adapterで除く。
+  `stream`の他の値と`background`は拒否し、上流へ送らない。
 - input、instructions、tool output、tool schemaなどを既存Responses adapterで検査・maskする。
 - 未知fieldを含むmask後のobject全体と非認証headerが最終leak guardを通る。
 - session storeのget／create／mask／saveを一つのlock区間で完了する。
@@ -85,7 +86,8 @@ clientが新しい接続またはHTTPで再試行するかを決める。
 
 1. unit testで、request原文が上流frameに存在せず、response aliasがclient frameで復元される。
 2. text deltaの全alias分割位置、tool argument delta、未知clean event、特殊文字を検査する。
-3. malformed／binary／oversize／`stream`／`background`／重大secret／store障害で上流送信0を確認する。
+3. `stream: true`の正規化と、malformed／binary／oversize／不正`stream`／`background`／
+   重大secret／store障害で上流送信0を確認する。
 4. 同一接続の複数turn、`previous_response_id` binding、異なる接続の並行sessionでaliasが混在しない。
 5. mock upstreamを使うlive WebSocket E2Eで、最終上流frameに合成機密値が無く、
    clientには原文が復元される。
