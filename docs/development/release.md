@@ -15,11 +15,16 @@
 - mypy strict
 - 固定NER model必須のunit/evaluation
 - mock upstreamを使うlive Gateway test
+- 実Codex CLIとOpenAI実サーバを使うWebSocket互換性smoke
 - 実Codex CLIと実Claude Code CLIを使うE2E
 
-実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeがないことを構造検査して
-から実行します。隔離を証明できないhostでは成功扱いにせず、release gateを失敗させます。
-実providerへtest bodyを送りません。
+実OpenAI smokeは外部送信とモデル利用を伴い、固定した合成値だけを送ります。既存のCodex認証を
+表示・複製せず、通常configを読まない一時overrideでWebSocket接続、mask、response復元を
+確認します。release担当者は実行前に外部送信を認識し、Codexへlogin済みである必要があります。
+
+その後のlocal mock実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeが
+ないことを構造検査してから実行します。隔離を証明できないhostでは成功扱いにせず、
+release gateを失敗させます。この隔離gateは実providerへbodyを送りません。
 
 containerで代用する場合も、test setupとCLI取得をnetwork有効時に済ませた後、test process全体を
 `--network none`で起動します。IFF_UPな非loopback interfaceまたはdefault routeが一つでもあれば
@@ -64,6 +69,7 @@ SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査�
 
 - 実行日と対象commit
 - OS、architecture、Python、client version
+- 実OpenAI WebSocket smokeの実施有無と結果（promptや認証情報は記録しない）
 - 実行したgateと結果
 - test件数
 - artifact名、size、checksum

@@ -93,8 +93,10 @@ clientが新しい接続またはHTTPで再試行するかを決める。
    clientには原文が復元される。
 6. 隔離`CODEX_HOME`と実Codex CLIを使い、生成snippetの
    `supports_websockets = true`でWebSocket経路を完走する。
-7. HTTP buffered／SSE、Claude Messages、preview、doctorの既存回帰testが成功する。
-8. ruff、mypy strict、unit、evaluationを通す。
+7. 実Codex CLIからOpenAI実サーバへ固定合成値だけを送る明示opt-in smokeで、WebSocket接続、
+   mask、response復元、alias非残存を確認する。
+8. HTTP buffered／SSE、Claude Messages、preview、doctorの既存回帰testが成功する。
+9. ruff、mypy strict、unit、evaluationを通す。
 
 実Codex CLIが環境や対象versionの都合でWebSocketを選ばなかった場合、HTTP成功を
 WebSocket E2Eの証拠にしない。mockの記録へtransport種別を残し、WebSocket handshakeと

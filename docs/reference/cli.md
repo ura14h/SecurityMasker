@@ -135,6 +135,7 @@ Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の�
 
 ```text
 2026-07-27 21:21:03 [info] gateway_started url=http://127.0.0.1:4000 mode=chatgpt
+2026-07-27 21:22:05 [info] sm_websocket_connected session_fp=3ed714a9735a
 2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
 ```
 
@@ -145,6 +146,7 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
 | event | 意味 |
 |---|---|
 | `gateway_started` | `url`と`mode`でGatewayを起動した |
+| `sm_websocket_connected` | Responses WebSocketのdownstream・upstream接続が成立した |
 | `request_masked` | providerへの転送前にrequestのマスク処理が完了した |
 | `request_blocked` | 安全検査、request形式、session解決などに失敗し、providerへ転送せず拒否した |
 | `store_error` | session DBのreadiness、request処理、response bindingのいずれかに失敗した |
@@ -152,7 +154,8 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
 
 `request_masked`はマスク処理の完了を示し、providerからのresponse成功までは意味しません。
 `request_blocked`、`store_error`、`stream_error`の`reason`は、機密値ではなく固定された原因分類です。
-`sm_`で始まるwarningはblock箇所を示す補助eventで、直前の監査eventと同じ一件を表す場合があります。
+`sm_`で始まるeventはWebSocket接続状態またはblock箇所を示す補助eventで、直前の監査eventと
+同じ一件を表す場合があります。
 
 - `entity_count`: 現在のrequestでマスクした出現箇所数。同じ機密値が3箇所にあれば`3`であり、
   ユニーク値数やsession累計ではありません。クライアントが過去の会話をrequestへ再掲すると、

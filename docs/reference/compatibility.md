@@ -17,11 +17,11 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 
 | mode | local route | upstream | 認証 | 自動検証 |
 |---|---|---|---|---|
-| `chatgpt` | `/responses`, `/v1/responses`, models | `chatgpt.com/backend-api/codex` | CodexのChatGPT bearer passthrough | Codex CLI + mock upstream |
+| `chatgpt` | `/responses`, `/v1/responses`（HTTP/SSE・WebSocket）、models | `chatgpt.com/backend-api/codex` | CodexのChatGPT bearer passthrough | Codex CLI + mock／実OpenAI upstream |
 | `claude` | `/v1/messages`, count_tokens, models, `HEAD /` | Anthropic API | bearer/API key passthrough | Claude Code CLI + mock upstream |
 
 各processは一方のrouteだけを公開します。未知field/eventは、構造を壊さずleak guardを通過できる場合に
-限り透過します。WebSocket Responsesは無効です。
+限り透過します。Responses WebSocketは`chatgpt` modeだけで有効です。
 
 ## Platform対応
 
@@ -48,8 +48,8 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 
 ## 検証済み範囲
 
-- OpenAI Responses: buffered/streaming text、tool argument、response binding、
-  `previous_response_id`
+- OpenAI Responses: buffered/SSE/WebSocket text、tool argument、response binding、
+  `previous_response_id`、同一WebSocket接続の複数turn
 - Anthropic Messages: buffered/streaming text、tool use input、count_tokens、
   feature header
 - protocol-native file/image/audio添付とprovider file search: 未検査転送せずlocal block
@@ -61,7 +61,9 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 
 実CLIの検証baselineは Codex CLI 0.145.0 と Claude Code 2.1.212です。protocolは変化し得るため、
 release時に最新対象versionでE2Eを再実行します。0.1.0ではLinux arm64の外部networkなし環境で、
-両CLIのmask、local mockへの到達、response復元を確認しました。
+両CLIのmask、local mockへの到達、response復元を確認しました。2026-07-30にはmacOS arm64で
+Codex CLI 0.145.0からSecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、合成値の
+maskとresponse復元を確認しました。
 
 ## Desktopについて
 

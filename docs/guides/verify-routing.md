@@ -47,6 +47,9 @@ python3 -c 'import json,sys; s=sys.argv[1]; print(json.dumps({"route":"MASKED_AL
 `UNMASKED_TEXT`になった場合は実データへ進まず、Codexが読む`config.toml`の`model_provider`、
 Gatewayの`base_url`、起動時の`CODEX_HOME`を確認します。
 
+Gatewayの同じ操作時刻に`sm_websocket_connected`があればResponses WebSocketが成立しています。
+このeventは原文を含まず、不可逆なsession fingerprintだけを表示します。
+
 ## 3. Response復元を確認する
 
 同じ合成値を「一字一句そのまま返す」よう依頼し、Codexの表示上で`山田太郎`へ戻ることを
@@ -54,3 +57,7 @@ Gatewayの`base_url`、起動時の`CODEX_HOME`を確認します。
 
 この手順はLLMとtoolの動作を利用する目視確認であり、wire-levelの証明ではありません。厳密な
 egress検証は、外向きnetworkを遮断し、実CLIとlocal mock upstreamを使うrelease gateで行います。
+
+開発・release担当者が実OpenAIサーバとの互換性も検証する場合は、外部送信とモデル利用を理解した
+うえで、[Testing](../development/testing.md#実cliと実サーバ)の明示opt-in smokeを実行します。
+通常利用者の導入確認には不要です。

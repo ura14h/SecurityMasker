@@ -16,6 +16,8 @@ cd "$PROJECT_DIRECTORY"
 "$PROJECT_DIRECTORY/.venv/bin/mypy" src
 SM_REQUIRE_MODEL=1 "$PYTHON" -m pytest tests/unit tests/evaluation -q
 SM_RUN_LIVE=1 "$PYTHON" -m pytest tests/integration/test_live_gateway.py -q
+SM_RUN_OPENAI_E2E=1 \
+    "$PYTHON" -m pytest tests/integration/test_real_openai_e2e.py -q
 SM_REQUIRE_ALL_CLIS=1 \
     PYTEST="$PYTHON -m pytest" \
     "$PROJECT_DIRECTORY/devtools/run_cli_e2e.sh"

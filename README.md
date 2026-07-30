@@ -135,6 +135,7 @@ Claude Codeを使う場合は`--mode claude --port 4001`で初期化します。
 - 決定論的detectorが、API key、秘密鍵、メール、電話、公的識別子などを検出します。
 - 固定済み日本語NERが、未登録の一般的な人名、組織名、地名を補完します。
 - JSON、code、shell command、patch、tool callの構造を保つ仮名を使います。
+- CodexのResponsesはHTTP/SSEとWebSocketの双方で同じmask・復元境界を通します。
 - sessionとmodeをまたいで仮名や対応表を共有しません。
 - file、image、audioのprotocol-native添付は、内容を完全検査できないためblockします。
 - Web版ChatGPT、remote session、外部MCPなど、localhost Gatewayを通らない通信は保護しません。

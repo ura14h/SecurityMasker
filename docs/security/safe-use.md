@@ -16,13 +16,17 @@
 
 SecurityMaskerのGatewayを実際に通過した、対応protocolのtext requestが対象です。
 
-- CodexのOpenAI Responses互換通信
+- CodexのOpenAI Responses互換HTTP/SSE・WebSocket通信
 - Claude CodeのAnthropic Messages互換通信
 - request JSON内へ通常のtextとして展開された内容
 
 通常のWeb版ChatGPT、remote session、外部MCPなど、localhost Gatewayを通らない通信は
 保護できません。client設定に文字列があるだけではなく、実際に選択されたproviderとbase URLを
 確認してください。
+
+WebSocketもlocalhost Gatewayを通過したframeだけが対象です。一つの接続は一つのmasking session
+として扱われます。切断後に別のconfigやstateへ切り替えて古い`previous_response_id`を再利用せず、
+新しい会話を開始してください。
 
 ## 添付file
 

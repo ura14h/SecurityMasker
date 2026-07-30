@@ -108,11 +108,13 @@ name = "SecurityMasker Gateway"
 base_url = "http://127.0.0.1:4000"
 wire_api = "responses"
 requires_openai_auth = true
-supports_websockets = false
+supports_websockets = true
 ```
 
 `model_provider`は最初の`[table]`より前に置きます。既存provider設定は、元へ戻すときに必要なので
-削除せず控えておいてください。
+削除せず控えておいてください。Codexは同じGateway URLのResponses WebSocketを優先し、
+利用できない場合の再試行方法はclientが決めます。SecurityMasker自身は同じturnをHTTPへ
+自動再送しません。
 
 ### Claude Code
 

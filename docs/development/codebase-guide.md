@@ -9,7 +9,7 @@
 1. repository rootの`securitymasker.py`
 2. `src/securitymasker/cli.py`
 3. `src/securitymasker/config.py`
-4. `src/securitymasker/gateway/runtime.py`と`gateway/app.py`
+4. `src/securitymasker/gateway/runtime.py`、`gateway/app.py`、`gateway/websocket.py`
 5. 対象providerの`protocols/` adapter
 6. `engine.py`、`context/`、`detectors/`
 7. `aliases/`、`sessions/`、`streaming/`
@@ -24,7 +24,8 @@ securitymasker.py
   → cli.py: cmd_gateway
   → config.py: load_config / build_engine
   → gateway/runtime.py: GatewayRuntime
-  → gateway/app.py: route・header・body・session
+  → gateway/app.py / websocket.py: transport・route
+  → gateway/request_pipeline.py: header・body・session・最終leak guard
   → protocols/: provider JSONのmask対象を選択
   → engine.py: context分割・検出・policy・alias置換・leak guard
   → gateway/forwarder.py: mask済みpayloadだけを送信
@@ -32,7 +33,7 @@ securitymasker.py
 
 読むときの境界は次のとおりです。
 
-- `gateway/`はHTTP、route、header、session binding、転送を担当する。
+- `gateway/`はHTTP/WebSocket、route、header、session binding、転送を担当する。
 - `protocols/`はprovider固有JSONのどこをmask・restoreするかだけを担当する。
 - `engine.py`はproviderを知らず、text、detector、policy、aliasを統合する。
 - `detectors/`は検出spanを返し、置換やsession保存を行わない。
@@ -61,6 +62,8 @@ tool argumentは表示textと異なります。`streaming/tool_arguments.py`でJ
 | `sessions/` | memory test store、暗号化SQLite、TTL、writer lease |
 | `protocols/` | OpenAI Responses、Anthropic Messagesのadapter |
 | `streaming/` | SSE差分、tool argument、分割aliasの復元 |
+| `gateway/request_pipeline.py` | HTTPとWebSocketで共有するmask・session・最終leak guard |
+| `gateway/websocket.py` | Codex Responses WebSocketの接続・frame・並行性制御 |
 | `doctor.py` | 外部へbodyを送らないread-only診断 |
 | `models_fetch.py` | 固定model revisionとartifact digestの取得・検証 |
 
@@ -97,10 +100,12 @@ loggingへ原文やalias対応表を追加して観察してはいけません�
 | payload漏えい防止 | `test_leak_gate.py`、`test_protocol_compatibility.py` |
 | protocol構造 | `test_responses_adapter.py`、`test_anthropic_adapter.py` |
 | streaming | `test_responses_stream.py`、`test_anthropic_stream.py` |
+| Responses WebSocket | `test_responses_websocket.py`、`test_live_gateway.py` |
 | session分離と暗号化 | `test_multiturn_session.py`、`test_sqlite_store.py` |
 | 実CLI境界 | `tests/integration/test_real_cli_e2e.py` |
+| 実OpenAI WebSocket | `tests/integration/test_real_openai_e2e.py`（明示opt-in） |
 
-全体の実行方法、network isolation、実providerへtest bodyを送らない条件は
+全体の実行方法、network isolation、通常testの外部送信禁止、明示opt-in実OpenAI smokeの条件は
 [testing](testing.md)にあります。
 
 ## 読解時に外してはいけない前提

@@ -83,7 +83,7 @@ name = "SecurityMasker Gateway"
 base_url = "http://127.0.0.1:4000"
 wire_api = "responses"
 requires_openai_auth = true
-supports_websockets = false
+supports_websockets = true
 ```
 
 別の `CODEX_HOME` を使う場合は、Codex起動時と診断時の両方へ同じ値を指定します。
@@ -99,6 +99,17 @@ fieldとして有効になっている証明にはなりません。
 
 SecurityMaskerはクライアント設定を自動更新しません。Web会話、remote session、外部MCPなど
 localhostを通らない通信は保護できません。
+
+## CodexのWebSocketが切断される
+
+Gateway logに`sm_websocket_connected`があればWebSocket接続は成立しています。OpenAI側の接続は
+最大60分であり、network断や上流終了後はCodexから新しい接続を開始します。SecurityMaskerは
+送信済みか不明なturnをHTTPへ自動fallbackしません。
+
+再接続後に`previous_response_id`を使う場合、元のresponseを作った同じSecurityMaskerの
+state DB/keyとsession bindingが必要です。別config、別mode、DB初期化後のIDを混ぜると
+fail-closedで拒否します。切断を避けるために`supports_websockets = false`へ戻す前に、
+GatewayとCodexを再起動し、`doctor --require-ready`、port、proxy、時刻、TLSを確認してください。
 
 実Codexでaliasの受信とresponse復元を合成値だけで目視確認する手順は、導入ガイドの
 [通信経路を詳しく検証する](../guides/verify-routing.md)を参照してください。

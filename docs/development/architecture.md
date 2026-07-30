@@ -6,7 +6,7 @@ SecurityMaskerは、単一利用者のローカルPCで動く可逆マスキン�
 
 ```text
 Codex または Claude Code
-              │  provider protocol + client auth
+              │  HTTP/SSEまたはWebSocket + client auth
               ▼
 SecurityMasker Gateway（loopback、1 mode、1 worker）
   ├─ protocol adapter
@@ -35,7 +35,8 @@ ChatGPT backend または Anthropic API
 ## modeとprotocol
 
 - `chatgpt`: OpenAI Responses互換routeだけを公開し、CodexのChatGPT認証を
-  `https://chatgpt.com/backend-api/codex` へ透過する。
+  `https://chatgpt.com/backend-api/codex` へ透過する。`/responses`と`/v1/responses`は
+  HTTP POST/SSEとWebSocketの双方を受理する。
 - `claude`: Anthropic Messages互換routeだけを公開し、Claudeの認証を
   `https://api.anthropic.com` へ透過する。
 
@@ -54,6 +55,18 @@ wrong-protocol routeは404でlocal拒否します。両方を使う場合は2プ
 
 一部だけ検査して成功を返すことはしません。上限、timeout、model異常、store異常は送信前に
 blockします。
+
+## Responses WebSocket
+
+WebSocketはHTTPとは別のmasking方式ではなく、同じrequest pipelineとstream processorを使う
+transport adapterです。一つのdownstream接続を一つのsessionへ固定し、一度に一つの
+`response.create`だけを処理します。同じ接続では複数turnを送信でき、上流response IDは
+clientへ返す前にsessionへbindingします。
+
+Codex 0.145.0がWebSocket frameへ付ける`stream: true`はadapterで除去します。`stream`の
+他の値、`background`、binary、不正JSON、過大frame、別sessionの`previous_response_id`は
+上流へ送らず接続をfail-closedで終了します。未知eventはevent全体のleak guardを通過した場合
+だけ透過します。上流接続失敗時にHTTPへ自動fallbackしません。
 
 ## sessionとSQLite
 
@@ -78,6 +91,8 @@ SecurityMaskerへのrouting設定が必要です。
 現行パッケージ方針は [ADR-0012](../adr/0012-renew-package-design.md)、
 config schemaをv1とする判断は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)、
+Responses WebSocketの境界は
+[ADR-0018](../adr/0018-support-codex-responses-websocket.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
 model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、
