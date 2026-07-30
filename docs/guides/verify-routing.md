@@ -59,5 +59,5 @@ Gatewayの同じ操作時刻に`sm_websocket_connected`があればResponses Web
 egress検証は、外向きnetworkを遮断し、実CLIとlocal mock upstreamを使うrelease gateで行います。
 
 開発・release担当者が実OpenAIサーバとの互換性も検証する場合は、外部送信とモデル利用を理解した
-うえで、[Testing](../development/testing.md#実cliと実サーバ)の明示opt-in smokeを実行します。
+うえで、[Testing](../development/testing.md#実cliと実サーバ)の明示opt-in E2Eを実行します。
 通常利用者の導入確認には不要です。

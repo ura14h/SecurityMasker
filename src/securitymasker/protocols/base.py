@@ -29,6 +29,7 @@ class MaskingSummary:
     """一request内で実際にmask対象として検出したentity件数。"""
 
     entity_counts: Counter[str] = field(default_factory=Counter)
+    opaque_tokens: set[str] = field(default_factory=set)
 
     def add(self, detections: list[DetectionResult]) -> None:
         self.entity_counts.update(item.entity_type for item in detections)

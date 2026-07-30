@@ -196,7 +196,10 @@ async def prepare_request(
             await runtime.store.save(session, lock=held)
             held.check()
         await runtime.engine.assert_no_leak_in_payload(
-            data, session=session, request_id=store_key
+            data,
+            session=session,
+            request_id=store_key,
+            opaque_tokens=summary.opaque_tokens,
         )
         scannable = scannable_headers(headers)
         await runtime.engine.assert_no_leak_in_headers(
@@ -221,7 +224,11 @@ async def prepare_request(
     except SecurityMaskerError as exc:
         reason = _security_reason(exc)
         runtime.telemetry.blocked(provider, reason, session_id=store_key)
-        _log.warning("sm_block", path=path)
+        _log.warning(
+            "sm_block",
+            path=path,
+            entity_type=getattr(exc, "entity_type", None),
+        )
         raise RequestRejected(
             400,
             "securitymasker_blocked",

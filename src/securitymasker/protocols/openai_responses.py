@@ -9,6 +9,7 @@ function callの``arguments``だけを変換する。``model``、各種ID、``ty
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from securitymasker.engine import MaskingEngine
@@ -22,6 +23,17 @@ from securitymasker.protocols.base import (
     reject_unsupported_attachments,
 )
 from securitymasker.streaming.tool_arguments import ToolArgumentReassembler
+
+_OPAQUE_ID = re.compile(
+    r"(?i)^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?::\d+)?|"
+    r"[a-z][a-z0-9]{1,15}_[a-z0-9_-]{6,})$"
+)
+_OPAQUE_TIMESTAMP_KEYS = frozenset(
+    {
+        "turn_started_at_unix_ms",
+        "x-codex-ws-stream-request-start-ms",
+    }
+)
 
 # --------------------------------------------------------------------------- mask
 
@@ -47,6 +59,7 @@ async def mask_request(
         ),
     )
     summary = MaskingSummary()
+    summary.opaque_tokens.update(_opaque_transport_tokens(data))
 
     async def mask(text: str, kind: str = ContextKind.PROSE.value) -> str:
         result = await engine.mask_text(session, text, context_kind=kind)
@@ -68,6 +81,51 @@ async def mask_request(
     if engine.inject_alias_instruction and session.mappings_by_alias:
         _prepend_instruction(data)
     return summary
+
+
+def _opaque_transport_tokens(data: dict[str, Any]) -> set[str]:
+    """Codex生成の既知IDと時刻だけを一般PII format scanから分離する。"""
+    values: set[str] = set()
+
+    def add_value(key: str, value: Any) -> None:
+        if isinstance(value, str):
+            if key == "x-codex-turn-metadata":
+                try:
+                    nested = json.loads(value)
+                except json.JSONDecodeError:
+                    return
+                add_node(nested)
+            if _OPAQUE_ID.fullmatch(value) or (
+                key in _OPAQUE_TIMESTAMP_KEYS
+                and value.isascii()
+                and value.isdigit()
+                and 12 <= len(value) <= 14
+            ):
+                values.add(value)
+        elif isinstance(value, list | dict):
+            add_node(value)
+
+    def add_node(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                add_node(item)
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                add_value(str(key), value)
+
+    for key in ("previous_response_id", "prompt_cache_key"):
+        add_value(key, data.get(key))
+    metadata = data.get("client_metadata")
+    if isinstance(metadata, dict):
+        add_node(metadata)
+    input_node = data.get("input")
+    if isinstance(input_node, list):
+        for item in input_node:
+            if not isinstance(item, dict):
+                continue
+            for key in ("id", "call_id"):
+                add_value(key, item.get(key))
+    return values
 
 
 def _prepend_instruction(data: dict[str, Any]) -> None:
@@ -96,11 +154,23 @@ async def _mask_input_item(item: Any, mask: MaskTransform) -> Any:
         if isinstance(item.get(key), str):
             item[key] = await mask(item[key])
     # inputとして再送されたfunction-call outputとargument。
-    if isinstance(item.get("output"), str):
-        item["output"] = await mask(item["output"], ContextKind.TOOL_RESULT.value)
+    output = item.get("output")
+    if isinstance(output, str | list | dict):
+        item["output"] = await _mask_tool_output(output, mask)
     if isinstance(item.get("arguments"), str):
         item["arguments"] = await _mask_arguments(item["arguments"], mask)
     return item
+
+
+async def _mask_tool_output(node: Any, mask: MaskTransform) -> Any:
+    """tool output配下の任意深さの文字列値を、keyを変えずにマスクする。"""
+    if isinstance(node, str):
+        return await mask(node, ContextKind.TOOL_RESULT.value)
+    if isinstance(node, list):
+        return [await _mask_tool_output(value, mask) for value in node]
+    if isinstance(node, dict):
+        return {key: await _mask_tool_output(value, mask) for key, value in node.items()}
+    return node
 
 
 async def _mask_message_content(message: dict[str, Any], mask: MaskTransform) -> None:

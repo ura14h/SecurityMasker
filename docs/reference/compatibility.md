@@ -49,7 +49,8 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 ## 検証済み範囲
 
 - OpenAI Responses: buffered/SSE/WebSocket text、tool argument、response binding、
-  `previous_response_id`、同一WebSocket接続の複数turn
+  `previous_response_id`、一つのCodex turn内でのWebSocket接続再利用、
+  `responsesapi.websocket_timing`
 - Anthropic Messages: buffered/streaming text、tool use input、count_tokens、
   feature header
 - protocol-native file/image/audio添付とprovider file search: 未検査転送せずlocal block
@@ -63,7 +64,10 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 release時に最新対象versionでE2Eを再実行します。0.1.0ではLinux arm64の外部networkなし環境で、
 両CLIのmask、local mockへの到達、response復元を確認しました。2026-07-30にはmacOS arm64で
 Codex CLI 0.145.0からSecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、合成値の
-maskとresponse復元を確認しました。
+maskとresponse復元を確認しました。実Codex app-serverの一つのturnでdynamic toolを8回連続
+実行して接続数1・完了response数18を確認し、同じ4回のtool chainではWebSocket
+42,391.4 ms、HTTP 91,033.0 ms（53.4%短縮）を観測しました。外部serviceの負荷で絶対時間と
+短縮率は変動するため、製品の性能保証値ではありません。
 
 ## Desktopについて
 

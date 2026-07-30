@@ -41,7 +41,7 @@ SM_RUN_LIVE=1 .venv/bin/python -m pytest -q tests/integration/test_live_gateway.
 ## Test data
 
 - 実在人物、実際のsecret、API key、credentialをfixtureへ入れない。
-- 通常testではproviderへ合成promptを含めて送らない。下記の明示opt-in実OpenAI smokeだけを
+- 通常testではproviderへ合成promptを含めて送らない。下記の明示opt-in実OpenAI E2Eだけを
   例外とし、固定した合成値以外を送らない。
 - 最重要assertionは「上流が受けた最終payloadに元の合成機密値が存在しない」こと。
 - streamingはaliasの全分割位置、tool argument delta、特殊文字をproperty testする。
@@ -59,18 +59,39 @@ WebSocketの証拠にならないため、mock upstreamの記録で`transport ==
 devtools/run_cli_e2e.sh
 ```
 
-実OpenAIサーバとの互換性smokeは、実Codexの既存ChatGPT認証を表示・複製せず、一時的な
-config overrideで行います。このtestは外部送信とモデル利用を伴います。固定した合成PERSONと
-予約済み`.example` hostnameだけを送ることを確認し、明示的にopt-inした場合だけ実行します。
+実OpenAIサーバとの互換性E2Eは、実Codex app-serverの既存ChatGPT認証を表示・複製せず、
+command lineの一時config overrideで行います。このtestは外部送信とモデル利用を伴います。
+固定した合成PERSONだけを送ることを確認し、明示的にopt-inした場合だけ実行します。
 
 ```console
 SM_RUN_OPENAI_E2E=1 .venv/bin/python -m pytest -q \
   tests/integration/test_real_openai_e2e.py
 ```
 
-成功条件は実Codexの終了成功、`sm_websocket_connected`、mask件数、responseでの合成値復元、
-alias非残存のすべてです。通常の利用者設定fileは変更せず、`--ignore-user-config`と
-`--ephemeral`を使用します。
+標準では一つのCodex turn内でdynamic toolを8回直列実行します。4〜20回の範囲で変更できます。
+
+```console
+SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_TOOL_CALLS=12 \
+  .venv/bin/python -m pytest -q -s tests/integration/test_real_openai_e2e.py
+```
+
+成功条件は実Codexのturn完了、tool call数の一致、WebSocket接続数1、完了response数がtool
+call数+1以上、各tool resultのmask、最終responseでの合成値復元、alias非残存のすべてです。
+transportの比較を行う場合は、同じprocess条件で同一tool chainをWebSocket、HTTPの順に実行し、
+WebSocketのwall timeが短いことを確認します。
+
+```console
+SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_COMPARE_HTTP=1 \
+  SM_OPENAI_E2E_TOOL_CALLS=4 \
+  .venv/bin/python -m pytest -q -s tests/integration/test_real_openai_e2e.py
+```
+
+外部serviceの混雑で時間は変動します。`serverOverloaded`だけはfresh Codex/Gateway processで
+1回再試行しますが、leak block、protocol error、timeoutは再試行して成功扱いにしません。
+実行時のJSON出力へ両transportのwall timeと短縮率を残し、一般的な性能保証値にはしません。
+通常の利用者設定fileは変更せず、threadには`ephemeral`を指定します。transport互換性に
+detector modelの揺らぎを混ぜないため、このtest専用の一時configだけ日本語NERを無効にし、
+辞書で固定合成値を検出します。
 
 ## Desktopの扱い
 

@@ -22,6 +22,8 @@ from securitymasker.sessions.memory import InMemorySessionStore
 PERSON = "山田太郎"
 # Luhn-valid synthetic test card (a standard test-suite number, not a real card).
 CARD = "4111111111111111"
+# Luhn-validな13桁test番号。Codexのmillisecond timestampと同じ桁数を再現する。
+TIMESTAMP_SHAPED_CARD = "4222222222222"
 EMAIL = "taro@example.co.jp"
 JP_PHONE = "090-1234-5678"
 
@@ -75,7 +77,7 @@ def _client_and_calls(monkeypatch, product_mode: str):
 # --- finding 1: deterministic PII in an unknown field must block ----------------
 
 
-@pytest.mark.parametrize("value", [CARD, EMAIL, JP_PHONE])
+@pytest.mark.parametrize("value", [CARD, TIMESTAMP_SHAPED_CARD, EMAIL, JP_PHONE])
 @pytest.mark.asyncio
 async def test_deterministic_pii_in_unknown_field_blocked(app_and_calls, value) -> None:
     client, calls = app_and_calls
@@ -105,6 +107,64 @@ async def test_masked_request_with_email_still_forwards(app_and_calls) -> None:
     assert r.status_code == 200, r.text
     assert len(calls) == 1
     assert EMAIL.encode() not in calls[0]["body"]
+
+
+@pytest.mark.asyncio
+async def test_codex_opaque_metadata_avoids_format_false_positive(
+    app_and_calls,
+) -> None:
+    client, calls = app_and_calls
+    async with client:
+        r = await client.post(
+            "/responses",
+            json={
+                "input": "hi",
+                "prompt_cache_key": "019f9e64-25e8-7fd0-9bdd-bb1c990fb23a",
+                "client_metadata": {
+                    "x-codex-turn-metadata": (
+                        '{"turn_id":"019f9e64-262a-7ec1-8d0f-e63bb2c3e353",'
+                        f'"turn_started_at_unix_ms":"{TIMESTAMP_SHAPED_CARD}"'
+                        "}"
+                    )
+                },
+            },
+        )
+    assert r.status_code == 200
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_registered_value_in_codex_opaque_metadata_is_still_blocked(
+    app_and_calls,
+) -> None:
+    client, calls = app_and_calls
+    async with client:
+        r = await client.post(
+            "/responses",
+            json={"input": "hi", "client_metadata": {"thread_id": PERSON}},
+        )
+    assert r.status_code == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_pii_around_codex_opaque_metadata_is_still_blocked(
+    app_and_calls,
+) -> None:
+    client, calls = app_and_calls
+    metadata = (
+        '{"turn_id":"019f9e64-262a-7ec1-8d0f-e63bb2c3e353",'
+        f'"turn_started_at_unix_ms":"{TIMESTAMP_SHAPED_CARD}",'
+        f'"contact":"{EMAIL}"'
+        "}"
+    )
+    async with client:
+        r = await client.post(
+            "/responses",
+            json={"input": "hi", "client_metadata": {"x-codex-turn-metadata": metadata}},
+        )
+    assert r.status_code == 400
+    assert calls == []
 
 
 # --- finding 2: header leakage --------------------------------------------------

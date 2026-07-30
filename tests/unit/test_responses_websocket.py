@@ -87,6 +87,14 @@ class FakeUpstream:
         ]
         for output in events:
             await self._events.put(json.dumps(output, ensure_ascii=False))
+        await self._events.put(
+            json.dumps(
+                {
+                    "type": "responsesapi.websocket_timing",
+                    "timing": {"total_ms": 1},
+                }
+            )
+        )
 
     async def recv(self, decode: bool | None = None) -> str | bytes:
         return await self._events.get()
@@ -181,6 +189,45 @@ def test_websocket_normalizes_codex_stream_true_before_upstream_send(
     outbound = upstreams[0].sent[0]
     assert "stream" not in outbound
     assert PERSON not in json.dumps(outbound, ensure_ascii=False)
+
+
+def test_websocket_masks_nested_function_output_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upstreams: list[FakeUpstream] = []
+    _patch_upstream(monkeypatch, upstreams)
+
+    with (
+        TestClient(gateway_app.create_app(_runtime())) as client,
+        client.websocket_connect(
+            "/responses", headers={"x-securitymasker-session-id": "ws-nested-output"}
+        ) as websocket,
+    ):
+        websocket.send_json(
+            {
+                "type": "response.create",
+                "model": "m",
+                "input": [
+                    {
+                        "type": "function_call_output",
+                        "call_id": "call-1",
+                        "output": [
+                            {
+                                "type": "input_text",
+                                "content": {"text": PERSON},
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        restored, _ = _read_response(websocket)
+
+    assert PERSON in restored
+    assert len(upstreams) == 1
+    outbound = upstreams[0].sent[0]
+    assert PERSON not in json.dumps(outbound, ensure_ascii=False)
+    assert "SM_PERSON_" in json.dumps(outbound, ensure_ascii=False)
 
 
 @pytest.mark.parametrize("stream", [False, None, 1, "true"])

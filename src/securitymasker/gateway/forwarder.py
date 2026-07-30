@@ -13,11 +13,14 @@ from typing import Any, Protocol
 import httpx
 from starlette.responses import StreamingResponse
 
+from securitymasker.logging import get_logger
+
 # hop-by-hop headerと再計算するheaderは両方向とも転送しない。
 _REQ_STRIP = {"host", "content-length", "connection", "accept-encoding", "transfer-encoding"}
 _RESP_STRIP = {"content-length", "content-encoding", "transfer-encoding", "connection"}
 
 _TIMEOUT = httpx.Timeout(connect=15.0, read=600.0, write=60.0, pool=15.0)
+_log = get_logger(component="securitymasker.gateway.forwarder")
 
 
 class StreamProcessor(Protocol):
@@ -31,6 +34,18 @@ def _fwd_req_headers(headers: Mapping[str, str]) -> dict[str, str]:
 
 def _resp_headers(headers: httpx.Headers) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() not in _RESP_STRIP}
+
+
+def response_media_type(
+    content_type: str | None,
+    *,
+    status_code: int,
+    has_processor: bool,
+) -> str | None:
+    """成功したResponses streamだけ、欠落したSSE media typeを補う。"""
+    if content_type is None and has_processor and 200 <= status_code < 300:
+        return "text/event-stream"
+    return content_type
 
 
 async def forward_streaming(
@@ -51,6 +66,11 @@ async def forward_streaming(
         client.build_request(method, url, headers=_fwd_req_headers(headers), content=body),
         stream=True,
     )
+    _log.info(
+        "sm_upstream_stream_started",
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type"),
+    )
 
     async def relay() -> AsyncGenerator[bytes, None]:
         try:
@@ -62,15 +82,21 @@ async def forward_streaming(
                     yield tail
                 if on_complete is not None:
                     await on_complete(processor)
+            _log.info("sm_upstream_stream_completed", status_code=upstream.status_code)
         finally:
             await upstream.aclose()
             await client.aclose()
 
+    media_type = response_media_type(
+        upstream.headers.get("content-type"),
+        status_code=upstream.status_code,
+        has_processor=processor is not None,
+    )
     return StreamingResponse(
         relay(),
         status_code=upstream.status_code,
         headers=_resp_headers(upstream.headers),
-        media_type=upstream.headers.get("content-type"),
+        media_type=media_type,
     )
 
 

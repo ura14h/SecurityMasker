@@ -43,6 +43,7 @@ _TERMINAL_EVENTS = frozenset(
         "error",
     }
 )
+_CONNECTION_EVENTS = frozenset({"responsesapi.websocket_timing"})
 _log = get_logger(component="securitymasker.gateway.websocket")
 
 
@@ -315,6 +316,29 @@ async def _relay(
             async with state_lock:
                 current = active
             if current is None:
+                if event.get("type") in _CONNECTION_EVENTS:
+                    try:
+                        await guard_unknown_event(
+                            runtime,
+                            event,
+                            session=session,
+                            store_key=session_id,
+                        )
+                    except RequestRejected as exc:
+                        await _close_with_error(
+                            downstream,
+                            status=exc.status,
+                            code=exc.code,
+                            message=exc.public_message,
+                            close_code=1008,
+                        )
+                        return
+                    await _send_json(downstream, event)
+                    continue
+                _log.warning(
+                    "sm_websocket_unexpected_upstream_event",
+                    event_type=event.get("type"),
+                )
                 runtime.telemetry.stream_error(
                     Provider.OPENAI, StreamErrorReason.PROCESSING
                 )
@@ -369,10 +393,17 @@ async def _relay(
                         in {"error", "response.failed", "response.incomplete"}
                         else 200
                     )
+                duration_ms = (time.perf_counter() - current.started_at) * 1000.0
                 runtime.telemetry.request_completed(
                     Provider.OPENAI,
                     status_code=status,
-                    duration_ms=(time.perf_counter() - current.started_at) * 1000.0,
+                    duration_ms=duration_ms,
+                )
+                _log.info(
+                    "sm_websocket_turn_completed",
+                    session_fp=safe_fingerprint(session_id),
+                    outcome="success" if status < 400 else "error",
+                    duration_ms=round(duration_ms, 1),
                 )
                 async with state_lock:
                     active = None

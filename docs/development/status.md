@@ -28,11 +28,18 @@
 現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
 Python 3.12でsource setupを検証しています。
 
-2026-07-30にmacOS arm64でruff、mypy strict 71 source files、unit 650件、evaluation 3件が
-成功しました。mock upstreamを使う実process Gateway E2E 4件と、Codex CLI 0.145.0から
-SecurityMaskerのWebSocketを通してOpenAI実サーバへ接続する合成data smoke 1件も成功済みです。
-Codex 0.145.0がWebSocket frameへ付ける`stream: true`は、実導通で確認してadapterで
-上流送信前に除去しています。
+2026-07-30にmacOS arm64でruff、mypy strict 71 source files、unit 661件、evaluation 3件が
+成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。
+Codex CLI 0.145.0のapp-serverから
+SecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、一つのturnでdynamic toolを8回
+直列実行してWebSocket接続数1、完了response数18、全tool resultのmaskと最終responseの復元を
+確認しました。最終コードでのwall timeは132,139.9 msでした。
+
+同じ実Codex・実OpenAIで4回のtool chainを両transportへ通した比較では、WebSocket
+42,391.4 ms、HTTP 91,033.0 msとなり、同一実行で53.4%の短縮を観測しました。外部serviceの
+負荷で変動する観測値であり、性能保証値ではありません。実導通ではCodexがWebSocket frameへ
+付ける`stream: true`、response完了後の`responsesapi.websocket_timing`、HTTP成功responseで
+欠落する場合があるSSE Content-Typeも確認し、adapterで互換処理しています。
 
 Linux arm64で外向きnetworkを遮断した実Codex CLI／Claude Code CLI gateをWebSocket対応後に
 再実行し、source版だけが公開対象であることをrelease noteへ明記できれば、最初の公開版を

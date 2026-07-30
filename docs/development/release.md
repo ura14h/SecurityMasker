@@ -15,12 +15,14 @@
 - mypy strict
 - 固定NER model必須のunit/evaluation
 - mock upstreamを使うlive Gateway test
-- 実Codex CLIとOpenAI実サーバを使うWebSocket互換性smoke
+- 実Codex app-serverとOpenAI実サーバを使うWebSocket反復E2EとHTTP性能比較
 - 実Codex CLIと実Claude Code CLIを使うE2E
 
-実OpenAI smokeは外部送信とモデル利用を伴い、固定した合成値だけを送ります。既存のCodex認証を
-表示・複製せず、通常configを読まない一時overrideでWebSocket接続、mask、response復元を
-確認します。release担当者は実行前に外部送信を認識し、Codexへlogin済みである必要があります。
+実OpenAI E2Eは外部送信とモデル利用を伴い、固定した合成値だけを送ります。既存のCodex認証を
+表示・複製せず、一時overrideで一つのturnに標準8回のdynamic tool callを実行します。
+WebSocket接続数1、各requestのmask、response復元、alias非残存を確認し、同一tool chainの
+HTTP比較でwall timeと差を記録します。release担当者は実行前に外部送信を認識し、Codexへ
+login済みである必要があります。
 
 その後のlocal mock実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeが
 ないことを構造検査してから実行します。隔離を証明できないhostでは成功扱いにせず、
@@ -69,7 +71,8 @@ SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査�
 
 - 実行日と対象commit
 - OS、architecture、Python、client version
-- 実OpenAI WebSocket smokeの実施有無と結果（promptや認証情報は記録しない）
+- 実OpenAI WebSocket反復E2Eのtool call数、接続数、完了response数
+- 同じtool chainのWebSocket／HTTP wall timeと差（promptや認証情報は記録しない）
 - 実行したgateと結果
 - test件数
 - artifact名、size、checksum

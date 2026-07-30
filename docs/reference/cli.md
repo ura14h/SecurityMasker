@@ -137,6 +137,7 @@ Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の�
 2026-07-27 21:21:03 [info] gateway_started url=http://127.0.0.1:4000 mode=chatgpt
 2026-07-27 21:22:05 [info] sm_websocket_connected session_fp=3ed714a9735a
 2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
+2026-07-27 21:22:08 [info] sm_websocket_turn_completed duration_ms=2147.3 outcome=success session_fp=3ed714a9735a
 ```
 
 先頭はlocal時刻、`[info]`や`[warning]`はlevel、その次がevent名、残りが
@@ -147,6 +148,9 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
 |---|---|
 | `gateway_started` | `url`と`mode`でGatewayを起動した |
 | `sm_websocket_connected` | Responses WebSocketのdownstream・upstream接続が成立した |
+| `sm_websocket_turn_completed` | 同じWebSocket上の一つのResponses処理が完了した |
+| `sm_upstream_stream_started` | HTTP/SSE upstream responseの受信を開始した |
+| `sm_upstream_stream_completed` | HTTP/SSE upstream responseを最後まで処理した |
 | `request_masked` | providerへの転送前にrequestのマスク処理が完了した |
 | `request_blocked` | 安全検査、request形式、session解決などに失敗し、providerへ転送せず拒否した |
 | `store_error` | session DBのreadiness、request処理、response bindingのいずれかに失敗した |
@@ -165,6 +169,8 @@ providerは表示しません。modeは起動時の`gateway_started`で確認し
   一意IDとしては使用できません。
 - `mode`: `chatgpt`または`claude`。一つのprocessでは起動中に変わりません。
 - `url`: clientが接続するloopback URLです。
+- `duration_ms`: WebSocket上の個別response処理時間です。Codex turn全体やHTTP比較のwall
+  timeではありません。
 
 ### Gatewayの終了方法
 

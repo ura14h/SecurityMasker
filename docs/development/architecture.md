@@ -60,13 +60,20 @@ blockします。
 
 WebSocketはHTTPとは別のmasking方式ではなく、同じrequest pipelineとstream processorを使う
 transport adapterです。一つのdownstream接続を一つのsessionへ固定し、一度に一つの
-`response.create`だけを処理します。同じ接続では複数turnを送信でき、上流response IDは
-clientへ返す前にsessionへbindingします。
+`response.create`だけを処理します。Codexは一つのuser turn内のprewarmとtool loopで
+同じ接続へ複数の`response.create`を送り、上流response IDはclientへ返す前にsessionへ
+bindingします。
 
 Codex 0.145.0がWebSocket frameへ付ける`stream: true`はadapterで除去します。`stream`の
 他の値、`background`、binary、不正JSON、過大frame、別sessionの`previous_response_id`は
 上流へ送らず接続をfail-closedで終了します。未知eventはevent全体のleak guardを通過した場合
-だけ透過します。上流接続失敗時にHTTPへ自動fallbackしません。
+だけ透過します。response完了後の`responsesapi.websocket_timing`も同じguard後に透過し、
+次のresponseまで接続を維持します。上流接続失敗時にHTTPへ自動fallbackしません。
+
+`previous_response_id`、`prompt_cache_key`、`client_metadata`、item `id`／`call_id`から
+形式検証で抽出したCodex生成UUID、prefix付きID、millisecond timestampはopaque transport
+tokenです。辞書、user regex、重大secretは検査しつつ、このtokenだけ一般PII形式の偶発一致を
+除外します。同じmetadata内の他の値、prompt、tool output、未知fieldは全scannerを通します。
 
 ## sessionとSQLite
 

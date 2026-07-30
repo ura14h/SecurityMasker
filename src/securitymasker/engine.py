@@ -475,6 +475,7 @@ class MaskingEngine:
         *,
         session: MaskingSession | None = None,
         request_id: str | None = None,
+        opaque_tokens: frozenset[str] | set[str] = frozenset(),
     ) -> None:
         """マスク済みpayload全体に対する最終block-only leakage guard。
 
@@ -487,7 +488,13 @@ class MaskingEngine:
         values — not the serialized bytes — means JSON escaping (``\\n``, ``\\"``,
         ``\\\\``) is already undone, so an escaped secret is caught the same way.
         """
-        await self._assert_no_leak(data, self._leak_scanners, session, request_id)
+        await self._assert_no_leak(
+            data,
+            self._leak_scanners,
+            session,
+            request_id,
+            opaque_tokens=opaque_tokens,
+        )
 
     async def assert_no_leak_in_headers(
         self,
@@ -511,6 +518,8 @@ class MaskingEngine:
         scanners: list[SensitiveDataDetector],
         session: MaskingSession | None,
         request_id: str | None,
+        *,
+        opaque_tokens: frozenset[str] | set[str] = frozenset(),
     ) -> None:
         if not self._registered_literals and not scanners:
             return
@@ -528,9 +537,20 @@ class MaskingEngine:
                     raise LeakageError(entity_type="registered", request_id=request_id)
             if not scanners:
                 continue
-            ctx = DetectionContext(norm=norm, request_id=request_id, issued_aliases=issued)
-            spans = identifier_spans(hay)
+            protected = tuple(token for token in opaque_tokens if token in hay)
+            scan_hay = hay
+            for token in sorted(protected, key=len, reverse=True):
+                scan_hay = scan_hay.replace(token, " " * len(token))
             for scanner in scanners:
+                scanner_hay = (
+                    hay if scanner in self._header_scanners else scan_hay
+                )
+                ctx = DetectionContext(
+                    norm=normalize(scanner_hay, self._normalization),
+                    request_id=request_id,
+                    issued_aliases=issued,
+                )
+                spans = identifier_spans(scanner_hay)
                 for hit in await scanner.detect(ctx):
                     if hit.original_value in issued or hit.normalized_value in issued:
                         continue  # one of this session's own aliases

@@ -106,6 +106,11 @@ Gateway logに`sm_websocket_connected`があればWebSocket接続は成立して
 最大60分であり、network断や上流終了後はCodexから新しい接続を開始します。SecurityMaskerは
 送信済みか不明なturnをHTTPへ自動fallbackしません。
 
+長いtool loopで接続再利用を確認する場合、`sm_websocket_connected`が一つのまま、
+`sm_websocket_turn_completed`がtool往復に応じて増えることを確認します。複数のuser turnは
+Codex側で別の`ModelClientSession`になり得るため、接続継続性の試験には一つのturn内の反復tool
+callを使います。
+
 再接続後に`previous_response_id`を使う場合、元のresponseを作った同じSecurityMaskerの
 state DB/keyとsession bindingが必要です。別config、別mode、DB初期化後のIDを混ぜると
 fail-closedで拒否します。切断を避けるために`supports_websockets = false`へ戻す前に、

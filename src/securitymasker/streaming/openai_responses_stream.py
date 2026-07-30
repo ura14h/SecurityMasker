@@ -19,6 +19,7 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from securitymasker.logging import get_logger
 from securitymasker.protocols.base import TEXT_KEYS
 from securitymasker.protocols.sse import SSEEvent, SSEParser, serialize_event
 from securitymasker.streaming.text_replacer import StreamingRestorer
@@ -29,6 +30,7 @@ from securitymasker.tool_trust import ToolTrustPolicy
 # accumulating and emit the raw (aliased) buffer without restoration, so a runaway
 # tool-call stream can't grow memory without bound. Never a partial literal restore.
 _MAX_ARG_BUFFER_BYTES = 1_000_000
+_log = get_logger(component="securitymasker.streaming.openai_responses")
 
 
 def _restore_content_parts(content: Any, restore: Callable[[str], str]) -> None:
@@ -273,6 +275,7 @@ def _error_event(message: str) -> SSEEvent:
     fail-closed outcome mid-stream is reported as an ``error`` event. The message
     describes the limit that was hit and never contains user content.
     """
+    _log.warning("sm_response_stream_blocked")
     payload = {"type": "error", "error": {"type": "securitymasker_stream_error",
                                           "message": message}}
     return SSEEvent(event="error", data=[json.dumps(payload, ensure_ascii=False)])

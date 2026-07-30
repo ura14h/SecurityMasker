@@ -44,6 +44,49 @@ async def test_mask_responses_input_string() -> None:
 
 
 @pytest.mark.asyncio
+async def test_codex_transport_ids_are_marked_opaque() -> None:
+    eng, s = build_engine(), await _session()
+    data = {
+        "input": [
+            {
+                "type": "function_call_output",
+                "call_id": "call_4111111111111111",
+                "output": "clean",
+            }
+        ],
+        "previous_response_id": "resp_4111111111111111",
+        "prompt_cache_key": "cache_4111111111111111",
+        "client_metadata": {"turn_id": "turn_4111111111111111"},
+    }
+    summary = await adapter.mask_request(eng, s, data)
+    assert summary.opaque_tokens == {
+        "call_4111111111111111",
+        "resp_4111111111111111",
+        "cache_4111111111111111",
+        "turn_4111111111111111",
+    }
+
+
+@pytest.mark.asyncio
+async def test_codex_nested_turn_metadata_marks_only_transport_tokens() -> None:
+    eng, s = build_engine(), await _session()
+    metadata = (
+        '{"turn_id":"019f9e64-262a-7ec1-8d0f-e63bb2c3e353",'
+        '"turn_started_at_unix_ms":"1785068791342",'
+        '"contact":"synthetic@example.com"}'
+    )
+    summary = await adapter.mask_request(
+        eng,
+        s,
+        {"input": "clean", "client_metadata": {"x-codex-turn-metadata": metadata}},
+    )
+    assert summary.opaque_tokens == {
+        "019f9e64-262a-7ec1-8d0f-e63bb2c3e353",
+        "1785068791342",
+    }
+
+
+@pytest.mark.asyncio
 async def test_mask_responses_input_items_only_text() -> None:
     eng, s = build_engine(), await _session()
     data = {
