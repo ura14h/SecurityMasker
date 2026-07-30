@@ -82,6 +82,25 @@ class ResponsesStreamProcessor:
         out: list[SSEEvent] = []
         for ev in events:
             out.extend(self._handle(ev))
+        out.extend(self._finish())
+        return _serialize(out)
+
+    def process_event(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """WebSocketのJSON eventへSSEと同じ変換規則を適用する。"""
+        event_type = payload.get("type")
+        event_name = event_type if isinstance(event_type, str) else None
+        event = SSEEvent(
+            event=event_name,
+            data=[json.dumps(payload, ensure_ascii=False)],
+        )
+        return _event_payloads(self._handle(event))
+
+    def finish_events(self) -> list[dict[str, Any]]:
+        """WebSocket response終端で保留中delta／tool引数をfail-closedに畳む。"""
+        return _event_payloads(self._finish())
+
+    def _finish(self) -> list[SSEEvent]:
+        out: list[SSEEvent] = []
         for key, restorer in list(self._text_restorers.items()):
             leftover = restorer.flush()
             if leftover:
@@ -99,7 +118,7 @@ class ResponsesStreamProcessor:
         self._arg_buffers.clear()
         self._arg_sizes.clear()
         self._arg_overflow.clear()
-        return _serialize(out)
+        return out
 
     def _handle(self, ev: SSEEvent) -> list[SSEEvent]:
         payload = _payload(ev)
@@ -270,3 +289,13 @@ def _args_delta_event(done_payload: dict[str, Any], arguments: str) -> SSEEvent:
 
 def _serialize(events: list[SSEEvent]) -> bytes:
     return "".join(serialize_event(e) for e in events).encode("utf-8")
+
+
+def _event_payloads(events: list[SSEEvent]) -> list[dict[str, Any]]:
+    """内部SSE eventからWebSocket用JSON objectだけを取り出す。"""
+    payloads: list[dict[str, Any]] = []
+    for event in events:
+        payload = _payload(event)
+        if payload is not None:
+            payloads.append(payload)
+    return payloads

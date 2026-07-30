@@ -16,25 +16,18 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
+from starlette.routing import BaseRoute, Route, WebSocketRoute
 
-from securitymasker.detectors.existing_alias import contains_alias_shape
-from securitymasker.engine import MaskingEngine, iter_strings
-from securitymasker.errors import (
-    DetectionError,
-    DetectorTimeoutError,
-    LeakageError,
-    MaskingError,
-    SecurityMaskerError,
-    SessionError,
-)
+from securitymasker.engine import MaskingEngine
 from securitymasker.gateway.forwarder import forward_buffered, forward_streaming
+from securitymasker.gateway.headers import client_headers
+from securitymasker.gateway.request_pipeline import RequestRejected, prepare_request
 from securitymasker.gateway.runtime import GatewayRuntime
-from securitymasker.gateway.session import resolve_session
 from securitymasker.gateway.telemetry import (
     GatewayTelemetryMiddleware,
     ResponseBindingStreamError,
 )
+from securitymasker.gateway.websocket import handle_responses_websocket
 from securitymasker.logging import get_logger
 from securitymasker.metrics import (
     BlockReason,
@@ -59,77 +52,6 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     # errorにはrequest bodyや機密値を絶対に再表示しない。
     return JSONResponse({"error": {"message": message, "type": code, "code": str(status)}},
                         status_code=status)
-
-
-def _payload_has_alias_shape(data: dict[str, Any]) -> bool:
-    return any(contains_alias_shape(s) for s in iter_strings(data))
-
-
-# 全upstreamへ転送可能なheader。deny-by-defaultで未記載項目を破棄し、
-# custom headerによる機密値の迂回送信を防ぐ。
-_COMMON_HEADERS = frozenset({
-    "accept", "accept-encoding", "accept-language", "content-type", "content-length",
-    "user-agent",
-})
-
-# provider固有headerを相互に混在させない。``authorization``は両providerで使うため、
-# clientが選んだrouteのupstreamへだけ転送する。Codex固有headerは実通信で確認した
-# spellingを維持し、session resolverが利用する``session-id``と``thread-id``も転送する。
-_OPENAI_HEADERS = frozenset({
-    "authorization", "openai-organization", "openai-project", "openai-beta",
-    "chatgpt-account-id", "originator", "session-id", "thread-id",
-    "x-openai-internal-codex-responses-lite",
-})
-
-
-def _is_openai_passthrough(name: str) -> bool:
-    """Codexが送る``x-codex-*`` header群をまとめて転送する。
-
-    header名を事前列挙できないため値は未信頼の自由textとして扱い、固定的な構造headerと
-    異なり、転送前に決定論的detectorの全集合でscanする。
-    """
-    return name.startswith("x-codex-")
-
-
-def _is_anthropic_passthrough(name: str) -> bool:
-    """Anthropicが追加するfeature headerをprotocol namespace単位で透過する。"""
-    return name.startswith("anthropic-")
-
-
-_ANTHROPIC_HEADERS = frozenset({
-    "authorization", "x-api-key", "anthropic-version", "anthropic-beta",
-    "anthropic-dangerous-direct-browser-access",
-    "x-claude-code-session-id",
-})
-
-PROVIDER_HEADERS: dict[str, frozenset[str]] = {
-    "openai": _OPENAI_HEADERS,
-    "anthropic": _ANTHROPIC_HEADERS,
-}
-
-# auth headerは対応providerへ透過するが、マスク・保存・scan・ログ記録を行わない。
-_AUTH_HEADERS = frozenset({"authorization", "x-api-key"})
-
-# user contentではなくclientやproxy transportが生成するheader。
-# IPやhostnameを正当に含むため、一般のPII scan対象にはしない。
-_TRANSPORT_HEADERS = frozenset({
-    "host", "connection", "content-length", "accept-encoding", "accept",
-    "accept-language", "user-agent", "via", "forwarded",
-    "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip",
-})
-
-
-def _client_headers(request: Request, provider: str) -> dict[str, str]:
-    """``provider``ごとのallowlist済みheaderを返し、それ以外は破棄する。"""
-    allowed = _COMMON_HEADERS | PROVIDER_HEADERS.get(provider, frozenset())
-    return {
-        k: v for k, v in request.headers.items()
-        if (
-            k.lower() in allowed
-            or (provider == "openai" and _is_openai_passthrough(k.lower()))
-            or (provider == "anthropic" and _is_anthropic_passthrough(k.lower()))
-        )
-    }
 
 
 async def _read_json_object(request: Request) -> tuple[dict[str, Any] | None, JSONResponse | None]:
@@ -207,110 +129,26 @@ async def _handle(
     telemetry = rt.telemetry
     provider_name = Provider(provider)
     url = f"{upstream}{path}"
-    headers = _client_headers(request, provider)
+    headers = client_headers(request.headers, provider)
 
     data, err = await _read_json_object(request)
     if err is not None or data is None:
         telemetry.blocked(provider_name, BlockReason.REQUEST_FORMAT)
         return err or _error(400, "invalid_body", "Request body must be a JSON object.")
 
-    resolved = resolve_session(request.headers, data)
-    store_key = resolved.session_id
-    stable = resolved.stable
-    if not stable and resolved.previous_response_id:
-        # previous_response_id changes every turn, so it is a lookup handle only:
-        # continue the session that actually produced that response.
-        try:
-            bound = await rt.store.resolve_response(resolved.previous_response_id)
-            if bound is not None and await rt.store.get(bound) is None:
-                # binding元sessionが期限切れ・revoke・purge済みなら新sessionを作らない。
-                # 既存aliasを別の対応表へ再マスクするとturn間の復元が壊れるためである。
-                bound = None
-        except Exception as exc:  # noqa: BLE001 - store障害は安全な503へ畳み込む
-            telemetry.store_error(provider_name, StoreOperation.REQUEST)
-            telemetry.blocked(provider_name, BlockReason.STORE)
-            _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
-            return _error(
-                503, "session_store_unavailable", "Session store unavailable."
-            )
-        if bound is None:
-            # 対応sessionを特定できないconversation継続は拒否する。
-            # 自プロセスの既知responseでない場合は一律拒否する。numericやUUID形状のaliasは
-            # 通常値と区別できず、形状推測だけでは別の対応表への再マスクを防げない。
-            _log.warning("sm_block_unknown_previous_response", path=path)
-            telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
-            return _error(409, "session_unresolved",
-                          "previous_response_id does not match a known session.")
-        store_key, stable = bound, True
-
-    if not stable and _payload_has_alias_shape(data):
-        # 前turnのaliasがあるのに安定sessionがなければ、新規作成せずblockする。
-        # 新しい対応表で処理を続けると復元不能になるためである。
-        _log.warning("sm_block_unresolved_session", path=path)
-        telemetry.blocked(provider_name, BlockReason.SESSION_UNRESOLVED)
-        return _error(409, "session_unresolved",
-                      "Request references prior aliases but no stable session id was provided.")
-
     try:
-        # get／create／mask／saveを一つの排他区間に置くため最初にlockする。
-        # concurrent requests can't fork the same session's alias table.
-        async with rt.store.lock(store_key) as held:
-            session = await rt.store.get_or_create(store_key, lock=held)
-            summary = await mask(rt.engine, session, data)
-            # 保存前にlock ownershipを再確認する。
-            await held.verify()
-            await rt.store.save(session, lock=held)
-            held.check()
-        # マスク済みpayload全体への最終block-only guard。未知fieldや構造fieldに残った
-        # 登録済みsecretも転送しない。
-        await rt.engine.assert_no_leak_in_payload(data, session=session, request_id=store_key)
-        # allowlist対象だけでなく全incoming non-auth headerにも同じguardを適用する。
-        # headerへ置かれたsecretを黙って破棄せず明示的に拒否する。provider認証headerは
-        # errorやlogへ値を取り込まないよう除外し、transport headerもuser contentでは
-        # ないため除外する。
-        scannable = {k: v for k, v in request.headers.items()
-                     if k.lower() not in _AUTH_HEADERS and k.lower() not in _TRANSPORT_HEADERS}
-        await rt.engine.assert_no_leak_in_headers(
-            scannable, session=session, request_id=store_key,
+        prepared = await prepare_request(
+            rt,
+            request.headers,
+            data,
+            provider_name=provider,
+            path=path,
+            mask=mask,
         )
-        # wildcard一致する``x-codex-*``は自由text値を持つため、body fieldと同じ
-        # 決定論的detectorの全集合で個別scanする。
-        wildcard = {
-            k: v
-            for k, v in scannable.items()
-            if (
-                (provider == "openai" and _is_openai_passthrough(k.lower()))
-                or (provider == "anthropic" and _is_anthropic_passthrough(k.lower()))
-            )
-        }
-        if wildcard:
-            await rt.engine.assert_no_leak_in_payload(
-                wildcard, session=session, request_id=store_key,
-            )
-    except SessionError as exc:
-        telemetry.store_error(provider_name, StoreOperation.REQUEST)
-        telemetry.blocked(
-            provider_name, BlockReason.STORE, session_id=store_key
-        )
-        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
-        return _error(503, "session_store_unavailable", "Session store unavailable.")
-    except SecurityMaskerError as exc:
-        if isinstance(exc, DetectorTimeoutError):
-            reason = BlockReason.DETECTOR_TIMEOUT
-        elif isinstance(exc, DetectionError):
-            reason = BlockReason.DETECTOR_FAILURE
-        elif isinstance(exc, LeakageError):
-            reason = BlockReason.LEAK_GUARD
-        elif isinstance(exc, MaskingError):
-            reason = BlockReason.MASKING
-        else:
-            reason = BlockReason.MASKING
-        telemetry.blocked(provider_name, reason, session_id=store_key)
-        _log.warning("sm_block", path=path)
-        return _error(400, "securitymasker_blocked", str(exc))
-    telemetry.masked(
-        provider_name, summary.entity_counts, session_id=store_key
-    )
+    except RequestRejected as exc:
+        return _error(exc.status, exc.code, exc.public_message)
+    session = prepared.session
+    store_key = prepared.store_key
     masked = json.dumps(data, ensure_ascii=False).encode("utf-8")
     if streaming_allowed and data.get("stream"):
         proc = stream_processor(rt.engine.literal_restorations(session),
@@ -399,7 +237,7 @@ async def handle_openai_models(request: Request) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
     url = f"{rt.openai_upstream}/models"
     return await forward_streaming(
-        request.method, url, _client_headers(request, "openai"), await request.body()
+        request.method, url, client_headers(request.headers, "openai"), await request.body()
     )
 
 
@@ -408,7 +246,7 @@ async def handle_anthropic_models(request: Request) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
     url = f"{rt.anthropic_upstream}/v1/models"
     return await forward_streaming(
-        request.method, url, _client_headers(request, "anthropic"), await request.body()
+        request.method, url, client_headers(request.headers, "anthropic"), await request.body()
     )
 
 
@@ -419,7 +257,7 @@ async def handle_head_root(request: Request) -> Response:
 
 def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
     # 明示allowlistだけを許しcatch-allは置かない。未知routeはlocalで404にする。
-    routes = [
+    routes: list[BaseRoute] = [
         Route("/health", health, methods=["GET"]),
         Route("/ready", ready, methods=["GET"]),
     ]
@@ -428,6 +266,8 @@ def create_app(runtime: GatewayRuntime | None = None) -> Starlette:
         routes.extend([
             Route("/responses", handle_responses, methods=["POST"]),
             Route("/v1/responses", handle_responses, methods=["POST"]),
+            WebSocketRoute("/responses", handle_responses_websocket),
+            WebSocketRoute("/v1/responses", handle_responses_websocket),
             Route("/models", handle_openai_models, methods=["GET"]),
             Route("/v1/models", handle_openai_models, methods=["GET"]),
         ])

@@ -2,8 +2,8 @@
 
 ``requires_openai_auth = true``によりclient自身のChatGPT OAuth tokenをGatewayへ
 透過するため、別のAPI keyは要求しない。Gatewayは認証情報を保存しない。Codexは
-``{base_url}/responses``へ送信するため``base_url``に``/v1``を付けず、WebSocketも
-無効にする。
+``{base_url}/responses``へ送信するため``base_url``に``/v1``を付けない。Responsesの
+HTTP/SSEとWebSocketを同じGatewayへ向ける。
 """
 
 from __future__ import annotations
@@ -25,5 +25,5 @@ name = "SecurityMasker Gateway"
 base_url = "{base_url}"
 wire_api = "responses"
 requires_openai_auth = true
-supports_websockets = false
+supports_websockets = true
 """

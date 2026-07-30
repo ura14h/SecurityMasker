@@ -175,6 +175,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     import uvicorn
 
     from securitymasker.gateway.app import create_app
+    from securitymasker.gateway.websocket import MAX_MESSAGE_BYTES
 
     configure_logging()
     config_path = resolve_config_path(args.config)
@@ -195,7 +196,14 @@ def cmd_gateway(args: argparse.Namespace) -> int:
         mode=product_mode,
     )
     # create_app()は必須設定を再検証し、不足時は外部へ接続せず起動を拒否する。
-    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+    uvicorn.run(
+        create_app(),
+        host=host,
+        port=port,
+        log_level="warning",
+        ws_max_size=MAX_MESSAGE_BYTES,
+        ws_per_message_deflate=False,
+    )
     return 0
 
 

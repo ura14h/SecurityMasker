@@ -396,6 +396,7 @@ def check_client_proxy_config(
             and provider.get("base_url") == expected
             and provider.get("wire_api") == "responses"
             and provider.get("requires_openai_auth") is True
+            and provider.get("supports_websockets") is True
         )
         if routed:
             return _ok("clients", "chatgpt: config.toml routes Responses through Gateway")
