@@ -32,3 +32,19 @@ DB/key mismatch、wrong mode、tamperを検出した場合、SecurityMaskerは�
 
 復旧できない場合は、古いDBとkeyを上書きせず保全し、別directoryへ新規`init`します。その場合、
 古いsessionのaliasは復元できないため、新しい会話を開始してください。
+
+## 完全に初期化する
+
+既存のconfig、辞書、session、alias対応表をすべて不要と判断した場合は、Gatewayを正常終了してから
+対象directoryを明示して完全初期化できます。
+
+```console
+python3 securitymasker.py init --force --directory . --mode chatgpt --port 4000
+```
+
+`--force`は標準`securitymasker.config`、`securitymasker.dict`、`securitymasker.state/`を一組として
+削除し、新しいstarter辞書とmaster keyを生成します。これはrestore、config migration、rekeyでは
+ありません。実行前の状態が必要になる可能性があれば、先にこの文書の手順でbackupしてください。
+
+稼働中Gateway、管理外のstate entry、symlinkなどを検出した場合は何も削除せず失敗します。成功後は
+`config-check`を実行し、古いaliasを継続利用せずclientで新しい会話を開始してください。

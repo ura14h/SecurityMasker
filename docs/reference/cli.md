@@ -26,17 +26,28 @@ command/optionや一部の必須準備不足が`2`です。
 ## `securitymasker init`
 
 隣接するconfig、単一辞書、state directory、256-bit master keyを新規作成します。
-既存fileは上書きせず、SQLite DBは最初のGateway起動時に作成します。
+通常は既存fileを一切変更せず拒否します。`--force`を明示した場合だけ、標準layoutを完全初期化
+します。SQLite DBは最初のGateway起動時に作成します。
 
 ```console
-securitymasker init [--directory DIRECTORY] [--mode chatgpt|claude] [--port PORT]
+securitymasker init [--directory DIRECTORY] [-f | --force] \
+  [--mode chatgpt|claude] [--port PORT]
 ```
 
 - `--directory DIRECTORY`: 作成先directory。既定値は実行ファイルまたはroot scriptと同じ
   directoryです。
+- `-f`, `--force`: 指定directory直下の既存`securitymasker.config`、
+  `securitymasker.dict`、`securitymasker.state/`を削除して再作成します。辞書、SQLite内の
+  全session、response binding、alias対応表、master keyは復元できなくなります。このoptionでは
+  対象を明示する`--directory`が必須です。
 - `--mode {chatgpt,claude}`: configへ書く製品mode。既定値は`chatgpt`です。
 - `--port PORT`: configへ書くloopback port。既定値は`4000`です。Claude用に別processを
   起動する例では`4001`を推奨します。
+
+`--force`はGateway稼働中、標準state内に管理外entryがある場合、削除対象がsymlinkや別ownerの
+場合に拒否します。古いconfigが参照するdirectory外の辞書やstate、client設定、NER model cache、
+指定directory内のその他のfileは変更しません。必要な状態は実行前に一組としてbackupし、実行後は
+古いaliasを使わずclientで新しい会話を開始してください。
 
 ## `securitymasker config-check`
 

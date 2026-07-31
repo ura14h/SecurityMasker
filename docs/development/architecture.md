@@ -85,6 +85,10 @@ SQLite内ではsession全体をmaster keyでAES-256-GCM封緘し、raw session/r
 master keyはsidecar fileに置き、DBへ保存しません。DB/key/mode不一致、tamper、二重writerは
 fail-closedです。
 
+通常の`init`は既存layoutを変更しません。明示的な`init --force --directory ...`だけが、
+Gateway停止中の標準config、辞書、DB、keyを一組として完全初期化します。稼働中state、symlink、
+管理外entryは拒否し、configに記載された外部pathを追跡して削除しません。
+
 previewとunit testだけがin-memory storeを使用します。
 
 ## loggingとtelemetry
@@ -110,6 +114,8 @@ config schemaをv1とする判断は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)、
 Responses WebSocketの境界は
 [ADR-0018](../adr/0018-support-codex-responses-websocket.md)、
+明示的な完全初期化は
+[ADR-0019](../adr/0019-add-explicit-destructive-init.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
 model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、

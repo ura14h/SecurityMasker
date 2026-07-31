@@ -42,7 +42,7 @@ Claude Codeには`claude` modeを使います。
 python3 securitymasker.py init --mode claude --port 4001
 ```
 
-`init`は実行ファイルの隣に次を作ります。既存fileは上書きしません。
+`init`は実行ファイルの隣に次を作ります。通常は既存fileを上書きしません。
 
 ```text
 securitymasker.config
@@ -52,6 +52,17 @@ securitymasker.state/
 ```
 
 `securitymasker.db`はGatewayの初回起動時に作られます。config、辞書、DB、keyは機密fileです。
+
+既存の設定と状態を意図的にすべて捨てて初期状態へ戻す場合だけ、Gatewayを停止し、対象directoryを
+明示して`init --force`を実行できます。
+
+```console
+python3 securitymasker.py init --force --directory . --mode chatgpt --port 4000
+```
+
+この操作では辞書、全session、alias対応表、master keyを復元できなくなります。必要なら先に
+[Backupとrestore](operations/backup-restore.md)に従って一組で保存し、実行後はclientで新しい
+会話を開始してください。
 
 ## 3. 外部へ送らずmaskを確認する
 

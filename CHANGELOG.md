@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `init -f` / `init --force`を追加し、明示したdirectoryの標準config、辞書、SQLite、master keyを
+  Gateway停止中に一組として完全初期化できるように変更
 - config schema v1へ`logging.level`を追加し、Gatewayのconsole logをINFO、WARNING、ERROR、DEBUGの
   製品影響別に分類
 - SecurityMasker自身のlicenseをApache-2.0からMITへ変更

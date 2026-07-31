@@ -9,7 +9,7 @@
 
 | 項目 | 状態 | 残件 |
 |---|---|---|
-| strict config v1、単一辞書、safe init | done | なし |
+| strict config v1、単一辞書、safe init、明示的な完全初期化 | done | なし |
 | `chatgpt`／`claude`の1 process・1 route | done | なし |
 | OpenAI Responses／Anthropic Messages | done | buffered、SSE、Codex WebSocket、tool argumentを含め検証済み |
 | 暗号化SQLiteとmode別DB/key | done | なし |
@@ -29,10 +29,11 @@
 現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
 Python 3.12でsource setupを検証しています。
 
-2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 677件、evaluation 3件が
+2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 684件、evaluation 3件が
 成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。config schema v1へ
 後方互換な`logging.level`を追加し、INFO、WARNING、ERROR、DEBUGの表示閾値と製品影響別のevent
-対応、bind前socket確保、起動・終了logを検証しました。
+対応、bind前socket確保、起動・終了logを検証しました。明示的な`init --force`による完全初期化、
+稼働中state・symlink・管理外entryの拒否、切替失敗時のrollbackも検証しました。
 
 2026-07-30にはCodex CLI 0.145.0のapp-serverから
 SecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、一つのturnでdynamic toolを8回

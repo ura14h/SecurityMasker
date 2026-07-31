@@ -3,6 +3,9 @@
 > config schemaの番号と旧形式の互換性については、後続の
 > [ADR-0016](0016-reset-config-schema-version.md)が本ADRを置き換える。本書のv2表記は
 > 採用時点の履歴として残す。
+>
+> 明示的な完全初期化については、後続の
+> [ADR-0019](0019-add-explicit-destructive-init.md)が本ADRの`--force`禁止を置き換える。
 
 - 状態：採用
 - 日付：2026-07-26
@@ -181,7 +184,8 @@ securitymasker.dict
 - keyの実値をstdout、stderr、log、例外へ出さない
 - SQLiteは作成せず、最初のGateway起動時にschemaとmode metadataを生成
 
-既存config、辞書、DB、keyを暗黙に上書きしない。`--force`でも既存DBに対応するkeyを交換しない。
+既存config、辞書、DB、keyを暗黙に上書きしない。採用時点では`--force`でも既存DBに対応するkeyを
+交換しない方針だったが、明示的な完全初期化に限ってADR-0019がこの判断を置き換える。
 DBがあるのにkeyが無い、keyが不正、DB/keyが一致しない場合は新しいkeyを生成して続行せず拒否する。
 rekeyは将来必要になった場合に専用のatomic migration commandとして設計する。
 
