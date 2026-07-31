@@ -40,6 +40,10 @@ ChatGPT backend または Anthropic API
 - `claude`: Anthropic Messages互換routeだけを公開し、Claudeの認証を
   `https://api.anthropic.com` へ透過する。
 
+Claude Codeが生成する`X-Claude-Code-Session-Id`はsession解決に使い、subagentで付与される
+`X-Claude-Code-Agent-Id`と`X-Claude-Code-Parent-Agent-Id`はopaqueな一時transport IDとして
+Anthropicへ透過します。これらを原文検出の入力、永続raw ID、logには使いません。
+
 wrong-protocol routeは404でlocal拒否します。両方を使う場合は2プロセスに分けます。
 
 ## request処理

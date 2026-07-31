@@ -41,8 +41,8 @@ SM_RUN_LIVE=1 .venv/bin/python -m pytest -q tests/integration/test_live_gateway.
 ## Test data
 
 - 実在人物、実際のsecret、API key、credentialをfixtureへ入れない。
-- 通常testではproviderへ合成promptを含めて送らない。下記の明示opt-in実OpenAI E2Eだけを
-  例外とし、固定した合成値以外を送らない。
+- 通常testではproviderへ合成promptを含めて送らない。下記の明示opt-in実OpenAI／Anthropic
+  E2Eだけを例外とし、testごとに固定した合成値以外を送らない。
 - 最重要assertionは「上流が受けた最終payloadに元の合成機密値が存在しない」こと。
 - streamingはaliasの全分割位置、tool argument delta、特殊文字をproperty testする。
 - session並行性とresponse bindingでalias混在がないことを検査する。
@@ -94,6 +94,37 @@ SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_COMPARE_HTTP=1 \
 detector modelの揺らぎを混ぜないため、このtest専用の一時configだけ日本語NERを無効にし、
 辞書で固定合成値を検出します。WebSocket接続数と完了response数はDEBUG eventで検証するため、
 同じ一時configの`logging.level`だけを`DEBUG`にします。
+
+実Anthropicサーバとの互換性E2Eは、実Claude Code CLIの既存認証を表示・複製せず、process
+環境の`ANTHROPIC_BASE_URL`だけを一時Gatewayへ向けます。通常suiteではskipされ、外部送信と
+モデル利用を明示的にopt-inした場合だけ実行します。
+
+```console
+SM_RUN_ANTHROPIC_E2E=1 .venv/bin/python -m pytest -q -s \
+  tests/integration/test_real_anthropic_e2e.py
+```
+
+標準では一つのClaude Code session内でtest専用stdio MCPの`repeat_probe`を4回直列実行します。
+2〜12回の範囲で変更でき、modelと最大利用額も一時環境から指定できます。
+
+```console
+SM_RUN_ANTHROPIC_E2E=1 SM_ANTHROPIC_E2E_TOOL_CALLS=6 \
+  SM_ANTHROPIC_E2E_MODEL=sonnet SM_ANTHROPIC_E2E_MAX_BUDGET_USD=1.00 \
+  .venv/bin/python -m pytest -q -s tests/integration/test_real_anthropic_e2e.py
+```
+
+成功条件は実Claude Codeの完了、tool call数の一致、初回promptと各tool resultを含むMessages
+requestのmask、Anthropic SSE完了数がtool call数+1以上、最終responseでの固定合成PERSON復元、
+alias非残存のすべてです。MCP probeは固定合成値と進捗だけを返し、built-in tool、他のMCP、
+slash command、Chrome連携、session永続化は無効にします。作業directoryは空にし、user、project、
+local settings sourceを読みません。providerの実payloadをtest側から保存することはできないため、
+最終payloadのwire-level漏えいゼロはlocal mock E2Eで検証し、実provider E2Eでは送信直前の
+`request_masked`件数と実stream完了を組み合わせて互換性を検証します。
+
+認証は`claude auth login`済みのOAuth、`ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、または
+`CLAUDE_CODE_OAUTH_TOKEN`を利用できます。testは認証値を表示、複製、file保存しません。
+一時configでは日本語NERを無効にして固定辞書を使い、件数検証のため`logging.level`だけを
+`DEBUG`にします。
 
 ## Desktopの扱い
 

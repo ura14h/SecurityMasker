@@ -41,6 +41,8 @@ _ANTHROPIC_HEADERS = frozenset(
         "anthropic-beta",
         "anthropic-dangerous-direct-browser-access",
         "x-claude-code-session-id",
+        "x-claude-code-agent-id",
+        "x-claude-code-parent-agent-id",
     }
 )
 
@@ -68,6 +70,9 @@ _TRANSPORT_HEADERS = frozenset(
         "accept",
         "accept-language",
         "user-agent",
+        "x-claude-code-session-id",
+        "x-claude-code-agent-id",
+        "x-claude-code-parent-agent-id",
         "via",
         "forwarded",
         "x-forwarded-for",

@@ -508,6 +508,8 @@ def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> Non
         "mypy",
         "tests/unit tests/evaluation",
         "test_live_gateway.py",
+        "test_real_openai_e2e.py",
+        "test_real_anthropic_e2e.py",
         "run_cli_e2e.sh",
         "SM_REQUIRE_MODEL=1",
         "SM_REQUIRE_ALL_CLIS=1",

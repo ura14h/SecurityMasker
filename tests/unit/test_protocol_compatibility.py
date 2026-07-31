@@ -100,6 +100,8 @@ async def test_count_tokens_uses_same_masked_payload_and_session_as_messages(
         "anthropic-beta": "feature-a",
         "anthropic-future-feature": "feature-b",
         "x-claude-code-session-id": "stable-claude-session",
+        "x-claude-code-agent-id": "synthetic-agent-id",
+        "x-claude-code-parent-agent-id": "synthetic-parent-agent-id",
     }
     payload = {
         "model": "claude-synthetic",
@@ -128,6 +130,11 @@ async def test_count_tokens_uses_same_masked_payload_and_session_as_messages(
         key.lower(): value for key, value in calls[0]["headers"].items()  # type: ignore[union-attr]
     }
     assert forwarded_headers["x-claude-code-session-id"] == "stable-claude-session"
+    assert forwarded_headers["x-claude-code-agent-id"] == "synthetic-agent-id"
+    assert (
+        forwarded_headers["x-claude-code-parent-agent-id"]
+        == "synthetic-parent-agent-id"
+    )
     assert forwarded_headers["anthropic-future-feature"] == "feature-b"
 
 
