@@ -3,7 +3,8 @@
 利用者の機密値は既定で表示しない。``preview``はマスク後の文字列とentity種別ごとの
 検出件数だけを表示し、元の値を列挙しない。主なコマンドは次のとおり。
 
-    securitymasker init [--mode chatgpt|claude] [--port PORT]
+    securitymasker init [--directory DIRECTORY] [--force]
+                        [--mode chatgpt|claude] [--port PORT]
     securitymasker gateway [--config PATH] [--mode MODE] [--port PORT]
     securitymasker preview [TEXT] [--config PATH]
     securitymasker client-config [--config PATH]
@@ -65,10 +66,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     """隣接config、単一辞書、state directory、master keyを安全に生成する。"""
     from securitymasker.bootstrap import initialize_layout
 
+    if args.force and args.directory is None:
+        raise ConfigError("init --force requires an explicit --directory")
     directory = args.directory or adjacent_config_directory()
-    layout = initialize_layout(directory, mode=args.mode, port=args.port)
-    print(f"initialized SecurityMasker in {layout.root}")
+    layout = initialize_layout(directory, mode=args.mode, port=args.port, force=args.force)
+    action = "reset" if layout.replaced_existing else "initialized"
+    print(f"{action} SecurityMasker in {layout.root}")
     print("created securitymasker.config, securitymasker.dict and securitymasker.state/")
+    if layout.replaced_existing:
+        print("previous config, dictionary, sessions, aliases and master key were deleted")
     print("state database will be created on the first gateway start")
     return 0
 
@@ -293,6 +299,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--directory",
         default=None,
         help="target directory (default: beside the executable or root script)",
+    )
+    p_init_layout.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="delete and recreate the managed config, dictionary and state (requires --directory)",
     )
     p_init_layout.add_argument(
         "--mode",

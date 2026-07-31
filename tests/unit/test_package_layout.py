@@ -10,9 +10,11 @@ from pathlib import Path
 import pytest
 
 import securitymasker
+from securitymasker import bootstrap
 from securitymasker.cli import main
 from securitymasker.config import load_config, resolve_config_path
 from securitymasker.errors import ConfigError, SessionError
+from securitymasker.sessions.sqlite import SQLiteSessionStore
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -236,6 +238,191 @@ def test_init_refuses_existing_targets_without_overwriting(
     if path.is_file():
         assert path.read_text(encoding="utf-8") == "sentinel\n"
     assert not (target / "securitymasker.state/securitymasker.key").exists()
+
+
+def test_init_force_requires_explicit_directory(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["init", "--force"]) == 1
+
+    captured = capsys.readouterr()
+    assert "requires an explicit --directory" in captured.err
+
+
+def test_init_force_replaces_config_dictionary_database_and_key(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    assert main(["init", "--directory", str(target)]) == 0
+    capsys.readouterr()
+    dictionary = target / "securitymasker.dict"
+    state = target / "securitymasker.state"
+    database = state / "securitymasker.db"
+    key = state / "securitymasker.key"
+    old_key = key.read_bytes()
+    dictionary.write_text("synthetic discarded dictionary\n", encoding="utf-8")
+    dictionary.chmod(0o600)
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    store.close()
+    assert database.is_file()
+
+    assert main([
+        "init",
+        "-f",
+        "--directory",
+        str(target),
+        "--mode",
+        "claude",
+        "--port",
+        "4001",
+    ]) == 0
+    captured = capsys.readouterr()
+
+    assert "reset SecurityMasker" in captured.out
+    assert "sessions, aliases and master key were deleted" in captured.out
+    assert old_key.hex() not in captured.out + captured.err
+    assert key.read_bytes() != old_key
+    assert not database.exists()
+    assert {path.name for path in state.iterdir()} == {"securitymasker.key"}
+    assert "synthetic discarded dictionary" not in dictionary.read_text(encoding="utf-8")
+    config = load_config(target / "securitymasker.config")
+    assert config.runtime is not None
+    assert (config.runtime.mode, config.runtime.port) == ("claude", 4001)
+    if os.name == "posix":
+        assert ((target / "securitymasker.config").stat().st_mode & 0o777) == 0o600
+        assert (dictionary.stat().st_mode & 0o777) == 0o600
+        assert (key.stat().st_mode & 0o777) == 0o600
+        assert (state.stat().st_mode & 0o777) == 0o700
+
+
+def test_init_force_does_not_follow_paths_from_old_config(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    target.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    external_dictionary = external / "custom.dict"
+    external_database = external / "custom.db"
+    external_key = external / "custom.key"
+    external_dictionary.write_text("external dictionary\n", encoding="utf-8")
+    external_database.write_bytes(b"external database")
+    external_key.write_bytes(b"e" * 32)
+    config = target / "securitymasker.config"
+    config.write_text(
+        "\n".join([
+            "version: 1",
+            "runtime: {mode: chatgpt}",
+            f"state: {{database: {external_database}, key: {external_key}}}",
+            f"dictionary: {external_dictionary}",
+        ]),
+        encoding="utf-8",
+    )
+
+    assert main(["init", "--force", "--directory", str(target)]) == 0
+
+    assert external_dictionary.read_text(encoding="utf-8") == "external dictionary\n"
+    assert external_database.read_bytes() == b"external database"
+    assert external_key.read_bytes() == b"e" * 32
+    assert load_config(target / "securitymasker.config").dictionary == (
+        target / "securitymasker.dict"
+    )
+
+
+def test_init_force_refuses_state_owned_by_running_gateway(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    assert main(["init", "--directory", str(target)]) == 0
+    capsys.readouterr()
+    database = target / "securitymasker.state/securitymasker.db"
+    key = target / "securitymasker.state/securitymasker.key"
+    old_key = key.read_bytes()
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    try:
+        assert main(["init", "--force", "--directory", str(target)]) == 1
+    finally:
+        store.close()
+
+    captured = capsys.readouterr()
+    assert "state is in use" in captured.err
+    assert key.read_bytes() == old_key
+    assert database.is_file()
+
+
+def test_init_force_refuses_unmanaged_state_entry(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    assert main(["init", "--directory", str(target)]) == 0
+    capsys.readouterr()
+    unmanaged = target / "securitymasker.state/do-not-delete.txt"
+    unmanaged.write_text("preserve me\n", encoding="utf-8")
+
+    assert main(["init", "--force", "--directory", str(target)]) == 1
+
+    captured = capsys.readouterr()
+    assert "unmanaged entry" in captured.err
+    assert unmanaged.read_text(encoding="utf-8") == "preserve me\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink safety contract")
+def test_init_force_refuses_managed_symlink(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    target.mkdir()
+    outside = tmp_path / "outside.config"
+    outside.write_text("preserve me\n", encoding="utf-8")
+    (target / "securitymasker.config").symlink_to(outside)
+
+    assert main(["init", "--force", "--directory", str(target)]) == 1
+
+    captured = capsys.readouterr()
+    assert "must not be a symlink" in captured.err
+    assert outside.read_text(encoding="utf-8") == "preserve me\n"
+
+
+def test_init_force_rolls_back_previous_layout_when_switch_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "SecurityMasker"
+    initialize = bootstrap.initialize_layout(target, mode="chatgpt", port=4000)
+    previous = {
+        initialize.config: initialize.config.read_bytes(),
+        initialize.dictionary: initialize.dictionary.read_bytes(),
+        initialize.state_directory / "securitymasker.key": (
+            initialize.state_directory / "securitymasker.key"
+        ).read_bytes(),
+    }
+    database = initialize.state_directory / "securitymasker.db"
+    database.write_bytes(b"synthetic previous database")
+    database.chmod(0o600)
+    previous[database] = database.read_bytes()
+    original_replace = os.replace
+    replace_calls = 0
+
+    def fail_during_install(source: str | Path, destination: str | Path) -> None:
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == 5:
+            raise OSError("synthetic switch failure")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_during_install)
+
+    with pytest.raises(ConfigError, match="initialization failed"):
+        bootstrap.initialize_layout(target, mode="claude", port=4001, force=True)
+
+    for path, content in previous.items():
+        assert path.read_bytes() == content
+    assert not tuple(target.glob(".securitymasker-init-*"))
+    assert not tuple(target.glob(".securitymasker-reset-*"))
 
 
 def test_source_launcher_without_command_shows_help_from_unrelated_directory(
