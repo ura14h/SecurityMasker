@@ -78,7 +78,7 @@ SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_TOOL_CALLS=12 \
 成功条件は実Codexのturn完了、tool call数の一致、WebSocket接続数1、完了response数がtool
 call数+1以上、各tool resultのmask、最終responseでの合成値復元、alias非残存のすべてです。
 transportの比較を行う場合は、同じprocess条件で同一tool chainをWebSocket、HTTPの順に実行し、
-WebSocketのwall timeが短いことを確認します。
+wall timeの生値と差を記録します。
 
 ```console
 SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_COMPARE_HTTP=1 \
@@ -86,9 +86,10 @@ SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_COMPARE_HTTP=1 \
   .venv/bin/python -m pytest -q -s tests/integration/test_real_openai_e2e.py
 ```
 
-外部serviceの混雑で時間は変動します。`serverOverloaded`だけはfresh Codex/Gateway processで
-1回再試行しますが、leak block、protocol error、timeoutは再試行して成功扱いにしません。
-実行時のJSON出力へ両transportのwall timeと短縮率を残し、一般的な性能保証値にはしません。
+外部serviceの負荷、prompt cache、生成時間をtransport固有の時間から分離できないため、単回の
+大小関係は合否条件にしません。`serverOverloaded`だけはfresh Codex/Gateway processで1回再試行
+しますが、leak block、protocol error、timeoutは再試行して成功扱いにしません。実行時のJSON
+出力へ両transportのwall timeと短縮率を残し、一般的な性能保証値にはしません。
 通常の利用者設定fileは変更せず、threadには`ephemeral`を指定します。transport互換性に
 detector modelの揺らぎを混ぜないため、このtest専用の一時configだけ日本語NERを無効にし、
 辞書で固定合成値を検出します。WebSocket接続数と完了response数はDEBUG eventで検証するため、

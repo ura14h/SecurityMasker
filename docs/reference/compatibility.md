@@ -61,8 +61,9 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 - one-file spike: macOS arm64、PyInstaller 6.21.0
 
 実CLIの検証baselineは Codex CLI 0.145.0 と Claude Code 2.1.212です。protocolは変化し得るため、
-release時に最新対象versionでE2Eを再実行します。0.1.0ではLinux arm64の外部networkなし環境で、
-両CLIのmask、local mockへの到達、response復元を確認しました。2026-07-30にはmacOS arm64で
+release時に最新対象versionでE2Eを再実行します。2026-07-31にはLinux arm64の外部networkなし
+環境で、WebSocket対応後の両CLIのmask、local mockへの到達、response復元を確認しました。
+2026-07-30にはmacOS arm64で
 Codex CLI 0.145.0からSecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、合成値の
 maskとresponse復元を確認しました。実Codex app-serverの一つのturnでdynamic toolを8回連続
 実行して接続数1・完了response数18を確認し、同じ4回のtool chainではWebSocket

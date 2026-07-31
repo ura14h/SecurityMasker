@@ -657,4 +657,3 @@ def test_real_codex_websocket_tool_chain_and_optional_http_comparison(
         "speedup_percent": round(speedup, 1),
     }
     print(json.dumps(evidence, ensure_ascii=False, sort_keys=True))
-    assert websocket_result.latency_ms < http_result.latency_ms, evidence

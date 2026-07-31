@@ -516,6 +516,34 @@ def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> Non
     assert "|| true" not in release
 
 
+def test_linux_arm64_docker_gate_separates_online_and_isolated_phases() -> None:
+    runner = (ROOT / "devtools/run_linux_arm64_release_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    dockerfile = (ROOT / "docker/Dockerfile.release-gate").read_text(
+        encoding="utf-8"
+    )
+    dockerignore = (ROOT / "docker/Dockerfile.release-gate.dockerignore").read_text(
+        encoding="utf-8"
+    )
+
+    for required in (
+        "--platform linux/arm64",
+        "SM_OPENAI_E2E_COMPARE_HTTP=1",
+        "--network none",
+        "SM_REQUIRE_ALL_CLIS=1",
+        "readonly",
+    ):
+        assert required in runner
+    assert runner.index("SM_OPENAI_E2E_COMPARE_HTTP=1") < runner.rindex("--network none")
+    assert "@openai/codex@0.145.0" in dockerfile
+    assert "@anthropic-ai/claude-code@2.1.212" in dockerfile
+    assert "python:3.12.13-slim-bookworm@sha256:" in dockerfile
+    assert "node:22.16.0-bookworm-slim@sha256:" in dockerfile
+    assert "securitymasker.config" not in dockerignore
+    assert "securitymasker.dict" not in dockerignore
+
+
 def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services() -> None:
     build = (ROOT / "scripts/build-binary").read_text(encoding="utf-8")
     lock = (ROOT / "requirements-build.lock").read_text(encoding="utf-8")

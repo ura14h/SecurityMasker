@@ -19,8 +19,8 @@
 | console log level・設定閾値 | done | schema v1の`logging.level`、影響別4 level、起動・終了・異常系testあり |
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
-| source release candidate | partial | Linux arm64でWebSocket対応後の隔離実CLI gate再実行が必要 |
-| application `1.0.0`判断 | partial | 上記gateとsource版だけを公開するrelease noteが必要 |
+| source release candidate | done | macOS arm64とLinux arm64のsource gateに合格 |
+| application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
 | one-file binary公開 | blocked | 再配布判断、署名、対象OS別clean-machine gateが未完 |
 | Windows | 対応外 | native security gate一式が未実装・未検証 |
 
@@ -46,9 +46,17 @@ SecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、一つの
 付ける`stream: true`、response完了後の`responsesapi.websocket_timing`、HTTP成功responseで
 欠落する場合があるSSE Content-Typeも確認し、adapterで互換処理しています。
 
-Linux arm64で外向きnetworkを遮断した実Codex CLI／Claude Code CLI gateをWebSocket対応後に
-再実行し、source版だけが公開対象であることをrelease noteへ明記できれば、最初の公開版を
-`1.0.0`とする判断は妥当です。判断理由は
+2026-07-31にDocker Desktopのnative Linux arm64 container、Python 3.12.13で現行source gateを
+再実行しました。ruff、mypy strict 71 source files、unit／evaluation 688件、mock Gateway E2E
+4件、実OpenAI E2E 1件が成功しました。同じimageを`--network none`で別起動し、外向きinterfaceと
+default routeがないことを構造検査した上で、実Codex CLI／Claude Code CLI E2E 2件も成功しました。
+実OpenAIの最終観測はWebSocket 84,033.9 ms、HTTP 115,698.8 ms、接続数1、完了response数14でした。
+単回のwall timeは外部service負荷、prompt cache、生成時間を分離できないため、大小関係ではなく
+生値と差をevidenceへ残します。詳細は
+[Linux arm64 gate evidence](release-evidence/linux-arm64-2026-07-31.md)に記録しています。
+
+source版だけが公開対象であることをrelease noteへ明記できれば、最初の公開版を`1.0.0`とする
+判断は妥当です。判断理由は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
 Windowsはsource版を含めて公開対応範囲外です。部分的に動くことを根拠としたbest-effort対応は
@@ -68,7 +76,6 @@ macOS arm64のone-file buildとE2Eはtechnical spikeとして成功していま�
 
 ## Ownerに必要な操作
 
-- Linux arm64でWebSocket対応後のsource release gateを再実行する
 - `1.0.0`の公開範囲とrelease noteを確定する
 - repository公開、tag、GitHub Release、source archive/checksum uploadを行う
 - binaryも公開する場合だけ、対象OS、再配布、署名、artifact uploadを別途判断する

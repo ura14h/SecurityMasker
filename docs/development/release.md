@@ -33,6 +33,18 @@ containerで代用する場合も、test setupとCLI取得をnetwork有効時に
 `--network none`で起動します。IFF_UPな非loopback interfaceまたはdefault routeが一つでもあれば
 fail-closedとします。
 
+macOS arm64のDocker DesktopでLinux arm64 gateを代替する場合は、hostのCodexへlogin済みである
+ことと、実OpenAIへ合成値を送ることを確認してから次を実行します。
+
+```console
+./devtools/run_linux_arm64_release_gate.sh
+```
+
+この検証専用imageは、固定したPython 3.12、Linux版Codex CLI／Claude Code CLI、dependency、NER
+modelをnetwork有効時に構築します。online source gateにはhostのCodex認証fileだけをread-onlyで
+mountし、imageへ含めません。その後、同じimageを`--network none`で別起動し、local mockを使う
+実CLI E2Eを実行します。このDocker資材は製品runtimeまたは公開binaryの対応範囲を広げません。
+
 ## Source release artifact
 
 version確定・commit後、clean worktreeからarchiveとchecksumを生成します。

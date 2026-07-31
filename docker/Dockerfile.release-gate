@@ -1,0 +1,59 @@
+FROM docker.io/library/node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34 AS cli
+
+RUN npm install --global --omit=dev \
+        @openai/codex@0.145.0 \
+        @anthropic-ai/claude-code@2.1.212 \
+    && codex --version \
+    && claude --version
+
+FROM docker.io/library/python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
+
+LABEL org.opencontainers.image.title="SecurityMasker Linux arm64 release gate"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.licenses="MIT"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/home/gate/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    DO_NOT_TRACK=1 \
+    TOKENIZERS_PARALLELISM=false
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates \
+        git \
+        libatomic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 gate \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /bin/sh gate \
+    && install -d -o 10001 -g 10001 -m 0700 /home/gate/.codex
+
+COPY --from=cli /usr/local/bin/node /usr/local/bin/node
+COPY --from=cli /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+    && ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
+        /usr/local/bin/claude
+
+WORKDIR /workspace
+
+COPY --chown=10001:10001 .gitignore README.md CHANGELOG.md SECURITY.md LICENSE \
+    THIRD_PARTY_NOTICES.md pyproject.toml securitymasker.py securitymasker.spec ./
+COPY --chown=10001:10001 requirements.lock requirements-build.lock \
+    requirements-dev.lock requirements-ner.lock requirements-torch-cpu.lock ./
+COPY --chown=10001:10001 src ./src
+COPY --chown=10001:10001 tests ./tests
+COPY --chown=10001:10001 devtools ./devtools
+COPY --chown=10001:10001 scripts ./scripts
+COPY --chown=10001:10001 docs ./docs
+COPY --chown=10001:10001 docker ./docker
+
+RUN chown 10001:10001 /workspace
+USER 10001:10001
+RUN PYTHON_COMMAND=python3.12 ./scripts/test-setup
+
+CMD ["/bin/sh"]

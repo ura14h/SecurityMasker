@@ -116,8 +116,9 @@ clientが新しい接続またはHTTPで再試行するかを決める。
    tool call数+1以上、各tool resultがmask済み、最終responseで合成値が復元済み、aliasが
    非残存であることを確認する。
 8. 同じtool chainをWebSocketとHTTPで連続実行し、wall timeの生値と差を記録する。
-   外部serviceの変動があるため一般的な短縮率は保証しないが、その実行ではWebSocketがHTTPより
-   短いことを受入条件にする。providerの`serverOverloaded`だけはfresh processで1回再試行できる。
+   外部serviceの負荷、prompt cache、生成時間をtransport固有の時間から分離できないため、単回の
+   大小関係は合否条件にしない。接続再利用、完了response数、mask、復元をtransportの受入条件と
+   する。providerの`serverOverloaded`だけはfresh processで1回再試行できる。
 9. HTTP buffered／SSE、Claude Messages、preview、doctorの既存回帰testが成功する。
 10. ruff、mypy strict、unit、evaluationを通す。
 
