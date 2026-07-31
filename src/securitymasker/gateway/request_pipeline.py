@@ -99,7 +99,7 @@ async def _resolve_store_key(
             except Exception as exc:
                 runtime.telemetry.store_error(provider, StoreOperation.REQUEST)
                 runtime.telemetry.blocked(provider, BlockReason.STORE)
-                _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+                _log.debug("sm_block_store", path=path, reason=type(exc).__name__)
                 raise RequestRejected(
                     503,
                     "session_store_unavailable",
@@ -113,7 +113,7 @@ async def _resolve_store_key(
                     BlockReason.SESSION_UNRESOLVED,
                     session_id=connection_session_id,
                 )
-                _log.warning("sm_block_unknown_previous_response", path=path)
+                _log.debug("sm_block_unknown_previous_response", path=path)
                 raise RequestRejected(
                     409,
                     "session_unresolved",
@@ -134,7 +134,7 @@ async def _resolve_store_key(
         except Exception as exc:
             runtime.telemetry.store_error(provider, StoreOperation.REQUEST)
             runtime.telemetry.blocked(provider, BlockReason.STORE)
-            _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+            _log.debug("sm_block_store", path=path, reason=type(exc).__name__)
             raise RequestRejected(
                 503,
                 "session_store_unavailable",
@@ -143,7 +143,7 @@ async def _resolve_store_key(
                 reported=True,
             ) from None
         if bound is None:
-            _log.warning("sm_block_unknown_previous_response", path=path)
+            _log.debug("sm_block_unknown_previous_response", path=path)
             runtime.telemetry.blocked(provider, BlockReason.SESSION_UNRESOLVED)
             raise RequestRejected(
                 409,
@@ -178,7 +178,7 @@ async def prepare_request(
     )
 
     if not stable and _payload_has_alias_shape(data):
-        _log.warning("sm_block_unresolved_session", path=path)
+        _log.debug("sm_block_unresolved_session", path=path)
         runtime.telemetry.blocked(provider, BlockReason.SESSION_UNRESOLVED)
         raise RequestRejected(
             409,
@@ -213,7 +213,7 @@ async def prepare_request(
     except SessionError as exc:
         runtime.telemetry.store_error(provider, StoreOperation.REQUEST)
         runtime.telemetry.blocked(provider, BlockReason.STORE, session_id=store_key)
-        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+        _log.debug("sm_block_store", path=path, reason=type(exc).__name__)
         raise RequestRejected(
             503,
             "session_store_unavailable",
@@ -224,7 +224,7 @@ async def prepare_request(
     except SecurityMaskerError as exc:
         reason = _security_reason(exc)
         runtime.telemetry.blocked(provider, reason, session_id=store_key)
-        _log.warning(
+        _log.debug(
             "sm_block",
             path=path,
             entity_type=getattr(exc, "entity_type", None),
@@ -272,7 +272,7 @@ async def prepare_connection_session(
     except SessionError as exc:
         runtime.telemetry.store_error(provider, StoreOperation.REQUEST)
         runtime.telemetry.blocked(provider, BlockReason.STORE, session_id=store_key)
-        _log.warning("sm_block_store", path=path, reason=type(exc).__name__)
+        _log.debug("sm_block_store", path=path, reason=type(exc).__name__)
         raise RequestRejected(
             503,
             "session_store_unavailable",
@@ -283,7 +283,7 @@ async def prepare_connection_session(
     except SecurityMaskerError as exc:
         reason = _security_reason(exc)
         runtime.telemetry.blocked(provider, reason, session_id=store_key)
-        _log.warning("sm_block", path=path)
+        _log.debug("sm_block", path=path)
         raise RequestRejected(
             400,
             "securitymasker_blocked",
@@ -311,7 +311,7 @@ async def guard_unknown_event(
         runtime.telemetry.blocked(
             Provider.OPENAI, reason, session_id=store_key
         )
-        _log.warning("sm_block", path="/responses")
+        _log.debug("sm_block", path="/responses")
         raise RequestRejected(
             400,
             "securitymasker_blocked",

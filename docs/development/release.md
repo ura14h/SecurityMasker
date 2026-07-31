@@ -22,7 +22,8 @@
 表示・複製せず、一時overrideで一つのturnに標準8回のdynamic tool callを実行します。
 WebSocket接続数1、各requestのmask、response復元、alias非残存を確認し、同一tool chainの
 HTTP比較でwall timeと差を記録します。release担当者は実行前に外部送信を認識し、Codexへ
-login済みである必要があります。
+login済みである必要があります。接続数と完了response数を数えるtest専用一時configは
+`logging.level: DEBUG`を使い、利用者の通常configは変更しません。
 
 その後のlocal mock実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeが
 ないことを構造検査してから実行します。隔離を証明できないhostでは成功扱いにせず、

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- config schema v1へ`logging.level`を追加し、Gatewayのconsole logをINFO、WARNING、ERROR、DEBUGの
+  製品影響別に分類
 - SecurityMasker自身のlicenseをApache-2.0からMITへ変更
 - project license、setup時に取得する第三者component、binary再配布条件の境界を明文化
 - READMEを検索訪問者向けの入口へ改め、導入、カスタマイズ、運用、reference、security、

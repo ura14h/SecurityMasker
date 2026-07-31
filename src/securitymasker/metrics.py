@@ -86,6 +86,7 @@ class StoreOperation(StrEnum):
 class StreamErrorReason(StrEnum):
     PROCESSING = "processing"
     CANCELLED = "cancelled"
+    NETWORK = "network"
     RESPONSE_BINDING = "response_binding"
 
 
@@ -121,8 +122,16 @@ AuditSink = Callable[[AuditRecord], None]
 
 
 def emit_audit(record: AuditRecord) -> None:
-    """schema済みrecordだけをstructured logへ出力する。"""
-    _audit_log.info(record.event.value, **record.fields())
+    """schema済みrecordを製品上の影響に対応するlevelで出力する。"""
+    if record.event is AuditEvent.REQUEST_MASKED:
+        log = _audit_log.info
+    elif record.event is AuditEvent.STORE_ERROR:
+        log = _audit_log.error
+    else:
+        # request blockとstream断は当該Codex処理を継続不能にするが、
+        # Gateway process自体は次のrequestを処理できる。
+        log = _audit_log.warning
+    log(record.event.value, **record.fields())
 
 
 _KNOWN_ENTITIES = frozenset(entity.value for entity in EntityType)

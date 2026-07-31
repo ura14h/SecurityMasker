@@ -261,6 +261,14 @@ class RuntimeConfig(BaseModel):
     port: int = Field(default=4000, ge=1, le=65535)
 
 
+class LoggingConfig(BaseModel):
+    """Gatewayのconsole log表示閾値。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+
 class StateConfig(BaseModel):
     """SQLiteとmaster keyの明示path。pathはconfig基準で絶対化して保持する。"""
 
@@ -330,6 +338,7 @@ class SecurityMaskerFileConfig(BaseModel):
 
     version: Literal[1]
     runtime: RuntimeConfig
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     state: StateConfig
     dictionary: str
     defaults: Defaults = Field(default_factory=Defaults)
@@ -360,6 +369,7 @@ class SecurityMaskerConfig(BaseModel):
     tool_trust: ToolTrustConfig = Field(default_factory=ToolTrustConfig)
     # file schemaから解決した利用者向けruntime/state metadata。
     runtime: RuntimeConfig | None = None
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     state: StateConfig | None = None
     dictionary: Path | None = None
     config_path: Path | None = Field(default=None, exclude=True, repr=False)
@@ -534,6 +544,7 @@ def _load_current(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfi
         ner=NerConfig.model_validate(ner.model_dump(exclude={"enabled"})),
         tool_trust=file_config.tool_trust,
         runtime=file_config.runtime,
+        logging=file_config.logging,
         state=state,
         dictionary=dictionary_path,
         config_path=config_path,

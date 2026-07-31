@@ -102,9 +102,10 @@ localhostを通らない通信は保護できません。
 
 ## CodexのWebSocketが切断される
 
+`securitymasker.config`の`logging.level`を一時的に`DEBUG`へ変更してGatewayを再起動します。
 Gateway logに`sm_websocket_connected`があればWebSocket接続は成立しています。OpenAI側の接続は
 最大60分であり、network断や上流終了後はCodexから新しい接続を開始します。SecurityMaskerは
-送信済みか不明なturnをHTTPへ自動fallbackしません。
+送信済みか不明なturnをHTTPへ自動fallbackしません。確認後は`INFO`へ戻します。
 
 長いtool loopで接続再利用を確認する場合、`sm_websocket_connected`が一つのまま、
 `sm_websocket_turn_completed`がtool往復に応じて増えることを確認します。複数のuser turnは

@@ -47,8 +47,9 @@ python3 -c 'import json,sys; s=sys.argv[1]; print(json.dumps({"route":"MASKED_AL
 `UNMASKED_TEXT`になった場合は実データへ進まず、Codexが読む`config.toml`の`model_provider`、
 Gatewayの`base_url`、起動時の`CODEX_HOME`を確認します。
 
-Gatewayの同じ操作時刻に`sm_websocket_connected`があればResponses WebSocketが成立しています。
-このeventは原文を含まず、不可逆なsession fingerprintだけを表示します。
+`securitymasker.config`の`logging.level`を一時的に`DEBUG`へ変更してGatewayを再起動し、同じ
+操作時刻に`sm_websocket_connected`があればResponses WebSocketが成立しています。このeventは
+原文を含まず、不可逆なsession fingerprintだけを表示します。確認後は`INFO`へ戻します。
 
 ## 3. Response復元を確認する
 

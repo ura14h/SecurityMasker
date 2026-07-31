@@ -24,6 +24,7 @@ import os
 import sys
 import uuid
 from collections import Counter
+from typing import Any
 
 from securitymasker import __version__
 from securitymasker.config import (
@@ -33,7 +34,7 @@ from securitymasker.config import (
     load_config,
     resolve_config_path,
 )
-from securitymasker.errors import ConfigError, SecurityMaskerError
+from securitymasker.errors import ConfigError, SecurityMaskerError, SessionError
 from securitymasker.logging import configure_logging, get_logger
 from securitymasker.sessions.memory import InMemorySessionStore
 
@@ -170,41 +171,107 @@ def cmd_model_load(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
-def cmd_gateway(args: argparse.Namespace) -> int:
-    """解決済みconfigを環境へ固定してSecurityMasker proxyを起動する。"""
+def _serve_gateway(
+    app: Any,
+    *,
+    host: str,
+    port: int,
+    mode: str,
+    max_message_bytes: int,
+) -> int:
+    """先にloopback socketを確保し、起動・bind失敗・終了を製品logへ記録する。"""
     import uvicorn
 
+    log = get_logger()
+    server_config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        # Uvicorn固有のlifecycle/access logは製品level契約と形式が異なるため抑止する。
+        # bindとruntimeの失敗は下でSecurityMaskerの固定eventとして記録する。
+        log_level="critical",
+        access_log=False,
+        ws_max_size=max_message_bytes,
+        ws_per_message_deflate=False,
+    )
+    try:
+        bound_socket = server_config.bind_socket()
+    except SystemExit:
+        log.error("gateway_bind_failed", host=host, port=port)
+        return 1
+
+    server = uvicorn.Server(server_config)
+    log.info(
+        "gateway_started",
+        url=f"http://{host}:{port}",
+        mode=mode,
+    )
+    try:
+        server.run(sockets=[bound_socket])
+    except KeyboardInterrupt:  # pragma: no cover - 実processのsignal testで確認する
+        return 0
+    except Exception as exc:  # noqa: BLE001 - 原文を含み得る例外本文はlogへ出さない
+        log.error("gateway_runtime_error", reason=type(exc).__name__)
+        return 1
+    finally:
+        bound_socket.close()
+        log.info("gateway_stopped", mode=mode)
+    return 0
+
+
+def cmd_gateway(args: argparse.Namespace) -> int:
+    """解決済みconfigを環境へ固定してSecurityMasker proxyを起動する。"""
     from securitymasker.gateway.app import create_app
     from securitymasker.gateway.websocket import MAX_MESSAGE_BYTES
 
+    # config自体が壊れていて閾値を読めない場合にもERRORを表示できる既定設定。
     configure_logging()
-    config_path = resolve_config_path(args.config)
-    config = load_config(config_path)
+    try:
+        config_path = resolve_config_path(args.config)
+        config = load_config(config_path)
+    except ConfigError as exc:
+        get_logger().error("gateway_configuration_error", detail=str(exc))
+        return 1
+
+    configure_logging(config.logging.level)
     os.environ["SECURITYMASKER_CONFIG"] = str(config_path)
 
     runtime = config.runtime
     if config.version != 1 or runtime is None:
-        raise ConfigError("Gateway requires a version 1 securitymasker.config")
+        get_logger().error(
+            "gateway_configuration_error",
+            detail="Gateway requires a version 1 securitymasker.config",
+        )
+        return 1
     host = args.host or runtime.host
     port = args.port or runtime.port
     product_mode = args.mode or runtime.mode
     os.environ["SECURITYMASKER_PRODUCT_MODE"] = product_mode
 
-    get_logger().info(
-        "gateway_started",
-        url=f"http://{host}:{port}",
-        mode=product_mode,
-    )
     # create_app()は必須設定を再検証し、不足時は外部へ接続せず起動を拒否する。
-    uvicorn.run(
-        create_app(),
-        host=host,
-        port=port,
-        log_level="warning",
-        ws_max_size=MAX_MESSAGE_BYTES,
-        ws_per_message_deflate=False,
-    )
-    return 0
+    try:
+        app = create_app()
+    except ConfigError as exc:
+        get_logger().error("gateway_configuration_error", detail=str(exc))
+        return 1
+    except SessionError as exc:
+        get_logger().error("gateway_store_error", detail=str(exc))
+        return 1
+
+    try:
+        return _serve_gateway(
+            app,
+            host=host,
+            port=port,
+            mode=product_mode,
+            max_message_bytes=MAX_MESSAGE_BYTES,
+        )
+    finally:
+        app_state = getattr(app, "state", None)
+        app_runtime = getattr(app_state, "runtime", None)
+        close_store = getattr(getattr(app_runtime, "store", None), "close", None)
+        if callable(close_store):
+            close_store()
 
 
 def build_parser() -> argparse.ArgumentParser:

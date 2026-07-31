@@ -87,6 +87,16 @@ fail-closedです。
 
 previewとunit testだけがin-memory storeを使用します。
 
+## loggingとtelemetry
+
+console logは固定schemaの安全なfieldだけを標準errorへ出し、原文、鍵、平文対応表、認証情報を
+含めません。config schema v1の`logging.level`を表示閾値とし、製品起動・mask完了・終了をINFO、
+当該Codex処理を継続できないblock・network/stream異常をWARNING、設定・SQLite・bindなどGatewayを
+継続できない異常をERROR、接続・切断・通信statusをDEBUGへ分類します。
+
+監査eventはmask件数、固定reason、不可逆session fingerprintだけを持ちます。接続・通信の補助eventは
+DEBUGへ分離し、Uvicorn固有のlifecycle/access logには製品のlevel契約を担わせません。
+
 ## authentication
 
 SecurityMaskerはprovider認証を終端・保存・復号しません。対応providerの認証headerだけを

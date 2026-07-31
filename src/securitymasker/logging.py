@@ -42,9 +42,12 @@ def _drop_redundant_provider(
 
 def configure_logging(level: str = "INFO") -> None:
     """Gatewayのstderrへ簡潔な一行logを出すようstructlogを初期化する。"""
+    normalized = level.upper()
+    if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+        raise ValueError(f"unsupported log level: {level!r}")
     structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, level.upper(), logging.INFO)
+            getattr(logging, normalized)
         ),
         logger_factory=structlog.PrintLoggerFactory(file=_STDERR),
         processors=[

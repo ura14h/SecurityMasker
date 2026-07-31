@@ -135,31 +135,39 @@ Gatewayの状態と監査eventは、ANSI装飾や桁揃えを使わない次の�
 
 ```text
 2026-07-27 21:21:03 [info] gateway_started url=http://127.0.0.1:4000 mode=chatgpt
-2026-07-27 21:22:05 [info] sm_websocket_connected session_fp=3ed714a9735a
 2026-07-27 21:22:06 [info] request_masked entity_count=3 session_fp=3ed714a9735a
-2026-07-27 21:22:08 [info] sm_websocket_turn_completed duration_ms=2147.3 outcome=success session_fp=3ed714a9735a
+2026-07-27 21:23:00 [info] gateway_stopped mode=chatgpt
 ```
 
-先頭はlocal時刻、`[info]`や`[warning]`はlevel、その次がevent名、残りが
+先頭はlocal時刻、`[debug]`、`[info]`、`[warning]`、`[error]`はlevel、その次がevent名、残りが
 `key=value`形式のfieldです。1 processは一つのmodeだけを扱うため、各監査eventで自明な
 providerは表示しません。modeは起動時の`gateway_started`で確認します。
 
-| event | 意味 |
-|---|---|
-| `gateway_started` | `url`と`mode`でGatewayを起動した |
-| `sm_websocket_connected` | Responses WebSocketのdownstream・upstream接続が成立した |
-| `sm_websocket_turn_completed` | 同じWebSocket上の一つのResponses処理が完了した |
-| `sm_upstream_stream_started` | HTTP/SSE upstream responseの受信を開始した |
-| `sm_upstream_stream_completed` | HTTP/SSE upstream responseを最後まで処理した |
-| `request_masked` | providerへの転送前にrequestのマスク処理が完了した |
-| `request_blocked` | 安全検査、request形式、session解決などに失敗し、providerへ転送せず拒否した |
-| `store_error` | session DBのreadiness、request処理、response bindingのいずれかに失敗した |
-| `stream_error` | streaming responseの処理、取消し、response bindingのいずれかに失敗した |
+表示閾値は`securitymasker.config`の`logging.level`で指定します。既定の`INFO`ではINFO、WARNING、
+ERRORを表示し、接続・通信の詳細は表示しません。
+
+| level | 意味 | 主なevent |
+|---|---|---|
+| `INFO` | 製品の動作目標 | `gateway_started`、`request_masked`、`gateway_stopped` |
+| `WARNING` | 現在のCodex request／接続は継続不能だが、Gatewayは次の処理を受けられる | `request_blocked`、`stream_error`、`sm_upstream_network_error`、`sm_response_stream_blocked` |
+| `ERROR` | Gatewayの起動または正常動作を継続できない | `gateway_configuration_error`、`gateway_store_error`、`store_error`、`gateway_bind_failed`、`gateway_runtime_error` |
+| `DEBUG` | 接続と通信statusを検証する詳細 | `sm_websocket_connected`、`sm_websocket_disconnected`、`sm_websocket_turn_completed`、`sm_upstream_stream_started`、`sm_upstream_stream_completed`、`sm_upstream_response_completed`、`sm_block_*` |
 
 `request_masked`はマスク処理の完了を示し、providerからのresponse成功までは意味しません。
 `request_blocked`、`store_error`、`stream_error`の`reason`は、機密値ではなく固定された原因分類です。
-`sm_`で始まるeventはWebSocket接続状態またはblock箇所を示す補助eventで、直前の監査eventと
-同じ一件を表す場合があります。
+`sm_`で始まるDEBUG eventは接続状態、通信status、block箇所を示す補助情報で、直前の監査eventと
+同じ一件を表す場合があります。Uvicorn固有のlifecycle/access logは抑止し、bind失敗などを
+SecurityMaskerの固定eventへ変換します。
+
+WebSocketの接続再利用を調べる場合は、一時的に次のように変更してGatewayを再起動します。
+
+```yaml
+logging:
+  level: DEBUG
+```
+
+DEBUGには原文、alias対応表、認証情報を含めませんが、通常運用では高頻度になるため、確認後は
+`INFO`へ戻します。
 
 - `entity_count`: 現在のrequestでマスクした出現箇所数。同じ機密値が3箇所にあれば`3`であり、
   ユニーク値数やsession累計ではありません。クライアントが過去の会話をrequestへ再掲すると、

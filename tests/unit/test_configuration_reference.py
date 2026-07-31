@@ -13,6 +13,7 @@ from securitymasker.config import (
     EntityConfig,
     JapaneseNerConfig,
     JapanesePiiConfig,
+    LoggingConfig,
     RegexConfig,
     RuntimeConfig,
     SecurityMaskerFileConfig,
@@ -32,6 +33,7 @@ def test_reference_covers_every_public_config_field() -> None:
     schemas: tuple[type[BaseModel], ...] = (
         SecurityMaskerFileConfig,
         RuntimeConfig,
+        LoggingConfig,
         StateConfig,
         Defaults,
         DetectorsConfig,
@@ -64,6 +66,7 @@ def test_generated_templates_expose_nontrivial_user_knobs() -> None:
         "my_number_min_score",
         "corporate_number",
         "skip_code_contexts",
+        "level",
         "trusted_local_tools",
     ):
         assert f"{field}:" in config_template

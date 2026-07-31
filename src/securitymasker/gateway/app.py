@@ -106,7 +106,7 @@ async def ready(request: Request) -> JSONResponse:
         await rt.store.delete(probe)
     except Exception as exc:  # noqa: BLE001 - any store fault means not ready
         rt.telemetry.store_error(Provider.ADMIN, StoreOperation.READINESS)
-        _log.warning("sm_not_ready", reason=type(exc).__name__)
+        _log.debug("sm_not_ready", reason=type(exc).__name__)
         return JSONResponse({"ready": False, "reason": "session store unavailable"},
                             status_code=503)
     return JSONResponse({"ready": True})

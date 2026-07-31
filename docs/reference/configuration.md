@@ -19,6 +19,9 @@ runtime:
   host: 127.0.0.1
   port: 4000
 
+logging:
+  level: INFO
+
 state:
   database: ./securitymasker.state/securitymasker.db
   key: ./securitymasker.state/securitymasker.key
@@ -63,6 +66,7 @@ tool_trust:
 
 - `version`: 現行schemaは整数`1`だけです。
 - `runtime`: 1 processのmode、bind先、port。
+- `logging`: Gatewayが標準errorへ出す製品logの表示閾値。
 - `state`: 暗号化SQLiteとsidecar master key。
 - `dictionary`: 1つの`securitymasker.dict`へのpath。
 - `defaults`: masking engineとsessionの共通動作。
@@ -76,6 +80,18 @@ tool_trust:
 - `port`: `1`から`65535`。CLI `--port`はその起動だけ上書きします。
 
 CLI option、config、組込み既定値の順で解決します。public bindと複数workerは設定できません。
+
+## logging
+
+- `level`: `DEBUG`、`INFO`、`WARNING`、`ERROR`のいずれか。既定は`INFO`。
+
+指定level以上のeventだけを標準errorへ表示します。順序は
+`DEBUG < INFO < WARNING < ERROR`です。`logging`節を持たない既存のschema v1 configも
+`INFO`として読み込みます。level名は大文字で指定し、未知値や未知fieldは起動時に拒否します。
+
+levelの意味とevent対応は[CLI referenceのログの読み方](cli.md#ログの読み方)を参照してください。
+設定file自体が読めない、または`logging.level`が不正な場合はその設定を適用できないため、
+設定不良を既定閾値の`ERROR`として表示します。
 
 ## state
 

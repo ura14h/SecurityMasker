@@ -37,6 +37,41 @@ def test_load_valid_config(tmp_path: Path) -> None:
     assert len(config.entities) == 1
     assert len(config.patterns) == 1
     assert config.defaults.normalization == "nfkc"
+    assert config.logging.level == "INFO"
+
+
+def test_load_configured_log_level(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, VALID)
+    text = config_path.read_text(encoding="utf-8").replace(
+        "level: INFO", "level: DEBUG"
+    )
+    config_path.write_text(text, encoding="utf-8")
+
+    assert load_config(config_path).logging.level == "DEBUG"
+
+
+def test_missing_logging_section_keeps_schema_v1_info_default(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, VALID)
+    text = config_path.read_text(encoding="utf-8").replace(
+        "logging:\n  level: INFO\n\n", ""
+    )
+    config_path.write_text(text, encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.version == 1
+    assert config.logging.level == "INFO"
+
+
+def test_invalid_log_level_is_rejected(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, VALID)
+    text = config_path.read_text(encoding="utf-8").replace(
+        "level: INFO", "level: TRACE"
+    )
+    config_path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="logging.level"):
+        load_config(config_path)
 
 
 def test_invalid_profile_raises(tmp_path: Path) -> None:

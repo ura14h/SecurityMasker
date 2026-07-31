@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-07-30
+最終更新: 2026-07-31
 
 この文書を、現行構成の`done`／`partial`／`blocked`と公開範囲の正とします。`done`は実装、
 製品配線、回帰test、利用・運用手順が揃った項目だけです。
@@ -16,6 +16,7 @@
 | 標準日本語NER | done（source） | 固定revision/digest、既定ON |
 | preview、client snippet、read-only doctor | done | なし |
 | CLI・設定reference | done | schemaとparserの網羅性testあり |
+| console log level・設定閾値 | done | schema v1の`logging.level`、影響別4 level、起動・終了・異常系testあり |
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
 | source release candidate | partial | Linux arm64でWebSocket対応後の隔離実CLI gate再実行が必要 |
@@ -28,9 +29,12 @@
 現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
 Python 3.12でsource setupを検証しています。
 
-2026-07-30にmacOS arm64でruff、mypy strict 71 source files、unit 661件、evaluation 3件が
-成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。
-Codex CLI 0.145.0のapp-serverから
+2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 677件、evaluation 3件が
+成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。config schema v1へ
+後方互換な`logging.level`を追加し、INFO、WARNING、ERROR、DEBUGの表示閾値と製品影響別のevent
+対応、bind前socket確保、起動・終了logを検証しました。
+
+2026-07-30にはCodex CLI 0.145.0のapp-serverから
 SecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、一つのturnでdynamic toolを8回
 直列実行してWebSocket接続数1、完了response数18、全tool resultのmaskと最終responseの復元を
 確認しました。最終コードでのwall timeは132,139.9 msでした。

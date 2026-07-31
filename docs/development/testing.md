@@ -91,7 +91,8 @@ SM_RUN_OPENAI_E2E=1 SM_OPENAI_E2E_COMPARE_HTTP=1 \
 実行時のJSON出力へ両transportのwall timeと短縮率を残し、一般的な性能保証値にはしません。
 通常の利用者設定fileは変更せず、threadには`ephemeral`を指定します。transport互換性に
 detector modelの揺らぎを混ぜないため、このtest専用の一時configだけ日本語NERを無効にし、
-辞書で固定合成値を検出します。
+辞書で固定合成値を検出します。WebSocket接続数と完了response数はDEBUG eventで検証するため、
+同じ一時configの`logging.level`だけを`DEBUG`にします。
 
 ## Desktopの扱い
 

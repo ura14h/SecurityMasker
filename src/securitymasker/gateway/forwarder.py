@@ -62,11 +62,16 @@ async def forward_streaming(
     response IDなどを、callerが非同期でsessionへ保存するために使う。
     """
     client = httpx.AsyncClient(timeout=_TIMEOUT)
-    upstream = await client.send(
-        client.build_request(method, url, headers=_fwd_req_headers(headers), content=body),
-        stream=True,
-    )
-    _log.info(
+    try:
+        upstream = await client.send(
+            client.build_request(method, url, headers=_fwd_req_headers(headers), content=body),
+            stream=True,
+        )
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        _log.warning("sm_upstream_network_error", reason=type(exc).__name__)
+        raise
+    _log.debug(
         "sm_upstream_stream_started",
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type"),
@@ -82,7 +87,7 @@ async def forward_streaming(
                     yield tail
                 if on_complete is not None:
                     await on_complete(processor)
-            _log.info("sm_upstream_stream_completed", status_code=upstream.status_code)
+            _log.debug("sm_upstream_stream_completed", status_code=upstream.status_code)
         finally:
             await upstream.aclose()
             await client.aclose()
@@ -104,9 +109,16 @@ async def forward_buffered(
     method: str, url: str, headers: Mapping[str, str], body: bytes
 ) -> tuple[int, dict[str, str], bytes]:
     """転送後、dict復元用に非streamingのresponse全文を返す。"""
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.request(method, url, headers=_fwd_req_headers(headers), content=body)
-        return resp.status_code, _resp_headers(resp.headers), resp.content
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.request(
+                method, url, headers=_fwd_req_headers(headers), content=body
+            )
+    except httpx.HTTPError as exc:
+        _log.warning("sm_upstream_network_error", reason=type(exc).__name__)
+        raise
+    _log.debug("sm_upstream_response_completed", status_code=resp.status_code)
+    return resp.status_code, _resp_headers(resp.headers), resp.content
 
 
 def is_event_stream(content_type: str | None) -> bool:

@@ -413,7 +413,7 @@ def _run_codex_tool_chain(
         layout.config.read_text(encoding="utf-8").replace(
             "  japanese_ner:\n    enabled: true",
             "  japanese_ner:\n    enabled: false",
-        ),
+        ).replace("level: INFO", "level: DEBUG"),
         encoding="utf-8",
     )
     layout.dictionary.write_text(DICTIONARY, encoding="utf-8")

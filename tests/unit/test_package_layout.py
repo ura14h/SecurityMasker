@@ -12,7 +12,7 @@ import pytest
 import securitymasker
 from securitymasker.cli import main
 from securitymasker.config import load_config, resolve_config_path
-from securitymasker.errors import ConfigError
+from securitymasker.errors import ConfigError, SessionError
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -392,18 +392,78 @@ def test_gateway_cli_runtime_overrides_take_priority_over_config(
 
     monkeypatch.setattr("securitymasker.gateway.app.create_app", lambda: object())
 
-    def fake_run(app: object, **keywords: object) -> None:
+    def fake_serve(app: object, **keywords: object) -> int:
+        observed["app"] = app
         observed.update(keywords)
+        return 0
 
-    monkeypatch.setattr("uvicorn.run", fake_run)
+    monkeypatch.setattr("securitymasker.cli._serve_gateway", fake_serve)
 
     assert main(["gateway", "--config", str(config_path), *arguments]) == 0
     assert os.environ["SECURITYMASKER_PRODUCT_MODE"] == expected_mode
     assert observed["host"] == "127.0.0.1"
     assert observed["port"] == expected_port
-    log = capsys.readouterr().err
-    assert (
-        f"[info] gateway_started url=http://127.0.0.1:{expected_port} "
-        f"mode={expected_mode}"
-    ) in log
-    assert "[securitymasker] gateway on" not in log
+    assert observed["mode"] == expected_mode
+    assert capsys.readouterr().err == ""
+
+
+def test_gateway_uses_configured_console_log_threshold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURITYMASKER_CONFIG", "test-sentinel")
+    monkeypatch.setenv("SECURITYMASKER_PRODUCT_MODE", "test-sentinel")
+    config_path = _write_layout(tmp_path)
+    text = config_path.read_text(encoding="utf-8").replace(
+        "runtime:\n", "logging:\n  level: ERROR\n\nruntime:\n"
+    )
+    config_path.write_text(text, encoding="utf-8")
+    configured: list[str] = []
+
+    monkeypatch.setattr("securitymasker.gateway.app.create_app", lambda: object())
+    monkeypatch.setattr(
+        "securitymasker.cli.configure_logging",
+        lambda level="INFO": configured.append(level),
+    )
+    monkeypatch.setattr("securitymasker.cli._serve_gateway", lambda *args, **kwargs: 0)
+
+    assert main(["gateway", "--config", str(config_path)]) == 0
+    assert configured == ["INFO", "ERROR"]
+
+
+def test_gateway_configuration_failure_is_error_without_start(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = _write_layout(tmp_path)
+    text = config_path.read_text(encoding="utf-8").replace(
+        "version: 1", "version: 999", 1
+    )
+    config_path.write_text(text, encoding="utf-8")
+
+    assert main(["gateway", "--config", str(config_path)]) == 1
+
+    output = capsys.readouterr().err
+    assert "[error] gateway_configuration_error" in output
+    assert "gateway_started" not in output
+
+
+def test_gateway_store_initialization_failure_is_error_without_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("SECURITYMASKER_CONFIG", "test-sentinel")
+    monkeypatch.setenv("SECURITYMASKER_PRODUCT_MODE", "test-sentinel")
+    config_path = _write_layout(tmp_path)
+
+    def fail_create_app() -> object:
+        raise SessionError("synthetic SQLite initialization failure")
+
+    monkeypatch.setattr("securitymasker.gateway.app.create_app", fail_create_app)
+
+    assert main(["gateway", "--config", str(config_path)]) == 1
+
+    output = capsys.readouterr().err
+    assert "[error] gateway_store_error" in output
+    assert "gateway_started" not in output

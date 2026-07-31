@@ -335,7 +335,7 @@ async def _relay(
                         return
                     await _send_json(downstream, event)
                     continue
-                _log.warning(
+                _log.debug(
                     "sm_websocket_unexpected_upstream_event",
                     event_type=event.get("type"),
                 )
@@ -399,7 +399,7 @@ async def _relay(
                     status_code=status,
                     duration_ms=duration_ms,
                 )
-                _log.info(
+                _log.debug(
                     "sm_websocket_turn_completed",
                     session_fp=safe_fingerprint(session_id),
                     outcome="success" if status < 400 else "error",
@@ -440,7 +440,7 @@ async def handle_responses_websocket(websocket: WebSocket) -> None:
     try:
         async with open_upstream(url, headers, user_agent) as upstream:
             await websocket.accept()
-            _log.info(
+            _log.debug(
                 "sm_websocket_connected",
                 session_fp=safe_fingerprint(session_id),
             )
@@ -450,13 +450,22 @@ async def handle_responses_websocket(websocket: WebSocket) -> None:
                 session_id=session_id,
                 initial_session=session,
             )
-    except (asyncio.CancelledError, ConnectionClosed, WebSocketDisconnect):
+    except asyncio.CancelledError:
+        _log.debug("sm_websocket_disconnected", reason="cancelled")
+        return
+    except (ConnectionClosed, WebSocketDisconnect) as exc:
+        code = getattr(exc, "code", None)
+        if code not in {1000, 1001}:
+            runtime.telemetry.stream_error(
+                Provider.OPENAI, StreamErrorReason.NETWORK
+            )
+        _log.debug("sm_websocket_disconnected", close_code=code)
         return
     except Exception as exc:  # noqa: BLE001 - transport detailはclient/logへ出さない
         runtime.telemetry.stream_error(
             Provider.OPENAI, StreamErrorReason.PROCESSING
         )
-        _log.warning("sm_websocket_closed", reason=type(exc).__name__)
+        _log.debug("sm_websocket_disconnected", reason=type(exc).__name__)
         await _close_with_error(
             websocket,
             status=502,
