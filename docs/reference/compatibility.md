@@ -28,7 +28,7 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 | platform | source版 | one-file版 | 状態 |
 |---|---|---|---|
 | macOS arm64 | Python 3.11 / 3.12で検証済み | 技術spikeのみ | source版の対応環境 |
-| Linux arm64 | Python 3.12で検証済み | 未検証 | source版の対応環境 |
+| Linux arm64 | Python 3.12で検証済み | 技術spike済み（Debian 12） | source版の対応環境 |
 | Windows | 非対応 | 非対応 | [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)。setup、ACL検査、PowerShell設定、native E2E、build・署名が未実装 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
@@ -58,7 +58,7 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 - source最小要件: Python 3.11
 - clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64 / Linux arm64）
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
-- one-file spike: macOS arm64、PyInstaller 6.21.0
+- one-file spike: macOS arm64、およびLinux arm64のDebian 12 container、PyInstaller 6.21.0
 
 実CLIの検証baselineは Codex CLI 0.145.0 と Claude Code 2.1.212です。protocolは変化し得るため、
 release時に最新対象versionでE2Eを再実行します。2026-07-31にはLinux arm64の外部networkなし
@@ -100,6 +100,9 @@ clean setup・NER・Gateway回帰testが必要です。保護境界のtest matri
 
 ## binary
 
-one-fileはOS/architecture別artifactです。macOS arm64 spikeでは約917 MiBでした。他OS、
-署名/notarization、Python未導入の物理clean machineは未検証です。公開条件は
-[status](../development/status.md) を参照してください。
+one-fileはOS/architecture別artifactです。macOS arm64 spikeは約917 MiB、Linux arm64 spikeは
+約972.5 MiBでした。Linux arm64はDebian 12 slimのPythonなしruntimeで、外部networkなし・
+read-only root filesystemの起動、init、config validation、標準NER previewを検証済みです。
+ただしこれはDocker container上の技術検証であり、複数distribution、物理clean machine、公開artifactの
+互換性を表明するものではありません。署名/notarization、同梱componentとmodel weightの再配布確認も
+未完です。公開条件は[status](../development/status.md)を参照してください。

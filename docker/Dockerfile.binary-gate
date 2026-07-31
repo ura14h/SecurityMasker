@@ -1,0 +1,68 @@
+FROM docker.io/library/python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/home/gate/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    DO_NOT_TRACK=1 \
+    TOKENIZERS_PARALLELISM=false
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends binutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 gate \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /bin/sh gate
+
+WORKDIR /workspace
+
+COPY --chown=10001:10001 README.md LICENSE THIRD_PARTY_NOTICES.md pyproject.toml \
+    securitymasker.py securitymasker.spec ./
+COPY --chown=10001:10001 requirements.lock requirements-build.lock \
+    requirements-dev.lock requirements-ner.lock requirements-torch-cpu.lock ./
+COPY --chown=10001:10001 src ./src
+COPY --chown=10001:10001 tests ./tests
+COPY --chown=10001:10001 devtools ./devtools
+COPY --chown=10001:10001 scripts ./scripts
+COPY --chown=10001:10001 docs ./docs
+
+RUN chown 10001:10001 /workspace
+USER 10001:10001
+
+RUN PYTHON_COMMAND=python3.12 ./scripts/build-binary
+RUN ./build/pyinstaller/venv/bin/python -m pip install \
+        --disable-pip-version-check --no-deps -r requirements-dev.lock \
+    && PYTHON=/workspace/build/pyinstaller/venv/bin/python \
+        ./scripts/test-binary ./dist/securitymasker
+
+FROM docker.io/library/debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+
+LABEL org.opencontainers.image.title="SecurityMasker Linux arm64 one-file gate"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.licenses="MIT"
+
+ENV HOME=/home/securitymasker \
+    TMPDIR=/tmp
+
+RUN groupadd --gid 10001 securitymasker \
+    && useradd --uid 10001 --gid 10001 --create-home \
+        --shell /usr/sbin/nologin securitymasker
+
+COPY --from=builder --chown=10001:10001 \
+    /workspace/dist/securitymasker /usr/local/bin/securitymasker
+
+USER 10001:10001
+RUN if command -v python3 >/dev/null 2>&1; then exit 1; fi \
+    && securitymasker --help >/dev/null \
+    && GATE_DIRECTORY=$(mktemp -d) \
+    && securitymasker init --directory "$GATE_DIRECTORY/product" >/dev/null \
+    && securitymasker config-check \
+        --config "$GATE_DIRECTORY/product/securitymasker.config" >/dev/null \
+    && PREVIEW=$(securitymasker preview "担当者は山田太郎です。" \
+        --config "$GATE_DIRECTORY/product/securitymasker.config") \
+    && case "$PREVIEW" in *山田太郎*) exit 1;; esac \
+    && case "$PREVIEW" in *SM_PERSON_*) :;; *) exit 1;; esac \
+    && rm -rf "$GATE_DIRECTORY"
+
+ENTRYPOINT ["securitymasker"]

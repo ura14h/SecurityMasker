@@ -544,6 +544,36 @@ def test_linux_arm64_docker_gate_separates_online_and_isolated_phases() -> None:
     assert "securitymasker.dict" not in dockerignore
 
 
+def test_linux_arm64_binary_gate_builds_and_tests_a_python_free_runtime() -> None:
+    runner = (ROOT / "devtools/run_linux_arm64_binary_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    dockerfile = (ROOT / "docker/Dockerfile.binary-gate").read_text(
+        encoding="utf-8"
+    )
+    binary_test = (ROOT / "scripts/test-binary").read_text(encoding="utf-8")
+
+    for required in (
+        "--platform linux/arm64",
+        "--network none",
+        "--read-only",
+        "--tmpfs /tmp:rw,exec,mode=1777",
+        "/sys/class/net/*",
+        "/proc/net/route",
+        "/proc/net/ipv6_route",
+        "command -v python3",
+        "docker cp",
+        "shasum -a 256",
+    ):
+        assert required in runner
+    assert "./scripts/build-binary" in dockerfile
+    assert "./scripts/test-binary" in dockerfile
+    assert "FROM docker.io/library/debian:bookworm-slim@sha256:" in dockerfile
+    assert "command -v python3" in dockerfile
+    assert 'ENTRYPOINT ["securitymasker"]' in dockerfile
+    assert 'PYTHON=${PYTHON:-"$PROJECT_DIRECTORY/.venv/bin/python"}' in binary_test
+
+
 def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services() -> None:
     build = (ROOT / "scripts/build-binary").read_text(encoding="utf-8")
     lock = (ROOT / "requirements-build.lock").read_text(encoding="utf-8")

@@ -78,6 +78,18 @@ SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査�
 公開にはさらに署名、対象OSごとのclean-machine gate、同梱componentとmodel weightの再配布条件確認が
 必要です。one-file artifact、model weight、build directoryはGitへcommitしません。
 
+macOS arm64のDocker DesktopでLinux arm64 one-fileをnative buildし、Pythonを含まないclean
+runtimeまで検証する場合は次を実行します。
+
+```console
+./devtools/run_linux_arm64_binary_gate.sh
+```
+
+このrunnerはPyInstaller buildと既存binary E2Eをbuilder stageで実行した後、one-fileだけを
+Debian 12 slim stageへコピーします。最終imageをread-only・`--network none`で起動し、Pythonが
+存在しないこと、init、config validation、標準NER previewを確認してから、検証済みartifactを
+`dist/securitymasker-linux-arm64`へ取り出してsizeとSHA-256を表示します。
+
 ## Evidenceの記録
 
 公開versionごとに`release-evidence/<version>.md`を作成し、次を記録します。

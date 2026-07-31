@@ -64,8 +64,14 @@ Windowsはsource版を含めて公開対応範囲外です。部分的に動く�
 
 ## Binary版
 
-macOS arm64のone-file buildとE2Eはtechnical spikeとして成功していますが、公開artifactでは
-ありません。公開には次が必要です。
+macOS arm64に加え、Linux arm64のone-file buildとE2Eもtechnical spikeとして成功していますが、
+どちらも公開artifactではありません。Linux arm64ではDocker Desktopのnative arm64 builderで
+PyInstaller 6.21.0を実行し、Pythonを含まないDebian 12 slim runtimeを外部networkなし・read-only
+root filesystemで起動して、init、config validation、標準NER previewまで確認しました。変更後の
+local回帰ではruff、mypy strict 71 source files、unit／evaluation 689件も成功しました。詳細は
+[Linux arm64 one-file evidence](release-evidence/linux-arm64-one-file-2026-07-31.md)に記録しています。
+
+公開には次が必要です。
 
 1. 対象OS／architectureごとのnative buildとclean-machine binary gate。
 2. macOSのDeveloper ID署名とnotarization。Windowsを出す場合はcode signing。

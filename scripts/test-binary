@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
-PYTHON="$PROJECT_DIRECTORY/.venv/bin/python"
+PYTHON=${PYTHON:-"$PROJECT_DIRECTORY/.venv/bin/python"}
 BINARY=${1:-"$PROJECT_DIRECTORY/dist/securitymasker"}
 
 if [ ! -x "$PYTHON" ]; then
