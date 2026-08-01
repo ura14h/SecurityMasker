@@ -35,6 +35,7 @@ from securitymasker.config import (
     load_config,
     resolve_config_path,
 )
+from securitymasker.distribution import version_text
 from securitymasker.errors import ConfigError, SecurityMaskerError, SessionError
 from securitymasker.logging import configure_logging, get_logger
 from securitymasker.sessions.memory import InMemorySessionStore
@@ -282,7 +283,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="securitymasker", description="SecurityMasker CLI")
-    parser.add_argument("--version", action="version", version=f"securitymasker {__version__}")
+    parser.add_argument("--version", action="version", version=version_text(__version__))
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_config(p: argparse.ArgumentParser) -> None:

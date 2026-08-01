@@ -232,8 +232,9 @@ def require_verified(
 
 def cache_directory(model: str, revision: str) -> Path | None:
     """正確なrevisionが存在する場合、そのlocal cache位置を返す。"""
-    # one-file binaryは検証済みmodelを一時展開先へ同梱する。利用者のcacheやnetworkを
-    # 見る前に、そのbuild時に固定したdirectoryだけを返す。
+    # Full版one-fileは検証済みmodelを一時展開先へ同梱する。存在する場合は利用者の
+    # cacheより先にbuild時のdirectoryを返す。Lite版には同梱directoryがないため、
+    # source版と同じlocal cache探索へ進む。どちらも呼出側がload前にmanifest検証する。
     bundle_root = getattr(sys, "_MEIPASS", None) if getattr(sys, "frozen", False) else None
     if (
         bundle_root is not None
@@ -241,7 +242,8 @@ def cache_directory(model: str, revision: str) -> Path | None:
         and revision == ADOPTED_REVISION
     ):
         bundled = Path(bundle_root) / "securitymasker_model"
-        return bundled if bundled.is_dir() else None
+        if bundled.is_dir():
+            return bundled
     try:
         from huggingface_hub import snapshot_download
     except ImportError:

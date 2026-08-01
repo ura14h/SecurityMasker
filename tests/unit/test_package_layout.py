@@ -557,6 +557,9 @@ def test_linux_arm64_binary_gate_builds_and_tests_a_python_free_runtime() -> Non
 
     for required in (
         "--platform linux/arm64",
+        "BINARY_PROFILE=$PROFILE",
+        "run_profile lite",
+        "run_profile full",
         "--network none",
         "--read-only",
         "--tmpfs /tmp:rw,exec,mode=1777",
@@ -568,12 +571,16 @@ def test_linux_arm64_binary_gate_builds_and_tests_a_python_free_runtime() -> Non
         "shasum -a 256",
     ):
         assert required in runner
-    assert "./scripts/build-binary" in dockerfile
-    assert "./scripts/test-binary" in dockerfile
+    assert './scripts/build-binary --profile "$BINARY_PROFILE"' in dockerfile
+    assert './scripts/test-binary --profile "$BINARY_PROFILE"' in dockerfile
+    assert "securitymasker-${BINARY_PROFILE}" in dockerfile
+    assert "/home/securitymasker/.cache/huggingface" in dockerfile
     assert "FROM docker.io/library/debian:bookworm-slim@sha256:" in dockerfile
     assert "command -v python3" in dockerfile
     assert 'ENTRYPOINT ["securitymasker"]' in dockerfile
     assert 'PYTHON=${PYTHON:-"$PROJECT_DIRECTORY/.venv/bin/python"}' in binary_test
+    assert 'SM_BINARY_PROFILE="$PROFILE"' in binary_test
+    assert "model-load" in binary_test
 
 
 def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services() -> None:
@@ -587,13 +594,34 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
     assert "requirements-dev.lock" not in build
     assert "binary build requires Python 3.11+" in build
     assert "--no-build-isolation --no-deps -e" in build
+    assert 'PROFILE=lite' in build
+    assert 'PROFILE=${1#--profile=}' in build
+    assert 'securitymasker-$PROFILE' in build
+    assert 'if [ "$PROFILE" = full ]' in build
+    assert 'SECURITYMASKER_BINARY_PROFILE="$PROFILE"' in build
     assert "securitymasker.spec" in build
     assert "securitymasker_model" in spec
+    assert 'if binary_profile == "full"' in spec
+    assert 'name=f"securitymasker-{binary_profile}"' in spec
+    assert "securitymasker_build.json" in (
+        ROOT / "src/securitymasker/distribution.py"
+    ).read_text(encoding="utf-8")
     assert 'sys.path.insert(0, str(source))' in spec
     assert 'securitymasker/_binary_entry.py' in spec
+    binary_entry = (ROOT / "src/securitymasker/_binary_entry.py").read_text(
+        encoding="utf-8"
+    )
+    assert "freeze_support()" in binary_entry
+    assert binary_entry.index("freeze_support()") < binary_entry.index(
+        "from securitymasker.cli import main"
+    )
     binary_test = (ROOT / "scripts/test-binary").read_text(encoding="utf-8")
     assert "tests/integration/test_binary_release.py" in binary_test
     assert 'SM_BINARY="$BINARY"' in binary_test
+    for profile in ("lite", "full"):
+        wrapper = ROOT / f"scripts/build-binary-{profile}"
+        assert wrapper.stat().st_mode & 0o111
+        assert f"--profile {profile}" in wrapper.read_text(encoding="utf-8")
     for excluded in ("devtools", "pytest", "presidio_analyzer", "spacy"):
         assert f'"{excluded}"' in spec
     for removed in (

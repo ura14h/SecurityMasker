@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""SecurityMasker one-file build specification（ADR-0012 Phase 8）。"""
+"""SecurityMasker Lite／Full one-file build specification（ADR-0020）。"""
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,19 +22,32 @@ from securitymasker.models_fetch import (
     require_verified,
 )
 
-model_directory = cache_directory(ADOPTED_MODEL, ADOPTED_REVISION)
-if model_directory is None:
-    raise SystemExit("pinned NER model is not cached; run scripts/setup first")
-require_verified(ADOPTED_MODEL, ADOPTED_REVISION, model_directory)
-manifest = manifest_for(ADOPTED_MODEL, ADOPTED_REVISION)
-if manifest is None:
-    raise SystemExit("pinned NER model manifest is missing")
+binary_profile = os.environ.get("SECURITYMASKER_BINARY_PROFILE")
+if binary_profile not in ("lite", "full"):
+    raise SystemExit("SECURITYMASKER_BINARY_PROFILE must be lite or full")
+metadata_value = os.environ.get("SECURITYMASKER_BINARY_METADATA")
+if not metadata_value:
+    raise SystemExit("SECURITYMASKER_BINARY_METADATA is required")
+metadata_path = Path(metadata_value)
+metadata_path.write_text(
+    json.dumps({"distribution": "binary", "binary_profile": binary_profile}) + "\n",
+    encoding="utf-8",
+)
 
 datas = collect_data_files("securitymasker")
-datas += [
-    (str(model_directory / artifact.name), "securitymasker_model")
-    for artifact in manifest.artifacts
-]
+datas += [(str(metadata_path), ".")]
+if binary_profile == "full":
+    model_directory = cache_directory(ADOPTED_MODEL, ADOPTED_REVISION)
+    if model_directory is None:
+        raise SystemExit("pinned NER model is not cached; run model-load first")
+    require_verified(ADOPTED_MODEL, ADOPTED_REVISION, model_directory)
+    manifest = manifest_for(ADOPTED_MODEL, ADOPTED_REVISION)
+    if manifest is None:
+        raise SystemExit("pinned NER model manifest is missing")
+    datas += [
+        (str(model_directory / artifact.name), "securitymasker_model")
+        for artifact in manifest.artifacts
+    ]
 datas += [
     (str(project / "LICENSE"), "."),
     (str(project / "THIRD_PARTY_NOTICES.md"), "."),
@@ -100,7 +115,7 @@ executable = EXE(
     analysis.binaries,
     analysis.datas,
     [],
-    name="securitymasker",
+    name=f"securitymasker-{binary_profile}",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

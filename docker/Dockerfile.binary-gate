@@ -1,4 +1,8 @@
+ARG BINARY_PROFILE=lite
+
 FROM docker.io/library/python:3.12.13-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS builder
+
+ARG BINARY_PROFILE
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -30,13 +34,17 @@ COPY --chown=10001:10001 docs ./docs
 RUN chown 10001:10001 /workspace
 USER 10001:10001
 
-RUN PYTHON_COMMAND=python3.12 ./scripts/build-binary
-RUN ./build/pyinstaller/venv/bin/python -m pip install \
+RUN PYTHON_COMMAND=python3.12 ./scripts/build-binary --profile "$BINARY_PROFILE"
+RUN ./build/pyinstaller-${BINARY_PROFILE}/venv/bin/python -m pip install \
         --disable-pip-version-check --no-deps -r requirements-dev.lock \
-    && PYTHON=/workspace/build/pyinstaller/venv/bin/python \
-        ./scripts/test-binary ./dist/securitymasker
+    && SM_BINARY_TEST_HF_HOME=/home/gate/.cache/huggingface \
+        PYTHON=/workspace/build/pyinstaller-${BINARY_PROFILE}/venv/bin/python \
+        ./scripts/test-binary --profile "$BINARY_PROFILE" \
+        "./dist/securitymasker-$BINARY_PROFILE"
 
 FROM docker.io/library/debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+
+ARG BINARY_PROFILE
 
 LABEL org.opencontainers.image.title="SecurityMasker Linux arm64 one-file gate"
 LABEL org.opencontainers.image.version="0.1.0"
@@ -50,11 +58,14 @@ RUN groupadd --gid 10001 securitymasker \
         --shell /usr/sbin/nologin securitymasker
 
 COPY --from=builder --chown=10001:10001 \
-    /workspace/dist/securitymasker /usr/local/bin/securitymasker
+    /workspace/dist/securitymasker-${BINARY_PROFILE} /usr/local/bin/securitymasker
+COPY --from=builder --chown=10001:10001 \
+    /home/gate/.cache/huggingface /home/securitymasker/.cache/huggingface
 
 USER 10001:10001
 RUN if command -v python3 >/dev/null 2>&1; then exit 1; fi \
     && securitymasker --help >/dev/null \
+    && securitymasker --version | grep "binary ${BINARY_PROFILE}" >/dev/null \
     && GATE_DIRECTORY=$(mktemp -d) \
     && securitymasker init --directory "$GATE_DIRECTORY/product" >/dev/null \
     && securitymasker config-check \

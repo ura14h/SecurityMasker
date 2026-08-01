@@ -294,7 +294,7 @@ def test_pinned_manifest_records_whole_file_bytes() -> None:
         assert file_sha256(path) == artifact.sha256, artifact.name
 
 
-def test_frozen_runtime_uses_only_the_bundled_model(
+def test_frozen_runtime_prefers_the_bundled_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from securitymasker import models_fetch
@@ -305,4 +305,22 @@ def test_frozen_runtime_uses_only_the_bundled_model(
     monkeypatch.setattr(models_fetch.sys, "_MEIPASS", str(tmp_path), raising=False)
 
     assert models_fetch.cache_directory(ADOPTED, ADOPTED_REV) == bundled
-    assert models_fetch.cache_directory("other/model", ADOPTED_REV) is None
+
+
+def test_frozen_runtime_without_bundle_uses_verified_local_cache_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from securitymasker import models_fetch
+
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    cached = tmp_path / "cache"
+    cached.mkdir()
+    monkeypatch.setattr(models_fetch.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(models_fetch.sys, "_MEIPASS", str(bundle_root), raising=False)
+    monkeypatch.setattr(
+        "huggingface_hub.snapshot_download",
+        lambda **kwargs: str(cached),
+    )
+
+    assert models_fetch.cache_directory(ADOPTED, ADOPTED_REV) == cached

@@ -17,6 +17,8 @@ import pytest
 from securitymasker.bootstrap import initialize_layout
 
 BINARY_ENV = "SM_BINARY"
+PROFILE_ENV = "SM_BINARY_PROFILE"
+MODEL_HOME_ENV = "SM_BINARY_TEST_HF_HOME"
 PERSON = "山田太郎"
 PROMPT = f"担当者は{PERSON}です。"
 REPO = Path(__file__).resolve().parents[2]
@@ -31,6 +33,12 @@ def _binary() -> Path:
     binary = Path(os.environ[BINARY_ENV]).resolve()
     assert binary.is_file()
     return binary
+
+
+def _profile() -> str:
+    profile = os.environ.get(PROFILE_ENV)
+    assert profile in ("lite", "full")
+    return profile
 
 
 def _port() -> int:
@@ -53,12 +61,41 @@ def _wait_ready(url: str, *, timeout: float = 120.0) -> None:
     raise AssertionError(f"binary gateway was not ready: {type(last).__name__}")
 
 
-def _isolated_environment(home: Path, temp: Path) -> dict[str, str]:
-    return {
+def _isolated_environment(
+    home: Path, temp: Path, *, with_model: bool = True
+) -> dict[str, str]:
+    environment = {
         "HOME": str(home),
         "PATH": "/usr/bin:/bin",
         "TMPDIR": str(temp),
     }
+    if _profile() == "lite" and with_model:
+        model_home = os.environ.get(MODEL_HOME_ENV)
+        assert model_home, f"{MODEL_HOME_ENV} is required for the lite profile gate"
+        environment["HF_HOME"] = model_home
+    return environment
+
+
+def test_binary_version_identifies_profile(tmp_path: Path) -> None:
+    binary = _binary()
+    home = tmp_path / "home"
+    temp = tmp_path / "temp"
+    home.mkdir()
+    temp.mkdir()
+
+    completed = subprocess.run(
+        [binary, "--version"],
+        env=_isolated_environment(home, temp),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert f"(binary {_profile()})" in completed.stdout
+    assert "unknown-profile" not in completed.stdout
+    assert not list(temp.glob("_MEI*")), "version exit left an extraction directory"
 
 
 def test_binary_without_command_shows_help_and_exits(tmp_path: Path) -> None:
@@ -81,6 +118,47 @@ def test_binary_without_command_shows_help_and_exits(tmp_path: Path) -> None:
     assert "SecurityMasker CLI" in completed.stdout
     assert "gateway_started" not in completed.stderr
     assert not list(temp.glob("_MEI*")), "help exit left a one-file extraction directory"
+
+
+def test_lite_binary_without_model_fails_closed_and_guides_model_load(
+    tmp_path: Path,
+) -> None:
+    if _profile() != "lite":
+        pytest.skip("lite profile only")
+    binary = _binary()
+    home = tmp_path / "home"
+    temp = tmp_path / "temp"
+    product = tmp_path / "product"
+    empty_model_home = tmp_path / "empty-model-home"
+    home.mkdir()
+    temp.mkdir()
+    empty_model_home.mkdir()
+    environment = _isolated_environment(home, temp, with_model=False)
+    environment["HF_HOME"] = str(empty_model_home)
+
+    initialized = subprocess.run(
+        [binary, "init", "--directory", product],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    completed = subprocess.run(
+        [binary, "preview", PROMPT, "--config", product / "securitymasker.config"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode != 0
+    assert "model-load" in combined
+    assert PERSON not in combined
+    assert not list(temp.glob("_MEI*")), "failed preview left an extraction directory"
 
 
 def test_binary_init_validate_preview_and_temp_cleanup(tmp_path: Path) -> None:

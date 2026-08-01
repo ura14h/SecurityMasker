@@ -4,42 +4,63 @@ set -eu
 
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
-IMAGE="${SM_LINUX_BINARY_GATE_IMAGE:-securitymasker-linux-arm64-binary-gate:local}"
-OUTPUT="${SM_LINUX_BINARY_OUTPUT:-$PROJECT_DIRECTORY/dist/securitymasker-linux-arm64}"
+IMAGE_PREFIX="${SM_LINUX_BINARY_GATE_IMAGE_PREFIX:-securitymasker-linux-arm64-binary-gate}"
+LITE_OUTPUT="${SM_LINUX_BINARY_LITE_OUTPUT:-$PROJECT_DIRECTORY/dist/securitymasker-linux-arm64-lite}"
+FULL_OUTPUT="${SM_LINUX_BINARY_FULL_OUTPUT:-$PROJECT_DIRECTORY/dist/securitymasker-linux-arm64-full}"
 
 if ! command -v docker >/dev/null 2>&1; then
     printf '%s\n' "error: Docker CLI was not found" >&2
     exit 2
 fi
-if [ -e "$OUTPUT" ]; then
-    printf '%s\n' "error: output already exists: $OUTPUT" >&2
+if [ -e "$LITE_OUTPUT" ]; then
+    printf '%s\n' "error: output already exists: $LITE_OUTPUT" >&2
+    exit 2
+fi
+if [ -e "$FULL_OUTPUT" ]; then
+    printf '%s\n' "error: output already exists: $FULL_OUTPUT" >&2
     exit 2
 fi
 
 cd "$PROJECT_DIRECTORY"
 
-docker build \
-    --platform linux/arm64 \
-    --file docker/Dockerfile.binary-gate \
-    --tag "$IMAGE" \
-    .
+CONTAINER_ID=
+cleanup() {
+    if [ -n "$CONTAINER_ID" ]; then
+        docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true
+        CONTAINER_ID=
+    fi
+}
+trap cleanup EXIT HUP INT TERM
 
-ARCHITECTURE=$(docker image inspect --format '{{.Architecture}}' "$IMAGE")
-if [ "$ARCHITECTURE" != "arm64" ]; then
-    printf '%s\n' "error: binary gate image architecture is $ARCHITECTURE, not arm64" >&2
-    exit 2
-fi
+run_profile() {
+    PROFILE=$1
+    IMAGE=$2
+    OUTPUT=$3
 
-printf '%s\n' "Running Python-free Linux arm64 network-none smoke."
-docker run --rm \
-    --network none \
-    --read-only \
-    --platform linux/arm64 \
-    --tmpfs /tmp:rw,exec,mode=1777 \
-    --tmpfs /work:rw,mode=1777 \
-    --entrypoint /bin/sh \
-    "$IMAGE" \
-    -ec '
+    docker build \
+        --platform linux/arm64 \
+        --build-arg "BINARY_PROFILE=$PROFILE" \
+        --file docker/Dockerfile.binary-gate \
+        --tag "$IMAGE" \
+        .
+
+    ARCHITECTURE=$(docker image inspect --format '{{.Architecture}}' "$IMAGE")
+    if [ "$ARCHITECTURE" != "arm64" ]; then
+        printf '%s\n' \
+            "error: $PROFILE binary gate image architecture is $ARCHITECTURE, not arm64" >&2
+        exit 2
+    fi
+
+    printf '%s\n' "Running $PROFILE Python-free Linux arm64 network-none smoke."
+    docker run --rm \
+        --network none \
+        --read-only \
+        --platform linux/arm64 \
+        --tmpfs /tmp:rw,exec,mode=1777 \
+        --tmpfs /work:rw,mode=1777 \
+        --entrypoint /bin/sh \
+        "$IMAGE" \
+        -ec '
         test "$(uname -s)" = Linux
         test "$(uname -m)" = aarch64
         for network_interface in /sys/class/net/*; do
@@ -70,6 +91,7 @@ docker run --rm \
             exit 1
         fi
         securitymasker --help >/dev/null
+        securitymasker --version
         securitymasker init --directory /work/product >/dev/null
         securitymasker config-check \
             --config /work/product/securitymasker.config >/dev/null
@@ -77,21 +99,22 @@ docker run --rm \
             --config /work/product/securitymasker.config)
         case "$preview" in *山田太郎*) exit 1;; esac
         case "$preview" in *SM_PERSON_*) :;; *) exit 1;; esac
-    '
+        '
 
-mkdir -p "$(dirname -- "$OUTPUT")"
-CONTAINER_ID=$(docker create --platform linux/arm64 "$IMAGE")
-cleanup() {
-    docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true
+    mkdir -p "$(dirname -- "$OUTPUT")"
+    CONTAINER_ID=$(docker create --platform linux/arm64 "$IMAGE")
+    docker cp "$CONTAINER_ID:/usr/local/bin/securitymasker" "$OUTPUT"
+    cleanup
+
+    chmod 0755 "$OUTPUT"
+    printf '%s\n' "Created $OUTPUT"
+    file "$OUTPUT"
+    wc -c "$OUTPUT"
+    shasum -a 256 "$OUTPUT"
 }
-trap cleanup EXIT HUP INT TERM
-docker cp "$CONTAINER_ID:/usr/local/bin/securitymasker" "$OUTPUT"
-cleanup
-trap - EXIT HUP INT TERM
 
-chmod 0755 "$OUTPUT"
-printf '%s\n' "Created $OUTPUT"
-file "$OUTPUT"
-wc -c "$OUTPUT"
-shasum -a 256 "$OUTPUT"
-printf '%s\n' "Linux arm64 one-file gate passed."
+run_profile lite "$IMAGE_PREFIX-lite:local" "$LITE_OUTPUT"
+run_profile full "$IMAGE_PREFIX-full:local" "$FULL_OUTPUT"
+
+trap - EXIT HUP INT TERM
+printf '%s\n' "Linux arm64 Lite and Full one-file gates passed."

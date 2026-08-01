@@ -4,7 +4,37 @@ set -eu
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
 PYTHON=${PYTHON:-"$PROJECT_DIRECTORY/.venv/bin/python"}
-BINARY=${1:-"$PROJECT_DIRECTORY/dist/securitymasker"}
+PROFILE=lite
+BINARY=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --profile)
+            if [ "$#" -lt 2 ]; then
+                printf '%s\n' "error: --profile requires lite or full" >&2
+                exit 2
+            fi
+            PROFILE=$2
+            shift 2
+            ;;
+        --profile=*)
+            PROFILE=${1#--profile=}
+            shift
+            ;;
+        *)
+            if [ -n "$BINARY" ]; then
+                printf '%s\n' "error: unexpected argument: $1" >&2
+                exit 2
+            fi
+            BINARY=$1
+            shift
+            ;;
+    esac
+done
+if [ "$PROFILE" != lite ] && [ "$PROFILE" != full ]; then
+    printf '%s\n' "error: binary profile must be lite or full: $PROFILE" >&2
+    exit 2
+fi
+BINARY=${BINARY:-"$PROJECT_DIRECTORY/dist/securitymasker-$PROFILE"}
 
 if [ ! -x "$PYTHON" ]; then
     printf '%s\n' "error: run scripts/test-setup first" >&2
@@ -16,4 +46,13 @@ if [ ! -x "$BINARY" ]; then
 fi
 
 cd "$PROJECT_DIRECTORY"
-SM_BINARY="$BINARY" "$PYTHON" -m pytest tests/integration/test_binary_release.py -q
+if [ "$PROFILE" = lite ]; then
+    TEST_MODEL_HOME=${SM_BINARY_TEST_HF_HOME:-"$PROJECT_DIRECTORY/build/test-binary-model-cache"}
+    mkdir -p "$TEST_MODEL_HOME"
+    HF_HOME="$TEST_MODEL_HOME" "$BINARY" model-load \
+        --model tsmatz/xlm-roberta-ner-japanese \
+        --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
+    export SM_BINARY_TEST_HF_HOME="$TEST_MODEL_HOME"
+fi
+SM_BINARY="$BINARY" SM_BINARY_PROFILE="$PROFILE" \
+    "$PYTHON" -m pytest tests/integration/test_binary_release.py -q

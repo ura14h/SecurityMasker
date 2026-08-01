@@ -3,10 +3,38 @@ set -eu
 
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIRECTORY=$(dirname -- "$SCRIPT_DIRECTORY")
-BUILD_DIRECTORY=${SECURITYMASKER_BUILD_DIRECTORY:-"$PROJECT_DIRECTORY/build/pyinstaller"}
+PROFILE=lite
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --profile)
+            if [ "$#" -lt 2 ]; then
+                printf '%s\n' "error: --profile requires lite or full" >&2
+                exit 2
+            fi
+            PROFILE=$2
+            shift 2
+            ;;
+        --profile=*)
+            PROFILE=${1#--profile=}
+            shift
+            ;;
+        *)
+            printf '%s\n' "error: unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+if [ "$PROFILE" != lite ] && [ "$PROFILE" != full ]; then
+    printf '%s\n' "error: binary profile must be lite or full: $PROFILE" >&2
+    exit 2
+fi
+
+BUILD_DIRECTORY=${SECURITYMASKER_BUILD_DIRECTORY:-"$PROJECT_DIRECTORY/build/pyinstaller-$PROFILE"}
 BUILD_VENV="$BUILD_DIRECTORY/venv"
 WORK_DIRECTORY="$BUILD_DIRECTORY/work"
 DIST_DIRECTORY="$PROJECT_DIRECTORY/dist"
+OUTPUT="$DIST_DIRECTORY/securitymasker-$PROFILE"
+BUILD_METADATA="$BUILD_DIRECTORY/securitymasker_build.json"
 if [ -z "${PYTHON_COMMAND:-}" ]; then
     if command -v python3 >/dev/null 2>&1 &&
        python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
@@ -28,8 +56,8 @@ if [ -e "$BUILD_DIRECTORY" ]; then
     printf '%s\n' "error: clean build directory required: $BUILD_DIRECTORY" >&2
     exit 2
 fi
-if [ -e "$DIST_DIRECTORY/securitymasker" ]; then
-    printf '%s\n' "error: output already exists: $DIST_DIRECTORY/securitymasker" >&2
+if [ -e "$OUTPUT" ]; then
+    printf '%s\n' "error: output already exists: $OUTPUT" >&2
     exit 2
 fi
 
@@ -47,14 +75,18 @@ fi
     --no-deps -r "$PROJECT_DIRECTORY/requirements-build.lock"
 "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check \
     --no-build-isolation --no-deps -e "$PROJECT_DIRECTORY"
-"$BUILD_VENV/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" model-load \
-    --model tsmatz/xlm-roberta-ner-japanese \
-    --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
+if [ "$PROFILE" = full ]; then
+    "$BUILD_VENV/bin/python" "$PROJECT_DIRECTORY/securitymasker.py" model-load \
+        --model tsmatz/xlm-roberta-ner-japanese \
+        --revision aba094e118d5ffc622e9b25e07edc49f9dd85feb
+fi
 
 cd "$PROJECT_DIRECTORY"
-"$BUILD_VENV/bin/pyinstaller" --noconfirm --clean \
+SECURITYMASKER_BINARY_PROFILE="$PROFILE" \
+SECURITYMASKER_BINARY_METADATA="$BUILD_METADATA" \
+    "$BUILD_VENV/bin/pyinstaller" --noconfirm --clean \
     --distpath "$DIST_DIRECTORY" \
     --workpath "$WORK_DIRECTORY" \
     "$PROJECT_DIRECTORY/securitymasker.spec"
 
-printf '%s\n' "Created $DIST_DIRECTORY/securitymasker"
+printf '%s\n' "Created $OUTPUT ($PROFILE profile)"
