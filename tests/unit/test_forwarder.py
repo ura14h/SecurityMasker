@@ -109,3 +109,63 @@ async def test_buffered_upstream_status_is_debug(
     assert logger.debug_events == [
         ("sm_upstream_response_completed", {"status_code": 202})
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [200, 429])
+async def test_non_sse_json_bypasses_sse_processor(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    error_body = b'{"type":"error","error":{"type":"rate_limit_error"}}'
+
+    class Upstream:
+        headers = httpx.Headers({"content-type": "application/json"})
+
+        def __init__(self, status: int) -> None:
+            self.status_code = status
+
+        async def aiter_bytes(self):
+            yield error_body[:17]
+            yield error_body[17:]
+
+        async def aclose(self) -> None:
+            return None
+
+    class Client:
+        def build_request(self, *args: object, **kwargs: object) -> httpx.Request:
+            return httpx.Request("POST", "https://example.invalid/v1/messages")
+
+        async def send(self, *args: object, **kwargs: object) -> Upstream:
+            return Upstream(status_code)
+
+        async def aclose(self) -> None:
+            return None
+
+    class ForbiddenProcessor:
+        def feed(self, data: bytes) -> bytes:
+            raise AssertionError(f"error response was processed: {data!r}")
+
+        def flush(self) -> bytes:
+            raise AssertionError("error response was flushed")
+
+    completed = False
+
+    async def forbidden_complete(processor: object) -> None:
+        nonlocal completed
+        completed = True
+
+    monkeypatch.setattr(forwarder.httpx, "AsyncClient", lambda **kwargs: Client())
+    response = await forwarder.forward_streaming(
+        "POST",
+        "https://example.invalid/v1/messages",
+        {},
+        b"{}",
+        ForbiddenProcessor(),
+        on_complete=forbidden_complete,
+    )
+    body = b"".join([chunk async for chunk in response.body_iterator])
+
+    assert response.status_code == status_code
+    assert response.media_type == "application/json"
+    assert body == error_body
+    assert completed is False

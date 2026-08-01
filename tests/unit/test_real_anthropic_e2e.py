@@ -15,12 +15,16 @@ def test_claude_environment_is_temporary_and_deny_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-token")
+    monkeypatch.setenv("USER", "synthetic-user")
+    monkeypatch.setenv("LOGNAME", "synthetic-user")
     monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "x-secret: must-not-pass")
     monkeypatch.setenv("HTTPS_PROXY", "https://unrelated.invalid")
 
     environment = e2e._claude_environment("http://127.0.0.1:45678", tmp_path)
 
     assert environment["ANTHROPIC_AUTH_TOKEN"] == "synthetic-token"
+    assert environment["USER"] == "synthetic-user"
+    assert environment["LOGNAME"] == "synthetic-user"
     assert environment["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:45678"
     assert environment["CLAUDE_CONFIG_DIR"] == str(tmp_path)
     assert environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
@@ -88,3 +92,15 @@ def test_claude_command_disables_builtin_tools_and_persistence(tmp_path: Path) -
     assert "--strict-mcp-config" in command
     assert command[command.index("--setting-sources") + 1] == ""
     assert str(e2e.REPO) not in " ".join(command)
+
+
+def test_completed_stream_statuses_ignore_structured_log_field_order() -> None:
+    log = "\n".join(
+        (
+            "sm_upstream_stream_completed component=forwarder status_code=200",
+            "sm_upstream_stream_completed status_code=429 component=forwarder",
+            "unrelated status_code=200",
+        )
+    )
+
+    assert e2e._completed_stream_statuses(log) == [200, 429]

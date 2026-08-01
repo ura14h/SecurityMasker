@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -74,6 +75,8 @@ def _claude_environment(
     """認証に必要な最小環境だけを維持し、Claudeを一時Gatewayへ向ける。"""
     keep = (
         "PATH",
+        "USER",
+        "LOGNAME",
         "LANG",
         "LC_ALL",
         "SHELL",
@@ -260,6 +263,43 @@ def _tool_call_count(record: Path) -> int:
     return len(record.read_text(encoding="utf-8").splitlines())
 
 
+def _completed_stream_statuses(gateway_log: str) -> list[int]:
+    """loggerのfield順へ依存せず完了streamのHTTP statusを抽出する。"""
+    return [
+        int(value)
+        for value in re.findall(
+            r"sm_upstream_stream_completed[^\n]*status_code=(\d+)", gateway_log
+        )
+    ]
+
+
+def _run_claude(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Claudeとstdio MCP子processを同じprocess groupとして期限内に回収する。"""
+    process = subprocess.Popen(  # noqa: S603
+        command,
+        cwd=cwd,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        stdout, stderr = process.communicate(timeout=10)
+        raise RuntimeError(f"Claude Code timed out after {timeout:.0f}s") from None
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
     """実Messages tool loopの全requestでmaskし、最終表示でだけ復元する。"""
     claude = shutil.which("claude")
@@ -310,13 +350,10 @@ def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
         _mcp_config(mcp_config, mcp_record, tool_calls)
 
         started = time.monotonic()
-        result = subprocess.run(  # noqa: S603
+        result = _run_claude(
             _claude_command(claude, mcp_config, tool_calls),
             cwd=workdir,
-            env=_claude_environment(gateway_url),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
+            environment=_claude_environment(gateway_url),
             timeout=float(os.environ.get("SM_ANTHROPIC_E2E_TURN_TIMEOUT", "300")),
         )
         wall_ms = (time.monotonic() - started) * 1000.0
@@ -339,18 +376,6 @@ def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
         assert "DONE" in output
         assert not re.search(r"SM_[A-Z]+_[0-9A-F]+", output)
         assert not re.search(r"sm-[a-z]+-[0-9a-f]+\.example\.invalid", output)
-        print(
-            json.dumps(
-                {
-                    "tool_calls": tool_calls,
-                    "turns": payload.get("num_turns"),
-                    "wall_ms": round(wall_ms, 1),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            flush=True,
-        )
     finally:
         failed = sys.exc_info()[0] is not None
         gateway.terminate()
@@ -381,10 +406,23 @@ def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
         int(value)
         for value in re.findall(r"request_masked entity_count=(\d+)", gateway_stderr)
     ]
-    completed = gateway_stderr.count("sm_upstream_stream_completed status_code=200")
+    completed = _completed_stream_statuses(gateway_stderr)
     assert sum(count >= 1 for count in masked_counts) >= tool_calls + 1
-    assert completed >= tool_calls + 1
+    assert completed.count(200) >= tool_calls + 1
     assert PERSON not in gateway_stderr
+    print(
+        json.dumps(
+            {
+                "completed_streams": completed.count(200),
+                "tool_calls": tool_calls,
+                "turns": payload.get("num_turns"),
+                "wall_ms": round(wall_ms, 1),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--mcp-probe"]:

@@ -60,6 +60,12 @@ wrong-protocol routeは404でlocal拒否します。両方を使う場合は2プ
 一部だけ検査して成功を返すことはしません。上限、timeout、model異常、store異常は送信前に
 blockします。
 
+HTTP streaming responseは、httpxで`gzip`／`br`等のContent-Encodingを展開してからSSE
+processorへ渡し、展開後のbodyに対応してContent-Encodingをclientへ返しません。成功したSSE
+（Content-Typeが欠落する既知の成功responseを含む）だけをprotocol processorで復元します。
+非2xxまたは明示的な非SSE responseはSSEとして解釈せず、statusと展開済みbodyをそのままclientへ
+返します。providerのJSON errorをstream parserで壊して接続errorへ変えてはいけません。
+
 ## Responses WebSocket
 
 WebSocketはHTTPとは別のmasking方式ではなく、同じrequest pipelineとstream processorを使う

@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-07-31
+最終更新: 2026-08-01
 
 この文書を、現行構成の`done`／`partial`／`blocked`と公開範囲の正とします。`done`は実装、
 製品配線、回帰test、利用・運用手順が揃った項目だけです。
@@ -28,6 +28,19 @@
 
 現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
 Python 3.12でsource setupを検証しています。
+
+2026-08-01にmacOS arm64、Python 3.12、Claude Code 2.1.212からSecurityMaskerを通して
+Anthropic実サーバへ接続する明示opt-in E2Eを追加しました。`haiku`を使う一つのsessionで
+test専用MCP toolを4回直列実行し、5 turn、成功stream 5本、wall time 8,705.9 msを観測しました。
+初回promptと全tool resultの合成PERSONが送信前にmaskされ、最終responseでは原文へ復元され、
+aliasが残らないことを確認しました。実測を通じ、圧縮されたAnthropic SSEをraw UTF-8として
+処理する不具合と、非2xx JSON errorをSSE processorへ渡す不具合を修正しました。
+
+同snapshotでruff、mypy strict 71 source files、unit／evaluation 695件、mock upstreamを使う
+実process Gateway E2E 4件が成功しました。実provider E2Eは通常suiteでは実行せず、固定合成値、
+空の作業directory、built-in tool無効、一時product layout、既存認証の非表示利用を条件にします。
+詳細は[macOS arm64 real Claude evidence](release-evidence/macos-arm64-real-claude-2026-08-01.md)に
+記録しています。
 
 2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 684件、evaluation 3件が
 成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。config schema v1へ

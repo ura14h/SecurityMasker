@@ -76,26 +76,44 @@ async def forward_streaming(
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type"),
     )
+    content_type = upstream.headers.get("content-type")
+    process_stream = (
+        processor is not None
+        and 200 <= upstream.status_code < 300
+        and (content_type is None or is_event_stream(content_type))
+    )
 
     async def relay() -> AsyncGenerator[bytes, None]:
         try:
-            async for chunk in upstream.aiter_raw():
-                yield processor.feed(chunk) if processor is not None else chunk
-            if processor is not None:
+            # responseのContent-Encodingはclientへ返さないため、httpxで展開済みの
+            # bytesを処理・転送する。rawなgzip/brをSSE UTF-8として扱ってはいけない。
+            async for chunk in upstream.aiter_bytes():
+                if process_stream and processor is not None:
+                    yield processor.feed(chunk)
+                else:
+                    yield chunk
+            if process_stream and processor is not None:
                 tail = processor.flush()
                 if tail:
                     yield tail
                 if on_complete is not None:
                     await on_complete(processor)
             _log.debug("sm_upstream_stream_completed", status_code=upstream.status_code)
+        except Exception as exc:
+            # 原文やevent payloadを出さず、実provider差分の型だけを診断可能にする。
+            _log.debug(
+                "sm_upstream_stream_processing_failed",
+                reason=type(exc).__name__,
+            )
+            raise
         finally:
             await upstream.aclose()
             await client.aclose()
 
     media_type = response_media_type(
-        upstream.headers.get("content-type"),
+        content_type,
         status_code=upstream.status_code,
-        has_processor=processor is not None,
+        has_processor=process_stream,
     )
     return StreamingResponse(
         relay(),
