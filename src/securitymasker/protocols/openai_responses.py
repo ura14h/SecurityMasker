@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from securitymasker.engine import MaskingEngine
@@ -126,6 +127,34 @@ def _opaque_transport_tokens(data: dict[str, Any]) -> set[str]:
             for key in ("id", "call_id"):
                 add_value(key, item.get(key))
     return values
+
+
+def prepare_wildcard_headers(
+    headers: Mapping[str, str],
+) -> tuple[dict[str, Any], set[str]]:
+    """Codex metadata headerを構造化し、既知transport tokenだけを分離する。
+
+    Header全体をopaqueにはしない。workspace path等の他の値は最終leak guardへ残す。
+    不正JSONもraw文字列のまま検査し、推測で透過しない。
+    """
+    payload: dict[str, Any] = dict(headers)
+    opaque_tokens: set[str] = set()
+    for key, value in headers.items():
+        if key.lower() != "x-codex-turn-metadata":
+            continue
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        payload[key] = parsed
+        opaque_tokens.update(
+            _opaque_transport_tokens(
+                {"client_metadata": {"x-codex-turn-metadata": value}}
+            )
+        )
+    return payload, opaque_tokens
 
 
 def _prepend_instruction(data: dict[str, Any]) -> None:

@@ -223,6 +223,9 @@ async def _relay(
                         provider_name="openai",
                         path="/responses",
                         mask=openai_responses.mask_request,
+                        prepare_wildcard_headers=(
+                            openai_responses.prepare_wildcard_headers
+                        ),
                         connection_session_id=session_id,
                     )
                     session = prepared.session
@@ -430,6 +433,7 @@ async def handle_responses_websocket(websocket: WebSocket) -> None:
             websocket.headers,
             provider_name="openai",
             path="/responses",
+            prepare_wildcard_headers=openai_responses.prepare_wildcard_headers,
         )
     except RequestRejected as exc:
         await websocket.close(code=1008, reason=exc.code[:120])

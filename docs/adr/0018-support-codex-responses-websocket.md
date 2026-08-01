@@ -90,6 +90,12 @@ Codexが`previous_response_id`、`prompt_cache_key`、`client_metadata`、input 
 偶然Luhn等へ一致する一般PII format検査だけを除外する。同じmetadata文字列内のtoken以外の値、
 未知field、通常のprompt/tool値は従来どおり全scannerを通す。
 
+HTTPの`x-codex-turn-metadata` headerはraw JSON文字列として転送されるため、header全体をopaqueには
+せずadapterでJSON objectへ構造化して同じ規則を適用する。既知UUID／prefix付きID／millisecond
+timestampだけを一般PII format検査から除外し、workspace path等の他の値は全scannerを通す。
+不正JSONは構造を推測せずraw文字列のまま検査する。これによりCodex生成timestampのLuhn偶発一致を
+回避しつつ、metadataへ含まれる登録値、email、重大secretを上流送信前にblockする。
+
 HTTP/SSE経路で成功responseの`Content-Type`が欠落し、Responses stream processorを使っている
 場合だけ`text/event-stream`を補う。明示されたmedia typeとerror responseには補完しない。
 

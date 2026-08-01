@@ -84,6 +84,8 @@ Codex 0.145.0がWebSocket frameへ付ける`stream: true`はadapterで除去し�
 形式検証で抽出したCodex生成UUID、prefix付きID、millisecond timestampはopaque transport
 tokenです。辞書、user regex、重大secretは検査しつつ、このtokenだけ一般PII形式の偶発一致を
 除外します。同じmetadata内の他の値、prompt、tool output、未知fieldは全scannerを通します。
+HTTPの`x-codex-turn-metadata` headerもJSON objectとして構造化して同じ規則を適用し、header全体を
+検査対象外にはしません。不正JSONはraw文字列のままfail-closedで検査します。
 
 ## sessionとSQLite
 

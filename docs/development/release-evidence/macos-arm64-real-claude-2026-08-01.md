@@ -58,15 +58,39 @@ wall timeは外部service負荷、model生成、prompt cacheを分離できな�
 429の診断中も、Gatewayは全11回の試行で固定合成PERSONを送信前にmaskしました。429は外部容量の
 一時状態であり成功扱いにはしていません。最終evidenceは上表の独立した4 tool call成功実行です。
 
+## 実Codex回帰
+
+Anthropic stream修正後の同じsnapshotで、Codex CLI 0.145.0からOpenAI実サーバへの4 tool callを
+WebSocketとHTTP/SSEの両方で再実行しました。
+
+| 項目 | WebSocket | HTTP/SSE |
+|---|---:|---:|
+| tool calls | 4 | 4 |
+| wall time | 73,163.6 ms | 67,960.2 ms |
+| WebSocket接続 | 1 | 0 |
+| WebSocket完了response | 10 | 0 |
+| 全tool resultのmask | 成功 | 成功 |
+| 最終responseの復元・alias非残存 | 成功 | 成功 |
+
+最初のHTTP診断実行は、CodexがHTTP requestへ付ける`x-codex-turn-metadata`内のLuhn-validな
+millisecond timestampをcredit cardとしてblockし、上流へ送信せずfail-closedで終了しました。
+headerをJSONとして構造化し、形式検証済みのUUID／prefix付きID／既知timestampだけを一般PII
+format検査から除外しました。header全体は免除せず、他のmetadata値と不正JSONは引き続き
+leak guardを通します。上表は修正後の独立した成功実行です。
+
+単回のwall time差は外部service負荷、prompt cache、生成時間を分離できないため合否条件または
+性能保証値にはしません。
+
 ## ローカル回帰
 
 | gate | 結果 |
 |---|---|
 | ruff | 成功 |
 | mypy strict | 71 source files成功 |
-| unit／evaluation | 695件成功、warning 1件 |
+| unit／evaluation | 699件成功、warning 1件 |
 | mock upstream実process Gateway E2E | 4件成功 |
 | 実Claude Code／実Anthropic E2E | 1件成功 |
+| 実Codex／実OpenAI WebSocket・HTTP比較E2E | 1件成功 |
 
 warningはStarlette TestClientからhttpx2への将来移行を示すdeprecationで、test失敗またはsecurity
 境界の縮小ではありません。

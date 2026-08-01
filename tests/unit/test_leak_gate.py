@@ -10,6 +10,8 @@ All data is synthetic: the "card" is a Luhn-valid test number, hosts are
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from starlette.responses import Response
@@ -164,6 +166,50 @@ async def test_pii_around_codex_opaque_metadata_is_still_blocked(
             json={"input": "hi", "client_metadata": {"x-codex-turn-metadata": metadata}},
         )
     assert r.status_code == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_codex_header_timestamp_is_opaque(
+    app_and_calls,
+) -> None:
+    client, calls = app_and_calls
+    clean_metadata = json.dumps(
+        {
+            "turn_id": "019f9e64-262a-7ec1-8d0f-e63bb2c3e353",
+            "turn_started_at_unix_ms": TIMESTAMP_SHAPED_CARD,
+        },
+        separators=(",", ":"),
+    )
+    async with client:
+        clean = await client.post(
+            "/responses",
+            json={"input": "hi"},
+            headers={"x-codex-turn-metadata": clean_metadata},
+        )
+    assert clean.status_code == 200
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_other_pii_in_codex_header_metadata_is_still_blocked(
+    app_and_calls,
+) -> None:
+    client, calls = app_and_calls
+    unsafe_metadata = json.dumps(
+        {
+            "turn_started_at_unix_ms": TIMESTAMP_SHAPED_CARD,
+            "contact": EMAIL,
+        },
+        separators=(",", ":"),
+    )
+    async with client:
+        unsafe = await client.post(
+            "/responses",
+            json={"input": "hi"},
+            headers={"x-codex-turn-metadata": unsafe_metadata},
+        )
+    assert unsafe.status_code == 400
     assert calls == []
 
 

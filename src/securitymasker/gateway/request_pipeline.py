@@ -29,6 +29,9 @@ _log = get_logger(component="securitymasker.gateway")
 MaskRequest = Callable[
     [MaskingEngine, MaskingSession, dict[str, Any]], Awaitable[MaskingSummary]
 ]
+PrepareWildcardHeaders = Callable[
+    [Mapping[str, str]], tuple[dict[str, Any], set[str]]
+]
 
 
 @dataclass(frozen=True)
@@ -164,6 +167,7 @@ async def prepare_request(
     provider_name: str,
     path: str,
     mask: MaskRequest,
+    prepare_wildcard_headers: PrepareWildcardHeaders | None = None,
     connection_session_id: str | None = None,
 ) -> PreparedRequest:
     """requestをmask・保存・leak scanし、upstream送信可能な状態へする。"""
@@ -207,8 +211,15 @@ async def prepare_request(
         )
         wildcard = wildcard_headers(headers, provider_name)
         if wildcard:
+            wildcard_payload: dict[str, Any] = wildcard
+            opaque_tokens: set[str] = set()
+            if prepare_wildcard_headers is not None:
+                wildcard_payload, opaque_tokens = prepare_wildcard_headers(wildcard)
             await runtime.engine.assert_no_leak_in_payload(
-                wildcard, session=session, request_id=store_key
+                wildcard_payload,
+                session=session,
+                request_id=store_key,
+                opaque_tokens=opaque_tokens,
             )
     except SessionError as exc:
         runtime.telemetry.store_error(provider, StoreOperation.REQUEST)
@@ -249,6 +260,7 @@ async def prepare_connection_session(
     *,
     provider_name: str,
     path: str,
+    prepare_wildcard_headers: PrepareWildcardHeaders | None = None,
 ) -> tuple[str, MaskingSession]:
     """WebSocket接続固定sessionを作り、handshake headerを送信前検査する。"""
     provider = Provider(provider_name)
@@ -266,8 +278,15 @@ async def prepare_connection_session(
         )
         wildcard = wildcard_headers(headers, provider_name)
         if wildcard:
+            wildcard_payload: dict[str, Any] = wildcard
+            opaque_tokens: set[str] = set()
+            if prepare_wildcard_headers is not None:
+                wildcard_payload, opaque_tokens = prepare_wildcard_headers(wildcard)
             await runtime.engine.assert_no_leak_in_payload(
-                wildcard, session=session, request_id=store_key
+                wildcard_payload,
+                session=session,
+                request_id=store_key,
+                opaque_tokens=opaque_tokens,
             )
     except SessionError as exc:
         runtime.telemetry.store_error(provider, StoreOperation.REQUEST)

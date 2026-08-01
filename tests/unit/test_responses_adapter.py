@@ -86,6 +86,40 @@ async def test_codex_nested_turn_metadata_marks_only_transport_tokens() -> None:
     }
 
 
+def test_codex_header_metadata_is_structured_without_hiding_other_values() -> None:
+    metadata = (
+        '{"turn_id":"019f9e64-262a-7ec1-8d0f-e63bb2c3e353",'
+        '"turn_started_at_unix_ms":"1785068791342",'
+        '"contact":"synthetic@example.com"}'
+    )
+
+    payload, opaque = adapter.prepare_wildcard_headers(
+        {"x-codex-turn-metadata": metadata, "x-codex-feature": "clean"}
+    )
+
+    assert payload["x-codex-turn-metadata"] == {
+        "turn_id": "019f9e64-262a-7ec1-8d0f-e63bb2c3e353",
+        "turn_started_at_unix_ms": "1785068791342",
+        "contact": "synthetic@example.com",
+    }
+    assert payload["x-codex-feature"] == "clean"
+    assert opaque == {
+        "019f9e64-262a-7ec1-8d0f-e63bb2c3e353",
+        "1785068791342",
+    }
+
+
+def test_malformed_codex_header_metadata_remains_raw_for_leak_guard() -> None:
+    raw = '{"turn_started_at_unix_ms":"4222222222222"'
+
+    payload, opaque = adapter.prepare_wildcard_headers(
+        {"x-codex-turn-metadata": raw}
+    )
+
+    assert payload == {"x-codex-turn-metadata": raw}
+    assert opaque == set()
+
+
 @pytest.mark.asyncio
 async def test_mask_responses_input_items_only_text() -> None:
     eng, s = build_engine(), await _session()

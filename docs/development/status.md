@@ -36,11 +36,17 @@ test専用MCP toolを4回直列実行し、5 turn、成功stream 5本、wall tim
 aliasが残らないことを確認しました。実測を通じ、圧縮されたAnthropic SSEをraw UTF-8として
 処理する不具合と、非2xx JSON errorをSSE processorへ渡す不具合を修正しました。
 
-同snapshotでruff、mypy strict 71 source files、unit／evaluation 695件、mock upstreamを使う
+同snapshotでruff、mypy strict 71 source files、unit／evaluation 699件、mock upstreamを使う
 実process Gateway E2E 4件が成功しました。実provider E2Eは通常suiteでは実行せず、固定合成値、
 空の作業directory、built-in tool無効、一時product layout、既存認証の非表示利用を条件にします。
 詳細は[macOS arm64 real Claude evidence](release-evidence/macos-arm64-real-claude-2026-08-01.md)に
 記録しています。
+
+同じ最終snapshotで実Codex／実OpenAIの4 tool callをWebSocketとHTTP/SSEの両方へ再実行し、
+WebSocket 73,163.6 ms、HTTP 67,960.2 ms、WebSocket接続1、完了response 10を観測しました。
+両transportで全tool resultのmask、最終responseの復元、alias非残存が成功しています。HTTPで
+付与される`x-codex-turn-metadata`はJSONとして構造検査し、既知transport ID／timestampだけを
+一般PII形式の偶発一致から除外し、他のmetadata値は引き続き全scannerへ通します。
 
 2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 684件、evaluation 3件が
 成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。config schema v1へ

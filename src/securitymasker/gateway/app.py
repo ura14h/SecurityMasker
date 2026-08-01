@@ -9,7 +9,7 @@ CodexのOpenAI ResponsesとClaude CodeのAnthropic Messagesをmasking coreへ
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from starlette.applications import Starlette
@@ -123,6 +123,10 @@ async def _handle(
     ],
     restore_dict: Callable[[MaskingEngine, MaskingSession, dict[str, Any]], None],
     stream_processor: Callable[..., Any],
+    prepare_wildcard_headers: Callable[
+        [Mapping[str, str]], tuple[dict[str, Any], set[str]]
+    ]
+    | None = None,
     streaming_allowed: bool = True,
 ) -> Response:
     rt: GatewayRuntime = request.app.state.runtime
@@ -144,6 +148,7 @@ async def _handle(
             provider_name=provider,
             path=path,
             mask=mask,
+            prepare_wildcard_headers=prepare_wildcard_headers,
         )
     except RequestRejected as exc:
         return _error(exc.status, exc.code, exc.public_message)
@@ -199,7 +204,8 @@ async def handle_responses(request: Request) -> Response:
                          provider="openai",
                          mask=openai_responses.mask_request,
                          restore_dict=openai_responses.restore_response,
-                         stream_processor=ResponsesStreamProcessor)
+                         stream_processor=ResponsesStreamProcessor,
+                         prepare_wildcard_headers=openai_responses.prepare_wildcard_headers)
 
 
 async def handle_messages(request: Request) -> Response:
