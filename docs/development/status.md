@@ -46,7 +46,8 @@ aliasが残らないことを確認しました。実測を通じ、圧縮され
 WebSocket 73,163.6 ms、HTTP 67,960.2 ms、WebSocket接続1、完了response 10を観測しました。
 両transportで全tool resultのmask、最終responseの復元、alias非残存が成功しています。HTTPで
 付与される`x-codex-turn-metadata`はJSONとして構造検査し、既知transport ID／timestampだけを
-一般PII形式の偶発一致から除外し、他のmetadata値は引き続き全scannerへ通します。
+一般PII形式の偶発一致から除外し、他のmetadata値は引き続き全scannerへ通します。詳細は
+[macOS arm64 real Codex evidence](release-evidence/macos-arm64-real-codex-2026-08-01.md)に記録しています。
 
 2026-07-31にmacOS arm64でruff、mypy strict 71 source files、unit 684件、evaluation 3件が
 成功しました。mock upstreamを使う実process Gateway E2E 4件も成功済みです。config schema v1へ
