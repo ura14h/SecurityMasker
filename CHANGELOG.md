@@ -10,6 +10,10 @@
 - project license、setup時に取得する第三者component、binary再配布条件の境界を明文化
 - READMEを検索訪問者向けの入口へ改め、導入、カスタマイズ、運用、reference、security、
   development、対応外手順を目的別に再編
+- PyInstaller one-file buildを、modelをlocal cacheへ分離するLite版と、固定modelを同梱するFull版へ
+  分け、成果物名と`--version`でprofileを識別可能に変更
+- Lite版binaryの`model-load`、model未準備時のfail-closed、取得後のoffline NER、両mode Gatewayを
+  profile別gateで検証
 
 ## 0.1.0 — 2026-07-26
 

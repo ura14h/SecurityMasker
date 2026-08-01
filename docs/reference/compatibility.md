@@ -27,8 +27,8 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 
 | platform | source版 | one-file版 | 状態 |
 |---|---|---|---|
-| macOS arm64 | Python 3.11 / 3.12で検証済み | 技術spikeのみ | source版の対応環境 |
-| Linux arm64 | Python 3.12で検証済み | 技術spike済み（Debian 12） | source版の対応環境 |
+| macOS arm64 | Python 3.11 / 3.12で検証済み | Lite／Full技術spike済み | source版の対応環境 |
+| Linux arm64 | Python 3.12で検証済み | Lite／Full技術spike済み（Debian 12） | source版の対応環境 |
 | Windows | 非対応 | 非対応 | [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)。setup、ACL検査、PowerShell設定、native E2E、build・署名が未実装 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
@@ -58,7 +58,8 @@ technical spikeとして用意していますが、Windows実機gateは未完で
 - source最小要件: Python 3.11
 - clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64 / Linux arm64）
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
-- one-file spike: macOS arm64、およびLinux arm64のDebian 12 container、PyInstaller 6.21.0
+- one-file spike: macOS arm64のLite／Full、Linux arm64 Debian 12 containerのLite／Full、
+  PyInstaller 6.21.0
 
 実CLIの検証baselineは Codex CLI 0.145.0 と Claude Code 2.1.212です。protocolは変化し得るため、
 release時に最新対象versionでE2Eを再実行します。2026-07-31にはLinux arm64の外部networkなし
@@ -100,9 +101,21 @@ clean setup・NER・Gateway回帰testが必要です。保護境界のtest matri
 
 ## binary
 
-one-fileはOS/architecture別artifactです。macOS arm64 spikeは約917 MiB、Linux arm64 spikeは
-約972.5 MiBでした。Linux arm64はDebian 12 slimのPythonなしruntimeで、外部networkなし・
-read-only root filesystemの起動、init、config validation、標準NER previewを検証済みです。
-ただしこれはDocker container上の技術検証であり、複数distribution、物理clean machine、公開artifactの
-互換性を表明するものではありません。署名/notarization、同梱componentとmodel weightの再配布確認も
-未完です。公開条件は[status](../development/status.md)を参照してください。
+one-fileはOS/architecture別artifactで、model配置だけが異なる二つのprofileを持ちます。
+
+- Lite版（モデル非同梱版）：初回に`securitymasker model-load`で固定modelをlocal cacheへ取得する。
+  取得後の通常処理はofflineで、model不足・破損時はfail-closedになる。
+- Full版：同じ固定modelをone-fileへ同梱し、初回からofflineで使用できる。
+
+2026-08-01のmacOS arm64 spikeではLite版188,764,560 bytes（約180 MiB）、Full版961,502,400 bytes
+（約917 MiB）でした。同日のLinux arm64 spikeではLite版248,563,712 bytes（約237 MiB）、Full版
+1,019,794,840 bytes（約972.6 MiB）でした。LinuxはDebian 12 slimのPythonなしruntimeで、外部network
+なし、read-only root filesystemによる両profileのinit、config validation、標準NER previewを検証済み
+です。実測条件とchecksumは
+[macOS arm64 evidence](../development/release-evidence/macos-arm64-lite-full-one-file-2026-08-01.md)と
+[Linux arm64 evidence](../development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md)に
+記録しています。
+
+これらは技術検証であり、物理clean machineや公開artifactの互換性を表明しません。両版とも署名／
+notarizationと同梱dependencyの再配布確認が未完で、Full版にはmodel weight再配布確認も残ります。
+公開条件は[status](../development/status.md)を参照してください。

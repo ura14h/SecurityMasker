@@ -21,7 +21,8 @@
 | 通常setupとtest setupの分離 | done | なし |
 | source release candidate | done | macOS arm64とLinux arm64のsource gateに合格 |
 | application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
-| one-file binary公開 | blocked | 再配布判断、署名、対象OS別clean-machine gateが未完 |
+| one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
+| one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
 | Windows | 対応外 | native security gate一式が未実装・未検証 |
 
 ## Source版
@@ -84,27 +85,40 @@ Windowsはsource版を含めて公開対応範囲外です。部分的に動く�
 
 ## Binary版
 
-macOS arm64に加え、Linux arm64のone-file buildとE2Eもtechnical spikeとして成功していますが、
-どちらも公開artifactではありません。Linux arm64ではDocker Desktopのnative arm64 builderで
-PyInstaller 6.21.0を実行し、Pythonを含まないDebian 12 slim runtimeを外部networkなし・read-only
-root filesystemで起動して、init、config validation、標準NER previewまで確認しました。変更後の
-local回帰ではruff、mypy strict 71 source files、unit／evaluation 689件も成功しました。詳細は
-[Linux arm64 one-file evidence](release-evidence/linux-arm64-one-file-2026-07-31.md)に記録しています。
+2026-08-01にmacOS arm64で、one-fileをLite版（モデル非同梱）とFull版（固定モデル同梱）へ分離
+しました。Lite版は188,764,560 bytes（約180 MiB）、Full版は961,502,400 bytes（約917 MiB）でした。
+Lite版binary自身の`model-load`で固定6 artifactを取得・SHA-256検証し、model cacheが空なら原文を
+表示せずfail-closedになること、取得後は両modeのGateway E2Eを完走することを確認しました。Full版も
+local cacheへ依存せず従来の同梱NERと両mode E2Eを完走しました。`--version`は各artifactを
+`binary lite`／`binary full`として識別します。変更後のlocal回帰ではruff、mypy strict 72 source
+files、unit／evaluation 706件、mock Gateway E2E 4件が成功しました。詳細は
+[macOS arm64 Lite／Full evidence](release-evidence/macos-arm64-lite-full-one-file-2026-08-01.md)に
+記録しています。
+
+同日にLinux arm64のLite／FullもDocker Desktopのnative arm64 builderでbuildし、Lite 6件、Full 5件
+（Lite専用1件skip）のbinary integrationを完了しました。Lite版は248,563,712 bytes（約237 MiB）、
+Full版は1,019,794,840 bytes（約972.6 MiB）でした。Pythonを含まないDebian 12 slim runtimeを
+外部networkなし・read-only root filesystemで起動し、両profileのinit、config validation、標準NER
+previewも確認しました。詳細は
+[Linux arm64 Lite／Full evidence](release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md)に
+記録しています。
 
 公開には次が必要です。
 
 1. 対象OS／architectureごとのnative buildとclean-machine binary gate。
 2. macOSのDeveloper ID署名とnotarization。Windowsを出す場合はcode signing。
-3. model weightとtransitive componentの再配布条件の確認。
+3. Lite／Fullに同梱するtransitive componentの再配布条件とNOTICEの確認。
 4. version、checksum、release note、source tagとの対応。
 
-再配布確認が終わるまで、model weight同梱binaryの外部公開をblockします。
+Lite版はmodel weightをSecurityMasker artifactへ含めないため、model weight再配布のblockerを持ちません。
+ただし上記のdependency再配布、署名、native gateが終わるまで公開をblockします。Full版はこれらに加え、
+model作者・dataset権利者への確認または適切な法務確認が終わるまで外部公開をblockします。
 
 ## Ownerに必要な操作
 
 - `1.0.0`の公開範囲とrelease noteを確定する
 - repository公開、tag、GitHub Release、source archive/checksum uploadを行う
-- binaryも公開する場合だけ、対象OS、再配布、署名、artifact uploadを別途判断する
+- binaryも公開する場合だけ、Lite／Full、対象OS、再配布、署名、artifact uploadを別途判断する
 
 過去のrelease candidate実測は
 [0.1.0 RC evidence](release-evidence/0.1.0-rc-2026-07-26.md)、合格条件は

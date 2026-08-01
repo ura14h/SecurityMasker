@@ -104,7 +104,7 @@ blockします。未知の組織内用語を自動で100%推測することは�
 | macOS arm64、Python 3.11／3.12 | 検証済み |
 | Linux arm64、Python 3.12 | 検証済み |
 | Windows native | 非対応 |
-| one-file binary | 技術検証のみ。未公開 |
+| one-file Lite／Full binary | macOS／Linux arm64で技術検証済み。[私的build手順](docs/development/binary-build.md)のみ。未公開 |
 
 Windows用のfile ACL、setup、client設定、native E2Eが揃うまでは、Windowsで実際の機密情報を
 扱わないでください。platformとclientの詳細は[対応環境](docs/reference/compatibility.md)にあります。

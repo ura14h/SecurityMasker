@@ -4,13 +4,14 @@
 [導入ガイド](../getting-started.md)から始めてください。
 
 この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では
-`securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker`に
-読み替えられます。
+`securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker-lite`または
+`./securitymasker-full`に読み替えられます。
 
 ## 共通仕様
 
 - `-h`, `--help`: 対象commandのhelpを表示して終了します。
-- `--version`: SecurityMaskerのversionを表示します。top-levelだけで指定できます。
+- `--version`: SecurityMaskerのversionと、`source`／`binary lite`／`binary full`の配布形態を表示します。
+  top-levelだけで指定できます。
 - `--config PATH`: 使用する`securitymasker.config`を明示します。指定がなければ
   `SECURITYMASKER_CONFIG`、実行ファイルに隣接する`securitymasker.config`の順で探索します。
   current working directoryや親directoryは探索しません。
@@ -203,6 +204,8 @@ foregroundで起動したGatewayは、クライアント操作を終えてから
 通常は`scripts/setup`が実行するため、手動復旧やmodel準備時だけ使用します。prompt処理中の
 暗黙downloadは行いません。稼働中Gatewayをhot reloadするcommandではなく、次回起動時に
 読み込める検証済みlocal artifactを準備するcommandです。
+
+one-file Lite版では初回利用前の必須準備です。Full版は同じ固定modelを同梱するため通常は不要です。
 
 ```console
 securitymasker model-load [--model MODEL] [--revision REVISION] \

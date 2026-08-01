@@ -75,15 +75,25 @@ version確定・commit後、clean worktreeからarchiveとchecksumを生成し�
 PyInstallerはcross compilerではありません。対象OSごとにnative clean buildします。
 
 ```console
-PYTHON_COMMAND=python3.12 ./scripts/build-binary
-./scripts/test-binary ./dist/securitymasker
+PYTHON_COMMAND=python3.12 ./scripts/build-binary --profile lite
+./scripts/test-binary --profile lite ./dist/securitymasker-lite
+
+PYTHON_COMMAND=python3.12 ./scripts/build-binary --profile full
+./scripts/test-binary --profile full ./dist/securitymasker-full
 ```
 
-binary testは隔離HOME/TMPDIRでinit、config validation、標準NER preview、両modeのmock Gateway、
-SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査します。
+`scripts/build-binary-lite`と`scripts/build-binary-full`は同じ共通buildへprofileを渡す短いwrapperです。
+Lite版はmodelを同梱せず、binary自身の`model-load`でlocal cacheを準備します。Full版はbuild時に同じ
+固定modelを取得・検証してone-fileへ同梱します。成果物の`--version`が指定profileと一致しなければ
+成功扱いにしません。
 
-公開にはさらに署名、対象OSごとのclean-machine gate、同梱componentとmodel weightの再配布条件確認が
-必要です。one-file artifact、model weight、build directoryはGitへcommitしません。
+binary testは隔離HOME/TMPDIRでinit、config validation、標準NER preview、両modeのmock Gateway、
+SQLite永続化、mask/restore、上流原文ゼロ、SIGTERM cleanupを検査します。Lite版では空のmodel cacheで
+previewがfail-closedになること、`model-load`後は同じtestが成功することも検査します。
+
+公開にはさらに署名、対象OSごとのclean-machine gate、同梱componentの再配布条件確認が必要です。
+Full版にはmodel weightの再配布条件確認も必要です。one-file artifact、model weight、build directoryは
+Gitへcommitしません。
 
 macOS arm64のDocker DesktopでLinux arm64 one-fileをnative buildし、Pythonを含まないclean
 runtimeまで検証する場合は次を実行します。
@@ -92,10 +102,12 @@ runtimeまで検証する場合は次を実行します。
 ./devtools/run_linux_arm64_binary_gate.sh
 ```
 
-このrunnerはPyInstaller buildと既存binary E2Eをbuilder stageで実行した後、one-fileだけを
-Debian 12 slim stageへコピーします。最終imageをread-only・`--network none`で起動し、Pythonが
-存在しないこと、init、config validation、標準NER previewを確認してから、検証済みartifactを
-`dist/securitymasker-linux-arm64`へ取り出してsizeとSHA-256を表示します。
+このrunnerは同じDockerfileをLite／Fullそれぞれにnative buildし、profile別binary E2Eをbuilder
+stageで実行します。Lite版のmodelはbinary外のlocal cacheとして最終test imageへ渡し、Full版は
+one-file内のmodelを使用します。最終imageをread-only・`--network none`で起動し、Pythonが存在しない
+こと、profile表示、init、config validation、標準NER previewを確認します。検証済みartifactを
+`dist/securitymasker-linux-arm64-lite`と`dist/securitymasker-linux-arm64-full`へ取り出し、sizeと
+SHA-256を表示します。
 
 ## Evidenceの記録
 

@@ -34,13 +34,19 @@ setupが第三者componentを利用者環境へdownloadすることを区別し�
 
 ## Binary release
 
-PyInstaller one-fileはPython runtime dependencyとmodel weightを再配布するため、source releaseとは
-条件が異なります。次が完了するまで外部公開しません。
+PyInstaller one-fileは二つのprofileを持ちます。Lite版はmodel weightを同梱せず、利用者が
+`securitymasker model-load`で固定配布元からlocal cacheへ取得します。Full版は同じ固定modelを
+one-fileへ同梱します。どちらもPython runtimeとruntime dependencyを再配布するため、source
+releaseとは条件が異なります。
+
+Lite版を公開するには次を完了します。
 
 1. 対象artifactへ含まれる全transitive componentのversionとlicenseを列挙する。
 2. 各licenseが要求するcopyright、license本文、NOTICE、attributionをartifactから閲覧可能にする。
-3. model weightと学習datasetの関係について、作者・権利者または適切な法務確認を得る。
-4. clean-machine gateでnotice一式が実artifactへ含まれることを検査する。
+3. clean-machine gateでnotice一式が実artifactへ含まれることを検査する。
+
+Full版には上記に加え、model weightと学習datasetの関係について、作者・権利者または適切な法務確認を
+得る必要があります。Full版のweightを別fileへ分けてもSecurityMaskerが再配布する事実は変わりません。
 
 `securitymasker.spec`のmetadata収集だけを完全なlicense inventoryとは扱いません。binaryの公開状態は
 [`docs/development/status.md`](docs/development/status.md)を正とします。

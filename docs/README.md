@@ -53,6 +53,7 @@
 - [Architecture](development/architecture.md) — 製品境界と内部component
 - [コード読解ガイド](development/codebase-guide.md) — sourceの入口、module、testの辿り方
 - [Testing](development/testing.md) — local testとtest data
+- [私的binary build](development/binary-build.md) — Lite／Full one-fileのbuildとprofile別検証
 - [Release gate](development/release.md) — source／binaryの公開合格条件
 - [開発・リリース状況](development/status.md) — 現在のdone、partial、blocked
 

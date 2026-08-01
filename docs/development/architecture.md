@@ -128,6 +128,8 @@ Responses WebSocketの境界は
 [ADR-0018](../adr/0018-support-codex-responses-websocket.md)、
 明示的な完全初期化は
 [ADR-0019](../adr/0019-add-explicit-destructive-init.md)、
+Lite／Full binaryの分離は
+[ADR-0020](../adr/0020-split-lite-and-full-binary-profiles.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
 model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、

@@ -120,11 +120,15 @@ GatewayとCodexを再起動し、`doctor --require-ready`、port、proxy、時�
 実Codexでaliasの受信とresponse復元を合成値だけで目視確認する手順は、導入ガイドの
 [通信経路を詳しく検証する](../guides/verify-routing.md)を参照してください。
 
-## one-file版の起動が遅い
+## one-file Full版の起動が遅い
 
-標準NER、Python、torch等を含むため、macOS arm64の検証値で約917 MiB、cold helpで約25.5秒、
-最初のNER previewで約46.8秒でした。one-fileは `TMPDIR` へ展開するため、空き容量と実行権限が
-必要です。`noexec` filesystemを `TMPDIR` に使わず、難しい場合はsource版を使ってください。
+Full版は標準NER model、Python、torch等を含むため、macOS arm64の検証値で約917 MiBです。従来の
+同梱spikeではcold help約25.5秒、最初のNER preview約46.8秒でした。one-fileは`TMPDIR`へ展開する
+ため、空き容量と実行権限が必要です。`noexec` filesystemを`TMPDIR`に使わないでください。
+
+Lite版はmodelを同梱せず、macOS arm64の検証値で約180 MiBです。初回にnetworkを有効にして
+`securitymasker-lite model-load`を実行し、取得後は同じlocal cacheからofflineでNERを読み込みます。
+model不足時はGatewayを起動せず、model破損時はdigest検証に失敗します。
 
 ## Backupまたはrestoreで失敗する
 

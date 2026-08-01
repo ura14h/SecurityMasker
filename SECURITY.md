@@ -7,8 +7,9 @@ SecurityMaskerは、単一利用者のローカルPCで、loopbackにbindした1
 
 検証済みplatform、client、protocol、配布形態は
 [対応環境](docs/reference/compatibility.md)を正とします。現在の公開候補はsource版です。
-one-file binaryは署名、対象OS別gate、model weight再配布条件の確認が終わるまで公開対象では
-ありません。
+one-file Lite／Full binaryは技術検証段階で、公開対象ではありません。どちらも署名と対象OS別gate、
+同梱dependencyの再配布確認が必要です。model weightを同梱するFull版には、model再配布条件の確認も
+追加で必要です。
 
 Windows nativeは非対応です。Windows上で実際の機密情報を扱わないでください。
 
