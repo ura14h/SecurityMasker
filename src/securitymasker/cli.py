@@ -54,7 +54,7 @@ def cmd_config_check(args: argparse.Namespace) -> int:
         else ""
     )
     print(
-        f"OK: config valid — {len(config.entities)} entities, "
+        f"OK: config valid: {len(config.entities)} entities, "
         f"{len(config.patterns)} patterns, secret_detector="
         f"{config.enable_secret_detector}, normalization={config.defaults.normalization}"
         f"{runtime}"

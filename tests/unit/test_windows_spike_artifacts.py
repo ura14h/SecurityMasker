@@ -102,13 +102,15 @@ def test_dockerfile_uses_fixed_linux_base_and_non_root_runtime() -> None:
     assert 'ENTRYPOINT ["securitymasker"]' in dockerfile
 
 
-def test_windows_extra_guide_keeps_unsupported_and_modified_volume_warning() -> None:
+def test_windows_extra_guide_redirects_native_users_and_keeps_volume_warning() -> None:
     guide = (ROOT / "docs/unsupported/windows-evaluation.md").read_text(
         encoding="utf-8"
     )
 
     for required in (
-        "Windows native版は現在も非対応",
+        "Windows native source版は限定条件で対応",
+        "Windows native source版の導入手順",
+        "この番外編",
         "評価版の免責",
         "実データの投入は利用者自身の判断と責任",
         "Windows directoryをbind mount",

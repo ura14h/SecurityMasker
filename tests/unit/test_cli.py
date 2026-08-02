@@ -20,7 +20,9 @@ def config_path(tmp_path: Path) -> str:
 
 def test_config_check_ok(config_path: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["config-check", "--config", config_path]) == 0
-    assert "OK" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "OK" in output
+    output.encode("cp932")
 
 
 def test_config_check_bad_returns_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -41,6 +42,14 @@ def _profile() -> str:
     return profile
 
 
+def _binary_temp(tmp_path: Path) -> Path:
+    """one-file展開先を返す。WindowsではMAX_PATHを避ける短い専用pathを使う。"""
+    configured = os.environ.get("SM_BINARY_WINDOWS_TEMP_ROOT")
+    temp = Path(configured) if os.name == "nt" and configured else tmp_path / "temp"
+    temp.mkdir(parents=True, exist_ok=True)
+    return temp
+
+
 def _port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -64,11 +73,31 @@ def _wait_ready(url: str, *, timeout: float = 120.0) -> None:
 def _isolated_environment(
     home: Path, temp: Path, *, with_model: bool = True
 ) -> dict[str, str]:
-    environment = {
-        "HOME": str(home),
-        "PATH": "/usr/bin:/bin",
-        "TMPDIR": str(temp),
-    }
+    if os.name == "nt":
+        local = home / "AppData" / "Local"
+        roaming = home / "AppData" / "Roaming"
+        local.mkdir(parents=True, exist_ok=True)
+        roaming.mkdir(parents=True, exist_ok=True)
+        system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+        environment = {
+            "APPDATA": str(roaming),
+            "HOME": str(home),
+            "LOCALAPPDATA": str(local),
+            "PATH": str(Path(system_root) / "System32"),
+            "SYSTEMROOT": system_root,
+            "TEMP": str(temp),
+            "TMP": str(temp),
+            "USERPROFILE": str(home),
+            "WINDIR": system_root,
+        }
+    else:
+        environment = {
+            "HOME": str(home),
+            "PATH": "/usr/bin:/bin",
+            "TMPDIR": str(temp),
+        }
+    environment["HF_HUB_OFFLINE"] = "1"
+    environment["TRANSFORMERS_OFFLINE"] = "1"
     if _profile() == "lite" and with_model:
         model_home = os.environ.get(MODEL_HOME_ENV)
         assert model_home, f"{MODEL_HOME_ENV} is required for the lite profile gate"
@@ -79,13 +108,15 @@ def _isolated_environment(
 def test_binary_version_identifies_profile(tmp_path: Path) -> None:
     binary = _binary()
     home = tmp_path / "home"
-    temp = tmp_path / "temp"
+    temp = _binary_temp(tmp_path)
     home.mkdir()
-    temp.mkdir()
 
+    environment = _isolated_environment(home, temp)
+    if os.name == "nt":
+        assert not (Path(environment["PATH"]) / "python.exe").exists()
     completed = subprocess.run(
         [binary, "--version"],
-        env=_isolated_environment(home, temp),
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
@@ -101,9 +132,8 @@ def test_binary_version_identifies_profile(tmp_path: Path) -> None:
 def test_binary_without_command_shows_help_and_exits(tmp_path: Path) -> None:
     binary = _binary()
     home = tmp_path / "home"
-    temp = tmp_path / "temp"
+    temp = _binary_temp(tmp_path)
     home.mkdir()
-    temp.mkdir()
 
     completed = subprocess.run(
         [binary],
@@ -127,11 +157,10 @@ def test_lite_binary_without_model_fails_closed_and_guides_model_load(
         pytest.skip("lite profile only")
     binary = _binary()
     home = tmp_path / "home"
-    temp = tmp_path / "temp"
+    temp = _binary_temp(tmp_path)
     product = tmp_path / "product"
     empty_model_home = tmp_path / "empty-model-home"
     home.mkdir()
-    temp.mkdir()
     empty_model_home.mkdir()
     environment = _isolated_environment(home, temp, with_model=False)
     environment["HF_HOME"] = str(empty_model_home)
@@ -164,10 +193,9 @@ def test_lite_binary_without_model_fails_closed_and_guides_model_load(
 def test_binary_init_validate_preview_and_temp_cleanup(tmp_path: Path) -> None:
     binary = _binary()
     home = tmp_path / "home"
-    temp = tmp_path / "temp"
+    temp = _binary_temp(tmp_path)
     product = tmp_path / "product"
     home.mkdir()
-    temp.mkdir()
     environment = _isolated_environment(home, temp)
 
     initialized = subprocess.run(
@@ -252,9 +280,8 @@ def test_binary_gateway_masks_restores_persists_and_stops_on_signal(
     layout = initialize_layout(tmp_path / "product", mode=mode, port=gateway_port)
     record = tmp_path / "record.jsonl"
     home = tmp_path / "home"
-    temp = tmp_path / "temp"
+    temp = _binary_temp(tmp_path)
     home.mkdir()
-    temp.mkdir()
     base_environment = _isolated_environment(home, temp)
     mock_environment = {
         **os.environ,
@@ -284,11 +311,13 @@ def test_binary_gateway_masks_restores_persists_and_stops_on_signal(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     gateway = subprocess.Popen(  # noqa: S603
         [binary, "gateway", "--config", layout.config],
         env=gateway_environment,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        creationflags=creation_flags,
     )
     try:
         _wait_ready(f"http://127.0.0.1:{gateway_port}/ready")
@@ -312,7 +341,10 @@ def test_binary_gateway_masks_restores_persists_and_stops_on_signal(
         assert "SM_PERSON_" in upstream
         assert (layout.state_directory / "securitymasker.db").is_file()
     finally:
-        gateway.terminate()
+        if os.name == "nt":
+            gateway.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            gateway.terminate()
         gateway.wait(timeout=30)
         mock.terminate()
         mock.wait(timeout=15)
