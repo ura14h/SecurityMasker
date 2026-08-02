@@ -119,6 +119,15 @@ fixtureを非再帰で削除します。Python 3.12の追加installは不要で�
 scripts\windows-owner-gate.cmd
 ```
 
+実removable mediaの拒否gateはstandard userのcmdから実行します。readyなremovable driveが一つなら
+自動検出し、複数ある場合だけdrive letterを指定します。rootのdrive typeをread-onlyで検査し、
+fixtureやfileは作成しません。媒体がない場合は未検証のまま終了code`2`で失敗します。
+
+```bat
+scripts\windows-removable-gate.cmd
+scripts\windows-removable-gate.cmd E:
+```
+
 変更範囲に対応するtestを先に実行し、統合境界へ影響する場合はmock Gateway testも実行します。
 この日常suiteは実providerへtest bodyを送りません。
 
