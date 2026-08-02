@@ -31,8 +31,17 @@ def test_preview_uses_standard_ner_without_network(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     layout = initialize_layout(tmp_path, mode="chatgpt", port=45671)
+    original_connect = socket.socket.connect
 
     def no_network(self: socket.socket, address: object) -> None:
+        # Windowsのasyncioはevent loop内部のwake-upにloopback socketpairを使う。
+        if (
+            isinstance(address, tuple)
+            and address
+            and address[0] in {"127.0.0.1", "::1"}
+        ):
+            original_connect(self, address)
+            return
         raise AssertionError(f"preview attempted network access: {type(address).__name__}")
 
     monkeypatch.setattr(socket.socket, "connect", no_network)

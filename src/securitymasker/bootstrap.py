@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import secrets
 import shutil
 import stat
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -34,6 +36,42 @@ _MANAGED_STATE_FILES = frozenset(
         "securitymasker.db-journal",
     }
 )
+_MANAGED_ROOT_ENTRIES = frozenset(
+    {
+        "securitymasker.config",
+        "securitymasker.dict",
+        "securitymasker.state",
+        "securitymasker.state.lock",
+    }
+)
+
+
+def default_init_directory(mode: str) -> Path:
+    """platform別の利用者data directoryを返す。"""
+    if os.name != "nt":
+        from securitymasker.config import adjacent_config_directory
+
+        return adjacent_config_directory()
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        raise ConfigError("LOCALAPPDATA is required for Windows initialization")
+    return Path(local_app_data) / "SecurityMasker" / mode
+
+
+def _windows_secure(path: Path, *, directory: bool) -> None:
+    if os.name != "nt":
+        return
+    from securitymasker.windows_security import WindowsSecurityError, secure_path
+
+    try:
+        secure_path(path, directory=directory)
+    except WindowsSecurityError as exc:
+        raise ConfigError(f"cannot protect {path.name}: {exc}") from None
+
+
+def _posix_uid() -> int:
+    """Windowsのtypeshedにも依存せずPOSIX uidを取得する。"""
+    return int(vars(os)["getuid"]())
 
 
 def _write_private(path: Path, content: bytes) -> None:
@@ -44,6 +82,7 @@ def _write_private(path: Path, content: bytes) -> None:
     except BaseException:
         # fdopen後の例外でもdescriptorはcontext managerが閉じる。
         raise
+    _windows_secure(path, directory=False)
 
 
 def _exists(path: Path) -> bool:
@@ -64,8 +103,17 @@ def _require_owned_type(path: Path, *, label: str, directory: bool) -> None:
     if not expected:
         kind = "directory" if directory else "regular file"
         raise ConfigError(f"refusing to reset: existing {label} must be a {kind}")
-    if os.name == "posix" and metadata.st_uid != os.getuid():
+    if os.name == "posix" and metadata.st_uid != _posix_uid():
         raise ConfigError(f"refusing to reset: existing {label} is not owned by current user")
+    if os.name == "nt":
+        from securitymasker.windows_security import WindowsSecurityError, require_private_dacl
+
+        try:
+            require_private_dacl(path, directory=directory)
+        except WindowsSecurityError as exc:
+            raise ConfigError(
+                f"refusing to reset: existing {label} is not private: {exc}"
+            ) from None
 
 
 def _validate_force_targets(
@@ -94,26 +142,33 @@ def _validate_force_targets(
         _require_owned_type(child, label=f"state entry {child.name}", directory=False)
 
 
-def _acquire_key_lease(key_path: Path) -> BinaryIO | None:
+def _acquire_key_lease(key_path: Path) -> tuple[BinaryIO, Path | None] | None:
     """稼働中Gatewayのmaster keyを交換しないようnon-blocking lockを取る。"""
     if not _exists(key_path):
         return None
+    lease_path = (
+        key_path.parent.with_name("securitymasker.state.lock")
+        if os.name == "nt"
+        else key_path
+    )
     try:
-        lease = key_path.open("rb")
+        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
+        if os.name == "nt":
+            _windows_secure(lease_path, directory=False)
     except OSError as exc:
         detail = exc.strerror or exc.__class__.__name__
         raise ConfigError(f"cannot open existing master key: {detail}") from None
     try:
         if os.name == "posix":
-            import fcntl
+            fcntl = importlib.import_module("fcntl")
 
             fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         elif os.name == "nt":  # pragma: no cover - Windowsは公開対応範囲外
-            import msvcrt
+            msvcrt = importlib.import_module("msvcrt")
 
-            msvcrt.locking(  # type: ignore[attr-defined]
+            msvcrt.locking(
                 lease.fileno(),
-                msvcrt.LK_NBLCK,  # type: ignore[attr-defined]
+                msvcrt.LK_NBLCK,
                 1,
             )
     except (OSError, BlockingIOError):
@@ -121,7 +176,7 @@ def _acquire_key_lease(key_path: Path) -> BinaryIO | None:
         raise ConfigError(
             "refusing to reset: SecurityMasker state is in use; stop the Gateway first"
         ) from None
-    return lease
+    return lease, lease_path if os.name == "nt" else None
 
 
 def _remove_installed(path: Path) -> None:
@@ -141,15 +196,23 @@ def _replace_with_staged_layout(
     targets: tuple[Path, ...],
 ) -> None:
     """旧layoutを退避して新layoutへ切り替え、失敗時は元へ戻す。"""
-    moved_old: list[tuple[Path, Path]] = []
+    moved_old: list[tuple[Path, Path, bool]] = []
     installed: list[Path] = []
     try:
         for target in targets:
             if not _exists(target):
                 continue
             saved = backup / target.name
-            os.replace(target, saved)
-            moved_old.append((target, saved))
+            move_contents = os.name == "nt" and target.is_dir()
+            moved_old.append((target, saved, move_contents))
+            if move_contents:
+                saved.mkdir()
+                _windows_secure(saved, directory=True)
+                for child in tuple(target.iterdir()):
+                    os.replace(child, saved / child.name)
+                target.rmdir()
+            else:
+                os.replace(target, saved)
         for target in targets:
             os.replace(staging / target.name, target)
             installed.append(target)
@@ -160,9 +223,16 @@ def _replace_with_staged_layout(
                 _remove_installed(target)
             except OSError:
                 rollback_failed = True
-        for target, saved in reversed(moved_old):
+        for target, saved, moved_contents in reversed(moved_old):
             try:
-                os.replace(saved, target)
+                if moved_contents:
+                    target.mkdir(exist_ok=True)
+                    _windows_secure(target, directory=True)
+                    for child in tuple(saved.iterdir()):
+                        os.replace(child, target / child.name)
+                    saved.rmdir()
+                else:
+                    os.replace(saved, target)
             except OSError:
                 rollback_failed = True
         if rollback_failed:
@@ -196,6 +266,25 @@ def initialize_layout(
     root = requested_root.resolve()
     if root.exists() and not root.is_dir():
         raise ConfigError("init directory must be a directory")
+    if os.name == "nt":
+        from securitymasker.windows_security import (
+            WindowsSecurityError,
+            require_local_fixed_ntfs,
+            require_private_dacl,
+        )
+
+        try:
+            require_local_fixed_ntfs(requested_root)
+            if root.exists():
+                entries = {entry.name for entry in root.iterdir()}
+                if not entries <= _MANAGED_ROOT_ENTRIES:
+                    raise ConfigError(
+                        "Windows init directory must not contain unmanaged entries"
+                    )
+                if entries and force:
+                    require_private_dacl(root, directory=True)
+        except WindowsSecurityError as exc:
+            raise ConfigError(f"Windows init directory is not supported: {exc}") from None
     config_path = root / "securitymasker.config"
     dictionary_path = root / "securitymasker.dict"
     state_directory = root / "securitymasker.state"
@@ -229,8 +318,10 @@ def initialize_layout(
         master_key = secrets.token_bytes(32)
         try:
             root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _windows_secure(root, directory=True)
             state_directory.mkdir(mode=0o700)
             os.chmod(state_directory, 0o700)
+            _windows_secure(state_directory, directory=True)
             _write_private(config_path, rendered_config)
             _write_private(dictionary_path, dictionary_template)
             _write_private(key_path, master_key)
@@ -249,15 +340,23 @@ def initialize_layout(
 
     try:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _windows_secure(root, directory=True)
         with (
-            tempfile.TemporaryDirectory(prefix=".securitymasker-init-", dir=root) as staging_name,
-            tempfile.TemporaryDirectory(prefix=".securitymasker-reset-", dir=root) as backup_name,
+            tempfile.TemporaryDirectory(
+                prefix=".securitymasker-init-", dir=root.parent
+            ) as staging_name,
+            tempfile.TemporaryDirectory(
+                prefix=".securitymasker-reset-", dir=root.parent
+            ) as backup_name,
         ):
             staging = Path(staging_name)
             backup = Path(backup_name)
+            _windows_secure(staging, directory=True)
+            _windows_secure(backup, directory=True)
             staged_state = staging / "securitymasker.state"
             staged_state.mkdir(mode=0o700)
             os.chmod(staged_state, 0o700)
+            _windows_secure(staged_state, directory=True)
             _write_private(staging / "securitymasker.config", rendered_config)
             _write_private(staging / "securitymasker.dict", dictionary_template)
             master_key = secrets.token_bytes(32)
@@ -272,7 +371,7 @@ def initialize_layout(
 
             load_config(staging / "securitymasker.config")
 
-            lease = _acquire_key_lease(key_path) if force else None
+            lease_record = _acquire_key_lease(key_path) if force else None
             try:
                 _replace_with_staged_layout(
                     staging=staging,
@@ -280,8 +379,12 @@ def initialize_layout(
                     targets=(config_path, dictionary_path, state_directory),
                 )
             finally:
-                if lease is not None:
+                if lease_record is not None:
+                    lease, cleanup_path = lease_record
                     lease.close()
+                    if cleanup_path is not None:
+                        with suppress(OSError):
+                            cleanup_path.unlink()
     except OSError as exc:
         detail = exc.strerror or exc.__class__.__name__
         raise ConfigError(f"initialization failed: {detail}") from None

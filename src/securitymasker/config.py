@@ -47,6 +47,11 @@ _DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
 _DURATION_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
 
 
+def _posix_uid() -> int:
+    """Windowsのtypeshedにも依存せずPOSIX uidを取得する。"""
+    return int(vars(os)["getuid"]())
+
+
 def parse_duration(value: str) -> timedelta:
     """``\\d+[smhd]``形式（例：``4h``、``30m``）を``timedelta``へ変換する。"""
     match = _DURATION_RE.match(value)
@@ -455,12 +460,24 @@ def _require_private_file(path: Path, *, label: str) -> None:
     if not stat.S_ISREG(file_stat.st_mode):
         raise ConfigError(f"{label} {path.name} must be a regular file")
     if os.name == "posix":
-        if file_stat.st_uid != os.getuid():
+        if file_stat.st_uid != _posix_uid():
             raise ConfigError(f"{label} {path.name} must be owned by the current user")
         if stat.S_IMODE(file_stat.st_mode) & _PRIVATE_FILE_BITS:
             raise ConfigError(
                 f"{label} {path.name} has unsafe permissions; use chmod 600"
             )
+    elif os.name == "nt":
+        from securitymasker.windows_security import (
+            WindowsSecurityError,
+            require_local_fixed_ntfs,
+            require_private_dacl,
+        )
+
+        try:
+            require_local_fixed_ntfs(path)
+            require_private_dacl(path, directory=False)
+        except WindowsSecurityError as exc:
+            raise ConfigError(f"{label} {path.name} is not private: {exc}") from None
 
 
 def _require_private_directory(path: Path, *, label: str) -> None:
@@ -472,12 +489,24 @@ def _require_private_directory(path: Path, *, label: str) -> None:
     if not stat.S_ISDIR(directory_stat.st_mode):
         raise ConfigError(f"{label} {path.name} must be a directory")
     if os.name == "posix":
-        if directory_stat.st_uid != os.getuid():
+        if directory_stat.st_uid != _posix_uid():
             raise ConfigError(f"{label} {path.name} must be owned by the current user")
         if stat.S_IMODE(directory_stat.st_mode) & _PRIVATE_FILE_BITS:
             raise ConfigError(
                 f"{label} {path.name} has unsafe permissions; use chmod 700"
             )
+    elif os.name == "nt":
+        from securitymasker.windows_security import (
+            WindowsSecurityError,
+            require_local_fixed_ntfs,
+            require_private_dacl,
+        )
+
+        try:
+            require_local_fixed_ntfs(path)
+            require_private_dacl(path, directory=True)
+        except WindowsSecurityError as exc:
+            raise ConfigError(f"{label} {path.name} is not private: {exc}") from None
 
 
 def _resolve_from_config(config_path: Path, configured_path: str | Path) -> Path:
@@ -488,6 +517,8 @@ def _resolve_from_config(config_path: Path, configured_path: str | Path) -> Path
 
 
 def _load_current(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
+    if os.name == "nt":
+        _require_private_directory(config_path.parent, label="config directory")
     _require_private_file(config_path, label="config")
     try:
         file_config = SecurityMaskerFileConfig.model_validate(raw)

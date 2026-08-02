@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import importlib
 import os
 import secrets
 import sqlite3
+import threading
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
@@ -28,6 +30,35 @@ from securitymasker.sessions.store import (
 
 _SCHEMA_VERSION = "1"
 _JOURNAL_SIZE_LIMIT = 8 * 1024 * 1024
+_ACTIVE_DATABASES: set[Path] = set()
+_ACTIVE_DATABASES_LOCK = threading.Lock()
+
+
+def _windows_require_private(path: Path, *, directory: bool) -> None:
+    if os.name != "nt":
+        return
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        require_local_fixed_ntfs,
+        require_private_dacl,
+    )
+
+    try:
+        require_local_fixed_ntfs(path)
+        require_private_dacl(path, directory=directory)
+    except WindowsSecurityError as exc:
+        raise SessionError(f"Windows SQLite state is not private: {exc}") from None
+
+
+def _windows_secure(path: Path, *, directory: bool) -> None:
+    if os.name != "nt":
+        return
+    from securitymasker.windows_security import WindowsSecurityError, secure_path
+
+    try:
+        secure_path(path, directory=directory)
+    except WindowsSecurityError as exc:
+        raise SessionError(f"cannot protect Windows SQLite state: {exc}") from None
 
 
 def _now() -> datetime:
@@ -56,10 +87,24 @@ class SQLiteSessionStore:
         self._locks: dict[str, asyncio.Lock] = {}
         self._lock_refs: dict[str, int] = {}
         self._lease_file: BinaryIO | None = None
+        self._writer_lease_path: Path | None = None
         self._database_lease_file: BinaryIO | None = None
         self._database_lease_path = Path(f"{self._database}.lock")
+        self._registered_database: Path | None = None
         self._closed = False
         try:
+            resolved_database = self._database.resolve()
+            with _ACTIVE_DATABASES_LOCK:
+                if resolved_database in _ACTIVE_DATABASES:
+                    raise SessionError(
+                        "SQLite database is already owned by another SecurityMasker process"
+                    )
+                _ACTIVE_DATABASES.add(resolved_database)
+            self._registered_database = resolved_database
+            _windows_require_private(self._key_file.parent, directory=True)
+            if not self._key_file.exists():
+                raise SessionError("SQLite session store initialization failed: FileNotFoundError")
+            _windows_require_private(self._key_file, directory=False)
             self._master_key = self._key_file.read_bytes()
             if len(self._master_key) != 32:
                 raise SessionError("SQLite master key must contain exactly 32 bytes")
@@ -76,18 +121,25 @@ class SQLiteSessionStore:
             ) from None
 
     def _acquire_writer_lease(self) -> None:
-        lease = self._key_file.open("rb")
+        lease_path = (
+            self._key_file.parent.with_name("securitymasker.state.lock")
+            if os.name == "nt"
+            else self._key_file
+        )
+        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
+        if os.name == "nt":
+            _windows_secure(lease_path, directory=False)
         try:
             if os.name == "posix":
-                import fcntl
+                fcntl = importlib.import_module("fcntl")
 
                 fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             else:  # pragma: no cover - Windows native buildで検証する
-                import msvcrt
+                msvcrt = importlib.import_module("msvcrt")
 
-                msvcrt.locking(  # type: ignore[attr-defined]
+                msvcrt.locking(
                     lease.fileno(),
-                    msvcrt.LK_NBLCK,  # type: ignore[attr-defined]
+                    msvcrt.LK_NBLCK,
                     1,
                 )
         except (OSError, BlockingIOError):
@@ -96,6 +148,7 @@ class SQLiteSessionStore:
                 "SQLite state is already owned by another SecurityMasker process"
             ) from None
         self._lease_file = lease
+        self._writer_lease_path = lease_path if os.name == "nt" else None
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database, timeout=0, isolation_level=None)
@@ -103,23 +156,41 @@ class SQLiteSessionStore:
         connection.execute("PRAGMA synchronous = FULL")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute(f"PRAGMA journal_size_limit = {_JOURNAL_SIZE_LIMIT}")
+        self._secure_database_artifacts()
         return connection
+
+    def _secure_database_artifacts(self) -> None:
+        if os.name != "nt":
+            return
+        for path in (
+            self._database,
+            Path(f"{self._database}-wal"),
+            Path(f"{self._database}-shm"),
+            Path(f"{self._database}-journal"),
+        ):
+            if path.exists():
+                _windows_secure(path, directory=False)
 
     def _acquire_database_lease(self) -> None:
         # 同じDBへkey fileのcopyを組み合わせた二重起動も拒否する。
         self._database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        lease = self._database_lease_path.open("a+b")
+        try:
+            lease = self._database_lease_path.open("a+b")
+        except OSError:
+            raise SessionError(
+                "SQLite database is already owned by another SecurityMasker process"
+            ) from None
         try:
             if os.name == "posix":
-                import fcntl
+                fcntl = importlib.import_module("fcntl")
 
                 fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             else:  # pragma: no cover - Windows native buildで検証する
-                import msvcrt
+                msvcrt = importlib.import_module("msvcrt")
 
-                msvcrt.locking(  # type: ignore[attr-defined]
+                msvcrt.locking(
                     lease.fileno(),
-                    msvcrt.LK_NBLCK,  # type: ignore[attr-defined]
+                    msvcrt.LK_NBLCK,
                     1,
                 )
         except (OSError, BlockingIOError):
@@ -129,6 +200,8 @@ class SQLiteSessionStore:
             ) from None
         if os.name == "posix":
             os.chmod(self._database_lease_path, 0o600)
+        else:
+            _windows_secure(self._database_lease_path, directory=False)
         self._database_lease_file = lease
 
     def _initialize(self) -> None:
@@ -137,6 +210,7 @@ class SQLiteSessionStore:
         try:
             self._enable_page_reclamation(connection)
             connection.execute("BEGIN IMMEDIATE")
+            self._secure_database_artifacts()
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS metadata "
                 "(name TEXT PRIMARY KEY, value TEXT NOT NULL)"
@@ -166,6 +240,8 @@ class SQLiteSessionStore:
             self._database_id = metadata["database_id"]
             if os.name == "posix":
                 os.chmod(self._database, 0o600)
+            else:
+                self._secure_database_artifacts()
         except BaseException:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
@@ -509,11 +585,19 @@ class SQLiteSessionStore:
         if self._lease_file is not None:
             self._lease_file.close()
             self._lease_file = None
+            if self._writer_lease_path is not None:
+                with suppress(OSError):
+                    self._writer_lease_path.unlink()
+                self._writer_lease_path = None
         if self._database_lease_file is not None:
             self._database_lease_file.close()
             self._database_lease_file = None
             with suppress(OSError):
                 self._database_lease_path.unlink()
+        if self._registered_database is not None:
+            with _ACTIVE_DATABASES_LOCK:
+                _ACTIVE_DATABASES.discard(self._registered_database)
+            self._registered_database = None
 
     def __del__(self) -> None:
         self.close()

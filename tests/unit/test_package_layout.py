@@ -22,12 +22,22 @@ ROOT = Path(__file__).resolve().parents[2]
 def _write_private(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
     path.chmod(0o600)
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(path, directory=False)
 
 
 def _write_layout(root: Path, *, mode: str = "chatgpt", port: int = 4000) -> Path:
     root.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(root, directory=True)
     state = root / "securitymasker.state"
     state.mkdir(mode=0o700)
+    if os.name == "nt":
+        secure_path(state, directory=True)
     _write_private(state / "securitymasker.key", "k" * 32)
     _write_private(
         root / "securitymasker.dict",
@@ -301,6 +311,10 @@ def test_init_force_does_not_follow_paths_from_old_config(
 ) -> None:
     target = tmp_path / "SecurityMasker"
     target.mkdir()
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(target, directory=True)
     external = tmp_path / "external"
     external.mkdir()
     external_dictionary = external / "custom.dict"
@@ -319,6 +333,8 @@ def test_init_force_does_not_follow_paths_from_old_config(
         ]),
         encoding="utf-8",
     )
+    if os.name == "nt":
+        secure_path(config, directory=False)
 
     assert main(["init", "--force", "--directory", str(target)]) == 0
 
@@ -403,6 +419,10 @@ def test_init_force_rolls_back_previous_layout_when_switch_fails(
     database = initialize.state_directory / "securitymasker.db"
     database.write_bytes(b"synthetic previous database")
     database.chmod(0o600)
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(database, directory=False)
     previous[database] = database.read_bytes()
     original_replace = os.replace
     replace_calls = 0
@@ -620,7 +640,8 @@ def test_binary_build_has_a_separate_fixed_toolchain_and_excludes_test_services(
     assert 'SM_BINARY="$BINARY"' in binary_test
     for profile in ("lite", "full"):
         wrapper = ROOT / f"scripts/build-binary-{profile}"
-        assert wrapper.stat().st_mode & 0o111
+        if os.name == "posix":
+            assert wrapper.stat().st_mode & 0o111
         assert f"--profile {profile}" in wrapper.read_text(encoding="utf-8")
     for excluded in ("devtools", "pytest", "presidio_analyzer", "spacy"):
         assert f'"{excluded}"' in spec

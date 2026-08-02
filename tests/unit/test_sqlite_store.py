@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 import shutil
 import sqlite3
@@ -117,6 +118,12 @@ async def test_database_and_key_backup_pair_restores_alias_mapping(
     restored_key = restored_state / "securitymasker.key"
     shutil.copy2(database, restored_database)
     shutil.copy2(key, restored_key)
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(restored_state, directory=True)
+        secure_path(restored_database, directory=False)
+        secure_path(restored_key, directory=False)
 
     restored = SQLiteSessionStore(
         restored_database, restored_key, mode="chatgpt"
@@ -234,9 +241,13 @@ def test_duplicate_active_writer_is_refused(tmp_path: Path) -> None:
 
 def test_same_database_with_copied_key_is_still_refused(tmp_path: Path) -> None:
     database, key = _paths(tmp_path)
-    copied_key = tmp_path / "copied.key"
+    copied_key = database.parent / "copied.key"
     copied_key.write_bytes(key.read_bytes())
     copied_key.chmod(0o600)
+    if os.name == "nt":
+        from securitymasker.windows_security import secure_path
+
+        secure_path(copied_key, directory=False)
     first = SQLiteSessionStore(database, key, mode="chatgpt")
     try:
         with pytest.raises(SessionError, match="already owned"):

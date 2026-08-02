@@ -77,6 +77,7 @@ AdministratorsとSYSTEMを許可するのは、同一machineの管理者侵害�
 - `init`による専用directory、config、辞書、state、master keyの作成
 - config load
 - SQLite DB、lock、WAL、SHMの作成・再検査
+- Windowsでmaster keyを置換可能に保つroot-level `securitymasker.state.lock` writer lease
 - `init --force`の置換前検査とstaging／backup
 - read-only `doctor`
 - backup／restore（実装時）
@@ -131,4 +132,3 @@ test dataは合成値だけを使い、外部networkを構造的に遮断する�
 - **`icacls`の出力をparseする**：localeとOS versionで表示が変わり、fail-closedな判定根拠にできない。
 - **Python 3.14を最初のtargetにする**：現行のmacOS／Linux source evidenceと離れ、native wheelの
   成立確認をWindows ACL実装へ同時に持ち込むため、3.12を先に固定する。
-

@@ -30,7 +30,6 @@ from typing import Any
 from securitymasker import __version__
 from securitymasker.config import (
     SecurityMaskerConfig,
-    adjacent_config_directory,
     build_engine,
     load_config,
     resolve_config_path,
@@ -65,11 +64,11 @@ def cmd_config_check(args: argparse.Namespace) -> int:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """隣接config、単一辞書、state directory、master keyを安全に生成する。"""
-    from securitymasker.bootstrap import initialize_layout
+    from securitymasker.bootstrap import default_init_directory, initialize_layout
 
     if args.force and args.directory is None:
         raise ConfigError("init --force requires an explicit --directory")
-    directory = args.directory or adjacent_config_directory()
+    directory = args.directory or default_init_directory(args.mode)
     layout = initialize_layout(directory, mode=args.mode, port=args.port, force=args.force)
     action = "reset" if layout.replaced_existing else "initialized"
     print(f"{action} SecurityMasker in {layout.root}")
