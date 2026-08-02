@@ -11,6 +11,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 POWERSHELL = REPO / "devtools" / "windows_test_user.ps1"
 CMD = REPO / "scripts" / "windows-test-user.cmd"
+RUNAS_CMD = REPO / "scripts" / "windows-source-gate-runas.cmd"
+SESSION_CMD = REPO / "devtools" / "windows_source_gate_session.cmd"
 
 
 def test_lifecycle_uses_only_fixed_test_user_name() -> None:
@@ -62,6 +64,8 @@ def test_remove_cleans_only_exact_securitymasker_firewall_rules() -> None:
 
 def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None:
     source = CMD.read_text(encoding="utf-8")
+    runas = RUNAS_CMD.read_text(encoding="utf-8")
+    session = SESSION_CMD.read_text(encoding="utf-8")
 
     assert '"setup" goto setup' in source
     assert '"remove" goto remove_tester' in source
@@ -70,6 +74,19 @@ def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None
     assert "-Action Remove" in source
     assert "-Action VerifyAbsent" in source
     assert "ExecutionPolicy Bypass ^\n" not in source
+    assert "runas.exe /profile" in runas
+    assert "/savecred" not in runas.lower()
+    assert "/netonly" not in runas.lower()
+    assert "SecurityMaskerTester" in runas
+    assert "windows_source_gate_session.cmd" in runas
+    assert 'set "EXPECTED_USER=SecurityMaskerTester"' in session
+    assert "whoami.exe" in session
+    assert "InstallAllUsers=0" in session
+    assert "sys.version_info[:2] == (3, 12)" in session
+    assert "Get-FileHash -Algorithm SHA256" in session
+    assert 'if exist "%SOURCE_ROOT%\\"' in session
+    assert 'set "SECURITYMASKER_PYTHON=%PYTHON%"' in session
+    assert "windows-source-gate.cmd run" in session
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell parser contract")

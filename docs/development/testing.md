@@ -71,6 +71,15 @@ NER model、Codex CLI、Claude Code CLIを準備します。別userからoperato
 scripts\windows-source-gate.cmd run
 ```
 
+RDP sessionでuser切替ができない場合は、開発userのcmdから次のwrapperを実行します。Windows標準の
+`runas /profile`がpasswordをpromptし、現在のRDP session内に`SecurityMaskerTester`のprofileとtokenを
+使う別cmdを開きます。`/savecred`は使用しません。補助runnerがPython、CLI、checksum検証、fresh展開、
+上記source gateまでを実行するため、長いbootstrap commandの手入力は不要です。
+
+```bat
+scripts\windows-source-gate-runas.cmd
+```
+
 この段階はdependencyとmodelを取得するためnetworkを使用します。成功後にsign outし、管理者cmdから
 Firewall gateをinstallします。
 
