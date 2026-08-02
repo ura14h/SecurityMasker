@@ -147,6 +147,29 @@ def test_object_and_callback_aces_are_rejected(
         secure_path(target, directory=False)
 
 
+def test_unknown_sid_ace_is_rejected(tmp_path: Path) -> None:
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        current_user_sid,
+        require_private_dacl,
+        secure_path,
+    )
+
+    target = tmp_path / "unknown-sid.txt"
+    target.write_text("synthetic-value", encoding="utf-8")
+    secure_path(target, directory=False)
+    expected = (
+        f"D:P(A;;GA;;;{current_user_sid()})(A;;GA;;;SY)(A;;GA;;;BA)"
+        "(A;;GA;;;S-1-5-21-111111111-222222222-333333333-4444)"
+    )
+    try:
+        _install_sddl_dacl(target, expected)
+        with pytest.raises(WindowsSecurityError, match="unexpected principal"):
+            require_private_dacl(target, directory=False)
+    finally:
+        secure_path(target, directory=False)
+
+
 def test_inherited_permissive_acl_is_rejected(tmp_path: Path) -> None:
     from securitymasker.windows_security import WindowsSecurityError, require_private_dacl
 
