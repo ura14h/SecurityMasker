@@ -152,9 +152,10 @@ def _acquire_key_lease(key_path: Path) -> tuple[BinaryIO, Path | None] | None:
         else key_path
     )
     try:
-        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
         if os.name == "nt":
+            lease_path.touch(exist_ok=True)
             _windows_secure(lease_path, directory=False)
+        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
     except OSError as exc:
         detail = exc.strerror or exc.__class__.__name__
         raise ConfigError(f"cannot open existing master key: {detail}") from None

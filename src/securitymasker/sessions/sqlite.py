@@ -126,9 +126,10 @@ class SQLiteSessionStore:
             if os.name == "nt"
             else self._key_file
         )
-        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
         if os.name == "nt":
+            lease_path.touch(exist_ok=True)
             _windows_secure(lease_path, directory=False)
+        lease = lease_path.open("a+b" if os.name == "nt" else "rb")
         try:
             if os.name == "posix":
                 fcntl = importlib.import_module("fcntl")
@@ -152,12 +153,16 @@ class SQLiteSessionStore:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database, timeout=0, isolation_level=None)
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA synchronous = FULL")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute(f"PRAGMA journal_size_limit = {_JOURNAL_SIZE_LIMIT}")
-        self._secure_database_artifacts()
-        return connection
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA synchronous = FULL")
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute(f"PRAGMA journal_size_limit = {_JOURNAL_SIZE_LIMIT}")
+            self._secure_database_artifacts()
+            return connection
+        except BaseException:
+            connection.close()
+            raise
 
     def _secure_database_artifacts(self) -> None:
         if os.name != "nt":
@@ -175,6 +180,9 @@ class SQLiteSessionStore:
         # 同じDBへkey fileのcopyを組み合わせた二重起動も拒否する。
         self._database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
+            if os.name == "nt":
+                self._database_lease_path.touch(exist_ok=True)
+                _windows_secure(self._database_lease_path, directory=False)
             lease = self._database_lease_path.open("a+b")
         except OSError:
             raise SessionError(
@@ -200,8 +208,6 @@ class SQLiteSessionStore:
             ) from None
         if os.name == "posix":
             os.chmod(self._database_lease_path, 0o600)
-        else:
-            _windows_secure(self._database_lease_path, directory=False)
         self._database_lease_file = lease
 
     def _initialize(self) -> None:
