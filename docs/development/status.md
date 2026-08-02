@@ -138,9 +138,10 @@ mock upstream E2E 4件、Windows native process test 3件を完走しました�
 実Codex／Claude Code隔離E2E 2件を41.34秒で再確認しました。最後にFirewall rule、固定user、profileを
 完全削除し、user、profile directory、ActiveStore ruleが残っていないことを確認しました。
 
-これはWindows対応完了の証拠ではありません。実removable mediaのnative negative evidence、利用者向け
-backup／restore操作、Codex／Claude Code CLIとDesktop設定手順が残っています。これらをすべて完了して
-新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
+backup媒体、退避したfileの保護と保管、restore作業は利用者の運用範囲とし、製品CLIでは扱いません。
+これはWindows対応完了の証拠ではありません。実removable mediaのnative negative evidence、
+Codex／Claude Code CLIとDesktop設定手順が残っています。これらをすべて完了して新しい対応判断を
+記録するまで、Windowsでは実際の機密情報を扱いません。
 
 ## Binary版
 

@@ -3,6 +3,10 @@
 config、辞書、DB、keyは一つの運用単位として保護します。特にDBとkeyは1対1です。keyを失うと
 既存DBを復号できません。
 
+SecurityMaskerはbackup／restoreを実行するCLIを提供しません。backup媒体、退避したfileの保護、
+保管、世代管理、廃棄とrestore作業は利用者の運用範囲です。この文書は必要なfileと製品再開時の
+確認事項だけを示します。
+
 ## Backupする
 
 Gatewayを正常終了してから、次を同じ時点の組として保存します。
@@ -15,8 +19,8 @@ Gatewayを正常終了してから、次を同じ時点の組として保存し�
 別名configやmode別state directoryを使う場合は、それぞれ対応する組を保存します。ChatGPT用と
 Claude用のDB/keyを混ぜないでください。
 
-辞書、DB、keyをrepository、issue、ticket、chatへ置かないでください。backup先の暗号化と
-access controlは利用者の責任です。
+辞書、DB、keyをrepository、issue、ticket、chatへ置かないでください。backup先の選択、暗号化、
+access control、完全性確認は利用者の責任です。
 
 ## Restoreする
 
