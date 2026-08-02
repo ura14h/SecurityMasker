@@ -76,6 +76,12 @@ Claude Codeは空の作業directoryで起動し、settings source、slash comman
 無効にしました。これによりrepositoryやuser profileの周辺contextをrequestへ混ぜず、固定system promptと
 合成test promptだけをprotocol surrogateとして検証しています。
 
+## 後片付け
+
+実CLI E2E完了後、UAC昇格したoperatorのcmdから`scripts\windows-firewall-gate.cmd remove`を実行
+しました。IPv4／IPv6両ruleについてPersistentStoreとActiveStoreの件数がそれぞれ0であることを
+読み取り確認しました。専用standard userとbootstrap資材は残るWindows gateへ再利用するため保持します。
+
 ## 残件
 
 Windows native sourceを対応済みと判断する前に、statusに記載した追加のnative negative matrix、利用・
