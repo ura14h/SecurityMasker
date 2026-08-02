@@ -17,8 +17,8 @@
 - Claude Code: 2.1.220
 - compiler: Visual Studioなし
 
-operatorとは別のlocal standard user `SecurityMaskerGate`を作り、そのuser profileへsource archive、
-Python、dependency、固定NER model、両CLIを配置しました。operatorのCLI設定や認証情報は共有して
+operatorとは別の専用local standard userを作り、そのuser profileへsource archive、Python、
+dependency、固定NER model、両CLIを配置しました。operatorのCLI設定や認証情報は共有して
 いません。
 
 ## Source pre-release結果

@@ -48,12 +48,13 @@ Gatewayまでのpre-release gateであり、Windows Firewallで外向き通信�
 ### Windows実CLIのFirewall gate
 
 operatorとCodex Desktopの通信を維持したまま実CLIだけを隔離するため、別のlocal standard userを
-用意します。account作成とFirewall ruleのinstall／removeだけは管理者cmdで行います。passwordは
-command lineへ書かず、`net user`のpromptから入力します。
+用意します。account／profile lifecycleとFirewall ruleのinstall／removeだけは管理者cmdで行います。
+`setup`は固定名`SecurityMaskerTester`だけを作成し、passwordはcommand lineへ書かず`net user`の
+promptから2回入力します。
 
 ```bat
-net user SecurityMaskerGate * /add
-scripts\windows-firewall-gate.cmd install "%COMPUTERNAME%\SecurityMaskerGate"
+scripts\windows-test-user.cmd setup
+scripts\windows-firewall-gate.cmd install "%COMPUTERNAME%\SecurityMaskerTester"
 ```
 
 Firewallをinstallする前に、そのuserのprofile内へsource archive、Python 3.12、test dependency、固定
@@ -69,11 +70,14 @@ scripts\windows-firewall-gate.cmd verify
 scripts\windows-cli-e2e.cmd
 ```
 
-試験後は管理者cmdで、このgate固有のruleを削除できます。名前が同じでもgroupが一致しないruleは
-削除せずfail-closedにします。
+試験後は管理者cmdで、このgate固有のruleを削除してからtest userを完全削除します。user所有process、
+service、scheduled task、load済みprofile／registry hiveがあれば削除せずfail-closedにします。profileは
+local `Users`直下の固定user名と一致し、reparse pointでないことを確認してWindows profile APIから削除
+します。任意pathの再帰削除は行いません。名前が同じでもgroupが一致しないFirewall ruleは削除しません。
 
 ```bat
 scripts\windows-firewall-gate.cmd remove
+scripts\windows-test-user.cmd remove
 ```
 
 変更範囲に対応するtestを先に実行し、統合境界へ影響する場合はmock Gateway testも実行します。
