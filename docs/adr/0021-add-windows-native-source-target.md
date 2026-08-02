@@ -1,6 +1,6 @@
 # ADR-0021 — Windows native source版は専用NTFS directoryと保護DACLを必須にする
 
-- 状態：採用（実装・native gate未完了）
+- 状態：採用（主要実装済み・native gate検証中）
 - 日付：2026-08-02
 - 関連：[ADR-0013](0013-reject-best-effort-windows-support.md)（best-effort対応の却下）、
   [ADR-0012](0012-renew-package-design.md)（package設計）、

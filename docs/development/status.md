@@ -23,7 +23,7 @@
 | application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
-| Windows | 対応外（native source実装中） | ADR-0021のDACL実装・dependency・native security gateが未完了 |
+| Windows | 対応外（native source gate検証中） | 未完のnative negative matrix、clean standard userのsource archive gate、利用・運用手順、対応判断 |
 
 ## Source版
 

@@ -43,7 +43,8 @@ scripts\release-check.cmd
 Windows setupは64-bit Python 3.12と`requirements-windows*.lock`のwheelだけを使用し、Visual Studio
 Build Toolsやsource buildへfallbackしません。`release-check.cmd`はlocal unit／evaluation／mock
 Gatewayまでのpre-release gateであり、Windows Firewallで外向き通信を遮断した専用standard userの
-実Codex／Claude Code CLI E2Eを含みません。後者が未完の間はWindows対応済みと判断しません。
+実Codex／Claude Code CLI E2Eを含みません。後者は別の必須gateとして実行し、両方の成功を確認するまで
+Windows対応済みと判断しません。
 
 ### Windows実CLIのFirewall gate
 
