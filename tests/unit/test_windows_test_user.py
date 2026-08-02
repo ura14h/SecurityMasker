@@ -13,6 +13,9 @@ POWERSHELL = REPO / "devtools" / "windows_test_user.ps1"
 CMD = REPO / "scripts" / "windows-test-user.cmd"
 RUNAS_CMD = REPO / "scripts" / "windows-source-gate-runas.cmd"
 SESSION_CMD = REPO / "devtools" / "windows_source_gate_session.cmd"
+OWNER_CMD = REPO / "scripts" / "windows-owner-gate.cmd"
+OWNER_POWERSHELL = REPO / "devtools" / "windows_owner_gate.ps1"
+OWNER_PROBE = REPO / "devtools" / "windows_owner_probe.py"
 
 
 def test_lifecycle_uses_only_fixed_test_user_name() -> None:
@@ -66,6 +69,9 @@ def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None
     source = CMD.read_text(encoding="utf-8")
     runas = RUNAS_CMD.read_text(encoding="utf-8")
     session = SESSION_CMD.read_text(encoding="utf-8")
+    owner_cmd = OWNER_CMD.read_text(encoding="utf-8")
+    owner_ps = OWNER_POWERSHELL.read_text(encoding="utf-8")
+    owner_probe = OWNER_PROBE.read_text(encoding="utf-8")
 
     assert '"setup" goto setup' in source
     assert '"remove" goto remove_tester' in source
@@ -87,16 +93,28 @@ def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None
     assert 'if exist "%SOURCE_ROOT%\\"' in session
     assert 'set "SECURITYMASKER_PYTHON=%PYTHON%"' in session
     assert "windows-source-gate.cmd run" in session
+    assert "SECURITYMASKER_PYTHON" in owner_cmd
+    assert "pythoncore-*-64\\python.exe" in owner_cmd
+    assert "-Action Setup" in owner_cmd
+    assert "-Action Remove" in owner_cmd
+    assert "Windows owner gate must run from an elevated" in owner_ps
+    assert 'Join-Path $env:ProgramData "SecurityMaskerOwnerGate"' in owner_ps
+    assert "SetOwner($administrators)" in owner_ps
+    assert "unexpected entries" in owner_ps
+    assert "Remove-Item -Recurse" not in owner_ps
+    assert "require_private_dacl" in owner_probe
+    assert "managed path must be owned by the current user" in owner_probe
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell parser contract")
 def test_powershell_lifecycle_script_parses() -> None:
-    escaped = str(POWERSHELL).replace("'", "''")
-    command = f"[void][ScriptBlock]::Create([IO.File]::ReadAllText('{escaped}'))"
-    result = subprocess.run(  # noqa: S603
-        ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", command],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    assert result.returncode == 0, result.stderr
+    for script in (POWERSHELL, OWNER_POWERSHELL):
+        escaped = str(script).replace("'", "''")
+        command = f"[void][ScriptBlock]::Create([IO.File]::ReadAllText('{escaped}'))"
+        result = subprocess.run(  # noqa: S603
+            ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stderr

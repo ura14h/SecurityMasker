@@ -111,6 +111,14 @@ scripts\windows-test-user.cmd remove
 test userを保持してFirewall ruleだけを外す場合に限り、`scripts\windows-firewall-gate.cmd remove`を
 使用します。
 
+別principalがownerの実fileを拒否するnative gateは、昇格した開発userのcmdから次を実行します。
+ProgramData直下へ合成fileを作り、ownerだけをAdministratorsへ変更して製品のowner検査で拒否した後、
+fixtureを非再帰で削除します。Python 3.12の追加installは不要です。
+
+```bat
+scripts\windows-owner-gate.cmd
+```
+
 変更範囲に対応するtestを先に実行し、統合境界へ影響する場合はmock Gateway testも実行します。
 この日常suiteは実providerへtest bodyを送りません。
 
