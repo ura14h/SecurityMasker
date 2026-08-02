@@ -33,11 +33,16 @@ def test_windows_setup_is_cmd_native_wheel_only_and_python_312() -> None:
 def test_windows_source_packaging_requires_clean_tree_and_never_overwrites() -> None:
     package = (ROOT / "scripts/package-source.cmd").read_text(encoding="utf-8")
 
+    assert "if defined SECURITYMASKER_PYTHON" in package
+    assert 'set "PYTHON=%SECURITYMASKER_PYTHON%"' in package
     assert "git -C \"%PROJECT_DIRECTORY%\" diff --quiet" in package
     assert "git -C \"%PROJECT_DIRECTORY%\" diff --cached --quiet" in package
     assert "git -C \"%PROJECT_DIRECTORY%\" archive --format=tar.gz" in package
     assert '--prefix="securitymasker-%VERSION%/"' in package
     assert "hashlib.sha256" in package
+    assert "runpy.run_path" in package
+    assert 'if exist "%VERSION_FILE%" goto version_file_exists' in package
+    assert 'del /q "%VERSION_FILE%"' in package
+    assert "securitymasker.py\" --version" not in package
     assert 'if exist "%ARCHIVE%" goto exists' in package
     assert 'if exist "%CHECKSUM%" goto exists' in package
-    assert "--version" in package

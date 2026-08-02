@@ -66,6 +66,9 @@ Windowsの標準cmd.exeでは同じ契約のcmd版を実行します。
 scripts\package-source.cmd
 ```
 
+別のPythonを使う場合は、実行前に`SECURITYMASKER_PYTHON`へその実行ファイルの絶対pathを
+設定します。未指定時はrepositoryの`.venv`を使います。
+
 `dist/securitymasker-<version>-source.tar.gz`と同名の`.sha256`を生成します。既存artifactは
 上書きしません。tagを作る場合は、そのtag名を第1引数として指定できます。
 

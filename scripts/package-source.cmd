@@ -3,12 +3,16 @@ setlocal EnableExtensions DisableDelayedExpansion
 
 set "SCRIPT_DIRECTORY=%~dp0"
 for %%I in ("%SCRIPT_DIRECTORY%..") do set "PROJECT_DIRECTORY=%%~fI"
-set "PYTHON=%PROJECT_DIRECTORY%\.venv\Scripts\python.exe"
+if defined SECURITYMASKER_PYTHON (
+    set "PYTHON=%SECURITYMASKER_PYTHON%"
+) else (
+    set "PYTHON=%PROJECT_DIRECTORY%\.venv\Scripts\python.exe"
+)
 set "REFERENCE=%~1"
 if not defined REFERENCE set "REFERENCE=HEAD"
 
 if not exist "%PYTHON%" (
-    echo error: run scripts\setup.cmd first 1>&2
+    echo error: package Python was not found; run scripts\setup.cmd or set SECURITYMASKER_PYTHON 1>&2
     exit /b 2
 )
 
@@ -17,7 +21,12 @@ if errorlevel 1 goto dirty
 git -C "%PROJECT_DIRECTORY%" diff --cached --quiet
 if errorlevel 1 goto dirty
 
-for /f "tokens=2" %%V in ('""%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" --version"') do set "VERSION=%%V"
+set "VERSION_FILE=%TEMP%\securitymasker-package-version-%RANDOM%-%RANDOM%.tmp"
+if exist "%VERSION_FILE%" goto version_file_exists
+"%PYTHON%" -c "import runpy,sys; print(runpy.run_path(sys.argv[1])['__version__'])" "%PROJECT_DIRECTORY%\src\securitymasker\__init__.py" > "%VERSION_FILE%"
+if errorlevel 1 goto version_error
+set /p "VERSION="<"%VERSION_FILE%"
+del /q "%VERSION_FILE%"
 if not defined VERSION (
     echo error: could not determine the SecurityMasker version 1>&2
     exit /b 2
@@ -49,4 +58,13 @@ exit /b 2
 
 :exists
 echo error: release artifact already exists for version %VERSION% 1>&2
+exit /b 2
+
+:version_error
+del /q "%VERSION_FILE%" >nul 2>&1
+echo error: could not read the SecurityMasker version 1>&2
+exit /b 2
+
+:version_file_exists
+echo error: refusing to overwrite a temporary version file 1>&2
 exit /b 2
