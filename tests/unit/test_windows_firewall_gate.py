@@ -60,19 +60,29 @@ def test_cmd_wrapper_exposes_only_install_verify_and_remove() -> None:
 @pytest.mark.skipif(os.name != "nt", reason="cmd.exe batch dispatch contract")
 def test_cmd_wrapper_dispatches_remove_from_lf_only_source(tmp_path: Path) -> None:
     source = CMD_GATE.read_text(encoding="utf-8")
-    wrapper = tmp_path / "windows-firewall-gate.cmd"
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    wrapper = scripts / "windows-firewall-gate.cmd"
     wrapper.write_text(source, encoding="utf-8", newline="\n")
+    marker = tmp_path / "remove-dispatched.txt"
+    escaped_marker = str(marker).replace("'", "''")
+    devtools = tmp_path / "devtools"
+    devtools.mkdir()
+    (devtools / "windows_firewall_gate.ps1").write_text(
+        "param([string]$Action)\n"
+        'if ($Action -ne "Remove") { exit 9 }\n'
+        f"[IO.File]::WriteAllText('{escaped_marker}', $Action)\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
     result = subprocess.run(  # noqa: S603
         ["cmd.exe", "/d", "/c", str(wrapper), "remove"],
         capture_output=True,
-        text=True,
-        encoding="utf-8",
     )
 
-    diagnostic = result.stdout + result.stderr
-    assert "batch label" not in diagnostic.lower()
-    assert "バッチ ラベル" not in diagnostic
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert marker.read_text(encoding="utf-8") == "Remove"
 
 
 def test_windows_cli_runner_verifies_firewall_before_resolving_clis() -> None:
