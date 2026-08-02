@@ -7,7 +7,9 @@
 
 ## 対象
 
-- tested commit: `42602f6703957a63b9bdef4f28a9c48662c8697d`（実CLI隔離E2E）
+- tested commit: `42602f6703957a63b9bdef4f28a9c48662c8697d`（初回実CLI隔離E2E）
+- fresh source archive commit: `f13a3922f16233ea602e6b6170cf9edd88a63587`
+- RDP orchestration commit: `84f085e05a8f0815e5b7ea057c6dc2076ebe1d80`
 - OS: Windows 11 x64 build 26200.8875
 - filesystem: local fixed NTFS
 - shell: cmd.exe
@@ -40,6 +42,29 @@ dependency、固定NER model、両CLIを配置しました。operatorのCLI設�
 mock upstream E2E 4件成功、Windows native process test 3件成功を再確認しました。warningは既知の
 Starlette TestClient deprecation 1件です。
 
+## Fresh source archive結果
+
+固定名`SecurityMaskerTester`を新規作成し、checksum
+`577440d5c3198f64ae759e5bec2710312eed267b82a4a3ac7cab365940df48cc`のsource archiveを
+local fixed NTFSへ展開しました。RDP sessionのoperator接続を維持するため、Windows標準の
+`runas /profile`で固定userのprofileとtokenを使う別cmdを起動しました。
+
+preflightで固定standard user、`.git`／`.venv`と既存製品dataがないfresh directory、local fixed NTFS、
+reparse point非使用を確認しました。その後、Python 3.12 wheel-only setup、固定NER model load、両modeの
+init／doctor／preview／client configとrelease gateを一巡しました。
+
+| gate | 結果 |
+|---|---|
+| ruff | 成功 |
+| mypy strict | 73 source files成功 |
+| unit／evaluation | 742件成功、5件skip、warning 1件／71.02秒 |
+| mock upstream実process Gateway E2E | 4件成功／10.54秒 |
+| Windows native process test | 3件成功／1.15秒 |
+
+最初のfresh実行では、LF-only cmd wrapper testが日本語cmd出力をUTF-8固定でdecodeし、製品外のtest
+harnessで失敗しました。localeに依存するerror textの読取りをやめ、偽PowerShell gateへの`Remove`
+dispatchをmarker fileで直接確認するtestへ修正してから、上記fresh gateを再実行しました。
+
 ## 外向き通信遮断
 
 UAC昇格したoperatorのcmdから、専用user SIDにだけ適用されるPersistentStore outbound block ruleを
@@ -70,7 +95,7 @@ IPv4／IPv6各1件作成しました。専用user自身が次をActiveStoreか�
 | local mockの最終payloadから合成原文を排除 | 成功 |
 | CLI出力で合成原文を復元 | 成功 |
 | CLI出力へのalias残存なし | 成功 |
-| test件数／wall time | 2件成功／42.11秒 |
+| test件数／wall time | 初回2件成功／42.11秒、fresh archive再確認2件成功／41.34秒 |
 
 Claude Codeは空の作業directoryで起動し、settings source、slash command、built-in tool、session永続化を
 無効にしました。これによりrepositoryやuser profileの周辺contextをrequestへ混ぜず、固定system promptと
@@ -78,12 +103,13 @@ Claude Codeは空の作業directoryで起動し、settings source、slash comman
 
 ## 後片付け
 
-実CLI E2E完了後、UAC昇格したoperatorのcmdから`scripts\windows-firewall-gate.cmd remove`を実行
-しました。IPv4／IPv6両ruleについてPersistentStoreとActiveStoreの件数がそれぞれ0であることを
-読み取り確認しました。専用standard userとbootstrap資材は残るWindows gateへ再利用するため保持します。
+fresh archiveの実CLI E2E完了後、固定userの別cmdを閉じ、UAC昇格したoperatorのcmdから
+`scripts\windows-test-user.cmd remove`を実行しました。この操作で専用IPv4／IPv6 rule、local user、
+Windows profileを完全削除しました。削除後にlocal user、`C:\Users\SecurityMaskerTester`、ActiveStore
+ruleが存在しないことを確認しました。合成dataと公開実行ファイルだけを含むPublic bootstrap資材は、
+今後の再検証用に残しています。
 
 ## 残件
 
 Windows native sourceを対応済みと判断する前に、statusに記載した追加のnative negative matrix、利用・
-運用手順、standard userのclean-machine source archive gateと新しい対応判断が必要です。それまでは
-Windowsで実際の機密情報を扱いません。
+運用手順と新しい対応判断が必要です。それまではWindowsで実際の機密情報を扱いません。

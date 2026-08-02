@@ -99,15 +99,17 @@ RDP sessionでは、試験userのsource archive gate用cmdを閉じた後、昇�
 scripts\windows-cli-e2e-runas.cmd
 ```
 
-試験後は管理者cmdで、このgate固有のruleを削除してからtest userを完全削除します。user所有process、
+試験後は管理者cmdでtest userを完全削除します。この操作はgate固有のruleも削除します。user所有process、
 service、scheduled task、load済みprofile／registry hiveがあれば削除せずfail-closedにします。profileは
 local `Users`直下の固定user名と一致し、reparse pointでないことを確認してWindows profile APIから削除
 します。任意pathの再帰削除は行いません。名前が同じでもgroupが一致しないFirewall ruleは削除しません。
 
 ```bat
-scripts\windows-firewall-gate.cmd remove
 scripts\windows-test-user.cmd remove
 ```
+
+test userを保持してFirewall ruleだけを外す場合に限り、`scripts\windows-firewall-gate.cmd remove`を
+使用します。
 
 変更範囲に対応するtestを先に実行し、統合境界へ影響する場合はmock Gateway testも実行します。
 この日常suiteは実providerへtest bodyを送りません。

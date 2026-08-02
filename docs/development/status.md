@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-08-01
+最終更新: 2026-08-02
 
 この文書を、現行構成の`done`／`partial`／`blocked`と公開範囲の正とします。`done`は実装、
 製品配線、回帰test、利用・運用手順が揃った項目だけです。
@@ -23,7 +23,7 @@
 | application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
-| Windows | 対応外（native source gate検証中） | 未完のnative negative matrix、clean standard userのsource archive gate、利用・運用手順、対応判断 |
+| Windows | 対応外（native source gate検証中） | 未完のnative negative matrix、利用・運用手順、対応判断 |
 
 ## Source版
 
@@ -126,13 +126,16 @@ runtime load前のdigest再検証で拒否しました。元のmodel cacheは変
 
 freshなsource archiveを固定名`SecurityMaskerTester`のstandard userでだけ実行するcmd gateを追加しました。
 `.git`／`.venv`と既存製品dataがないこと、local fixed NTFS、reparse point非使用、環境分離をpreflightし、
-setup、両mode init、doctor、preview、client config、local release gateを一巡します。実装とparser／拒否
-testは完了していますが、新規作成した試験userでの完走証跡はまだ取得していません。
+setup、両mode init、doctor、preview、client config、local release gateを一巡します。新規作成した固定userへ
+checksum検証済みarchiveを展開し、ruff、mypy strict 73 source files、unit／evaluation 742件（5 skip）、
+mock upstream E2E 4件、Windows native process test 3件を完走しました。続けて専用Firewall境界を設定し、
+実Codex／Claude Code隔離E2E 2件を41.34秒で再確認しました。最後にFirewall rule、固定user、profileを
+完全削除し、user、profile directory、ActiveStore ruleが残っていないことを確認しました。
 
 これはWindows対応完了の証拠ではありません。別principalが所有する実file、未知ACE、network／
 removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと
-Desktop設定手順、standard userのclean-machine source archive gateが残っています。これらをすべて完了して
-新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
+Desktop設定手順が残っています。これらをすべて完了して新しい対応判断を記録するまで、Windowsでは
+実際の機密情報を扱いません。
 
 ## Binary版
 
