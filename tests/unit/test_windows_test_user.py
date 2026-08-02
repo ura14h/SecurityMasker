@@ -94,7 +94,8 @@ def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None
     assert 'set "SECURITYMASKER_PYTHON=%PYTHON%"' in session
     assert "windows-source-gate.cmd run" in session
     assert "SECURITYMASKER_PYTHON" in owner_cmd
-    assert "pythoncore-*-64\\python.exe" in owner_cmd
+    assert 'for /d %%D in ("%LOCALAPPDATA%\\Python\\pythoncore-*-64")' in owner_cmd
+    assert 'if exist "%%~fD\\python.exe"' in owner_cmd
     assert "-Action Setup" in owner_cmd
     assert "-Action Remove" in owner_cmd
     assert "Windows owner gate must run from an elevated" in owner_ps
