@@ -93,7 +93,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 738件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 742件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
@@ -123,6 +123,11 @@ object ACEとconditional callback ACEを実fileのDACLへ設定して、どち�
 固定NER modelは、Windowsでmodel loadから実CPU推論までsocket接続を禁止した状態で合成PERSONを検出
 しました。実snapshotの全artifactをNTFS hard linkで複製し、`config.json`だけを1 byte変更したshadowは
 runtime load前のdigest再検証で拒否しました。元のmodel cacheは変更していません。
+
+freshなsource archiveを固定名`SecurityMaskerTester`のstandard userでだけ実行するcmd gateを追加しました。
+`.git`／`.venv`と既存製品dataがないこと、local fixed NTFS、reparse point非使用、環境分離をpreflightし、
+setup、両mode init、doctor、preview、client config、local release gateを一巡します。実装とparser／拒否
+testは完了していますが、新規作成した試験userでの完走証跡はまだ取得していません。
 
 これはWindows対応完了の証拠ではありません。別principalが所有する実file、未知ACE、network／
 removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと

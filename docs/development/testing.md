@@ -62,6 +62,18 @@ Firewallをinstallする前に、そのuserのprofile内へsource archive、Pyth
 NER model、Codex CLI、Claude Code CLIを準備します。別userからoperatorのprofileやCLI設定を共有せず、
 試験user自身の隔離したpathを使用します。
 
+新規作成した試験userへ最初にsign inし、checksum検証済みsource archiveをlocal fixed NTFS上へ展開
+します。archive直下のcmdで次を実行します。このrunnerは固定user、standard user権限、`.git`／`.venv`と
+既存製品dataがないfresh directory、reparse pointを含まないlocal fixed NTFSを確認してから、setup、
+両mode init、doctor、preview、client config、local release gateを実行します。
+
+```bat
+scripts\windows-source-gate.cmd run
+```
+
+この段階はdependencyとmodelを取得するためnetworkを使用します。成功後にsign outし、管理者cmdから
+Firewall gateをinstallします。
+
 試験userのcmdでは次を実行します。runnerはActiveStoreのIPv4／IPv6 deny rule、current user SID、
 standard user権限を検査し、外部canaryが拒否された後だけ両CLIを起動します。CLIが既定path以外にある
 場合は`SM_CODEX_CLI`／`SM_CLAUDE_CLI`へfull pathを設定します。
