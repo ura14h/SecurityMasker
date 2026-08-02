@@ -28,7 +28,8 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
     base_url = gateway_url(config)
     if config.runtime.mode == "chatgpt":
         return (
-            "# Codex CLIまたはCodex appが読むconfig.tomlへ追記してください。\n"
+            "# Codex CLIまたはCodex appが読むuser-level config.tomlへ追記してください。\n"
+            "# project-local .codex/config.tomlではprovider設定が無視されます。\n"
             "# modelはclient側で選択し、このsnippetでは変更しません。\n"
             f"{codex_config_toml(base_url)}"
         )
@@ -41,8 +42,14 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
         rendered_environment = "".join(
             f'export {name}="{value}"\n' for name, value in environment.items()
         )
+    desktop_note = (
+        "# Claude Code DesktopはLocal environment editorへ同じ変数を設定してください。\n"
+        if os.name == "nt"
+        else "# Claude Code Desktopを起動する環境へ同じ変数を設定してください。\n"
+    )
     return (
-        "# Claude Code CLIまたはClaude Code Desktopを起動する環境へ設定してください。\n"
+        "# Claude Code CLIを起動するshellへ設定してください。\n"
+        + desktop_note
         + rendered_environment
     )
 

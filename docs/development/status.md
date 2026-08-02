@@ -139,9 +139,10 @@ mock upstream E2E 4件、Windows native process test 3件を完走しました�
 完全削除し、user、profile directory、ActiveStore ruleが残っていないことを確認しました。
 
 backup媒体、退避したfileの保護と保管、restore作業は利用者の運用範囲とし、製品CLIでは扱いません。
-これはWindows対応完了の証拠ではありません。実removable mediaのnative negative evidence、
-Codex／Claude Code CLIとDesktop設定手順が残っています。これらをすべて完了して新しい対応判断を
-記録するまで、Windowsでは実際の機密情報を扱いません。
+cmd.exeからのsetup、mode別data directory、Gateway、Codex／Claude Code CLIとDesktopの設定・解除を
+利用者向けWindows手順へ固定しました。これはWindows対応完了の証拠ではありません。実removable
+mediaのnative negative evidenceと新しい対応判断が残っています。それらを完了するまで、Windowsでは
+実際の機密情報を扱いません。
 
 ## Binary版
 

@@ -86,6 +86,11 @@ def test_client_config_prints_only_the_configured_mode_from_shared_generator(
     assert rendered_expected in output
     assert unexpected not in output
     assert "\nmodel = " not in output
+    if mode == "chatgpt":
+        assert "user-level config.toml" in output
+        assert "project-local .codex/config.toml" in output
+    elif os.name == "nt":
+        assert "Local environment editor" in output
 
 
 def test_doctor_is_read_only_and_does_not_expose_dictionary_values(

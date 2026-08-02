@@ -6,7 +6,9 @@ SecurityMaskerへ接続します。実際の機密情報は、最後の確認が
 ## 始める前に
 
 - 対応環境はmacOS arm64のPython 3.11／3.12とLinux arm64のPython 3.12です。
-- Windows nativeは非対応です。Windowsでは実際の機密情報を扱わないでください。
+- Windows nativeは対応判断前です。評価は
+  [Windows native source版の導入候補手順](guides/windows-native-source.md)に従い、実際の機密情報を
+  扱わないでください。
 - setup時にPython packageと固定済み日本語NER modelを取得します。数GBの空き容量を確保してください。
 - 通常利用中にmodelをdownloadすることはありません。
 - SecurityMaskerはCodexやClaude Codeの設定を自動変更しません。

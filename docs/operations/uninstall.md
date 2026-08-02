@@ -11,15 +11,16 @@ Gatewayを起動したterminalで`Ctrl+C`を1回入力し、shellのpromptが戻
 
 ### Codex
 
-`config.toml`の`model_provider`をSecurityMasker導入前の値へ戻します。SecurityMasker専用に追加した
+user-level `config.toml`の`model_provider`をSecurityMasker導入前の値へ戻します。SecurityMasker専用に追加した
 `[model_providers.securitymasker]` tableは、他の設定から参照されていないことを確認してから
 削除できます。
 
 ### Claude Code
 
 Claude Codeを起動する環境から`ANTHROPIC_BASE_URL`のSecurityMasker設定を外します。現在のshellだけ
-で設定した場合は`unset ANTHROPIC_BASE_URL`で外せます。shell設定やDesktop launcherへ追加した場合は
-追加した場所から削除します。
+で設定した場合、macOS／Linuxは`unset ANTHROPIC_BASE_URL`、Windowsのcmd.exeは
+`set "ANTHROPIC_BASE_URL="`で外せます。Claude Code DesktopのLocal environment editorへ設定した
+場合は、同じ画面から削除します。
 
 clientを再起動し、SecurityMaskerのlocalhost portを参照していないことを確認します。
 
