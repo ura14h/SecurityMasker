@@ -140,9 +140,9 @@ mock upstream E2E 4件、Windows native process test 3件を完走しました�
 
 backup媒体、退避したfileの保護と保管、restore作業は利用者の運用範囲とし、製品CLIでは扱いません。
 cmd.exeからのsetup、mode別data directory、Gateway、Codex／Claude Code CLIとDesktopの設定・解除を
-利用者向けWindows手順へ固定しました。これはWindows対応完了の証拠ではありません。実removable
-mediaのnative negative evidenceと新しい対応判断が残っています。それらを完了するまで、Windowsでは
-実際の機密情報を扱いません。
+利用者向けWindows手順へ固定しました。実removable mediaもread-only gateでlocal fixed driveでは
+ないとして拒否しました。native gateと利用者手順は揃いましたが、新しい対応ADRを採用するまでは
+Windows native sourceを対応環境とせず、実際の機密情報を扱いません。
 
 ## Binary版
 

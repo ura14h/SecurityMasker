@@ -2,8 +2,8 @@
 
 実行日: 2026-08-02
 
-この文書はWindows native source targetの途中証跡です。Windows対応完了または実データ利用許可を
-示すものではありません。
+この文書はWindows native source targetの検証証跡です。対応範囲は別の最新ADRと
+[compatibility](../../reference/compatibility.md)で判断します。
 
 ## 対象
 
@@ -128,10 +128,18 @@ created synthetic wrong-owner fixture
 removed synthetic wrong-owner fixture
 ```
 
-終了後、固定fixture directoryが存在しないことを読み取り確認しました。実removable mediaを接続した
-native evidenceはこの記録に含みません。
+終了後、固定fixture directoryが存在しないことを読み取り確認しました。
+
+`77c45476a9611f93df836a8033790b30db8e7c09`でread-onlyなremovable drive gateを追加し、実removable
+mediaを接続したstandard userのcmd.exeから実行しました。Windows APIがreadyな媒体をremovableと
+分類したことを確認したうえで、製品のvolume境界がlocal fixed driveではないとして拒否しました。
+媒体上にfixtureやfileは作成していません。実測出力は次のとおりです。
+
+```json
+{"removable_drive_rejected":true}
+```
 
 ## 残件
 
-Windows native sourceを対応済みと判断する前に、statusに記載した追加のnative negative matrix、利用・
-運用手順と新しい対応判断が必要です。それまではWindowsで実際の機密情報を扱いません。
+ADR-0013とADR-0021の再検討条件に対する最終監査を行い、Windows native sourceの対応範囲を
+新しいADRで判断します。
