@@ -95,6 +95,26 @@ Windows用dependency lockはtarget上でwheelだけから解決・固定する�
 dependencyがsource buildを要求した場合、利用者へcompiler導入を求めず、wheelの存在するversionへ
 契約を見直す。
 
+### 実CLI E2Eの外向き通信境界
+
+Windowsでの実CLI漏洩ゼロE2Eは、外向きrouteのないVMに加えて、専用local standard userへ
+Windows Firewallの明示deny ruleを適用する構成を認める。operatorとCodex Desktopは別userで動作し、
+試験userの全processだけを境界内へ置く。
+
+Firewall構成は次をすべて満たす場合だけVMのnetwork断と同等のrelease evidenceとして扱う。
+
+1. ruleはadministratorがPersistentStoreへ作成し、試験userはadministrator groupへ属さない。
+2. LocalUser条件を試験user SIDへ固定し、Domain／Private／Publicの全profileで有効にする。
+3. outboundの全IP protocolについて、IPv4は`127.0.0.0/8`以外、IPv6は`::1`以外をblockする。
+4. test開始前にActiveStoreのrule、SID、action、direction、profile、protocol、address rangeを再検査する。
+5. 構造検査後に外部IPv4／IPv6へのcanary接続が失敗し、loopback上のGateway／mockだけが成功する。
+6. pytest、Gateway、mock、Codex CLI、Claude Code CLIを同じ試験userで起動する。
+7. ruleが欠落、不一致、判定不能、または試験userがadministratorの場合はE2Eを開始しない。
+
+Windows Firewallでは明示block ruleが競合するallow ruleより優先される。host administratorはDACL契約と
+同様に脅威境界外だが、試験user自身がruleを無効化できないことを必須にする。実行fileだけへruleを
+付ける方式は、CLIが子processへnetwork処理を委譲した場合に境界から漏れるため採用しない。
+
 ## native gate
 
 ADR-0013の条件を具体化し、少なくとも次をすべてWindows nativeで成功させる。
@@ -106,7 +126,8 @@ ADR-0013の条件を具体化し、少なくとも次をすべてWindows native�
 4. model download、全artifact digest、offline load、推論、改竄拒否。
 5. SQLite暗号化、restart、wrong key／mode、tamper、二重writer、WAL、graceful／forced termination。
 6. `cmd.exe`からsource archiveの展開、setup、両mode init、preview、Gateway、停止、再起動。
-7. 外向きrouteのないWindows VMで実Codex／Claude Code CLIとlocal mockを使う漏洩ゼロE2E。
+7. 外向きrouteのないWindows VM、または上記Firewall境界で実Codex／Claude Code CLIとlocal mockを
+   使う漏洩ゼロE2E。
 8. standard userのclean Windows VMでsource release gateを最初から再現する。
 
 test dataは合成値だけを使い、外部networkを構造的に遮断する最終E2Eが完成するまで実providerへ

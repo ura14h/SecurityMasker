@@ -93,7 +93,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。ruff、mypy strict
-73 source files、unit／evaluation 713件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 721件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
@@ -104,10 +104,18 @@ sidecar keyのbackup pairをprivate DACLで保護して別layoutへ復元し、�
 再読込できることも確認しました。これら3件のWindows native process testを`release-check.cmd`へ接続
 しています。
 
+Hyper-V VMを必須にせずoperatorのCodex Desktop接続を維持するため、ADR-0021へ専用local standard
+userのWindows Firewall境界を追加しました。administratorが試験user SIDへ、loopback以外の全IPv4／
+IPv6と全IP protocolをblockするPersistentStore ruleを作成し、試験user自身がActiveStoreのSID、
+address range、profile、actionを検査した後だけ実CLI E2Eを開始します。ruleのinstall／verify／remove、
+Codex CLI 0.146.0とClaude Code 2.1.220の既定path解決、外部canary、local mock E2Eをcmd runnerへ実装し、
+rule未設定時のfail-closedとunit testを確認しました。UAC昇格したrule作成と専用userでの実CLI E2Eは
+まだ実行していません。
+
 これはWindows対応完了の証拠ではありません。wrong owner、未知／object／callback ACE、network／
 removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと
-Desktop設定手順、外向きrouteのないWindows VMでの実CLI
-漏洩ゼロE2E、standard userのclean-machine source archive gateが残っています。これらをすべて完了して
+Desktop設定手順、専用standard userのFirewall境界での実CLI漏洩ゼロE2E、standard userのclean-machine
+source archive gateが残っています。これらをすべて完了して
 新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
 
 ## Binary版

@@ -42,8 +42,39 @@ scripts\release-check.cmd
 
 Windows setupは64-bit Python 3.12と`requirements-windows*.lock`のwheelだけを使用し、Visual Studio
 Build Toolsやsource buildへfallbackしません。`release-check.cmd`はlocal unit／evaluation／mock
-Gatewayまでのpre-release gateであり、外向きrouteのないVMで行う実Codex／Claude Code CLI E2Eを
-含みません。後者が未完の間はWindows対応済みと判断しません。
+Gatewayまでのpre-release gateであり、Windows Firewallで外向き通信を遮断した専用standard userの
+実Codex／Claude Code CLI E2Eを含みません。後者が未完の間はWindows対応済みと判断しません。
+
+### Windows実CLIのFirewall gate
+
+operatorとCodex Desktopの通信を維持したまま実CLIだけを隔離するため、別のlocal standard userを
+用意します。account作成とFirewall ruleのinstall／removeだけは管理者cmdで行います。passwordは
+command lineへ書かず、`net user`のpromptから入力します。
+
+```bat
+net user SecurityMaskerGate * /add
+scripts\windows-firewall-gate.cmd install "%COMPUTERNAME%\SecurityMaskerGate"
+```
+
+Firewallをinstallする前に、そのuserのprofile内へsource archive、Python 3.12、test dependency、固定
+NER model、Codex CLI、Claude Code CLIを準備します。別userからoperatorのprofileやCLI設定を共有せず、
+試験user自身の隔離したpathを使用します。
+
+試験userのcmdでは次を実行します。runnerはActiveStoreのIPv4／IPv6 deny rule、current user SID、
+standard user権限を検査し、外部canaryが拒否された後だけ両CLIを起動します。CLIが既定path以外にある
+場合は`SM_CODEX_CLI`／`SM_CLAUDE_CLI`へfull pathを設定します。
+
+```bat
+scripts\windows-firewall-gate.cmd verify
+scripts\windows-cli-e2e.cmd
+```
+
+試験後は管理者cmdで、このgate固有のruleを削除できます。名前が同じでもgroupが一致しないruleは
+削除せずfail-closedにします。
+
+```bat
+scripts\windows-firewall-gate.cmd remove
+```
 
 変更範囲に対応するtestを先に実行し、統合境界へ影響する場合はmock Gateway testも実行します。
 この日常suiteは実providerへtest bodyを送りません。
