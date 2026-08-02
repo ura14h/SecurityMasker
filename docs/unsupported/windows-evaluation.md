@@ -1,7 +1,9 @@
 # Windows上のLinux環境で評価する（非対応）
 
-Windows native版は現在も非対応です。この番外編は、Windows 11 x64上のWSL2または
-Docker DesktopのLinux containerで、Linux版SecurityMaskerを評価するためのtechnical spikeです。
+Windows native source版は限定条件で対応しています。通常は
+[Windows native source版の導入手順](../guides/windows-native-source.md)を使用してください。この番外編は、
+Windows 11 x64上のWSL2またはDocker DesktopのLinux containerで、Linux版SecurityMaskerを評価する
+ためのtechnical spikeです。
 [ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md)の共通gateは未完了であり、
 どちらも対応環境ではありません。
 
@@ -233,7 +235,7 @@ docker compose -f docker/compose.chatgpt.yaml down
 
 ## 評価結果を扱う
 
-起動成功だけでWindows対応済みとは判断しません。少なくとも
+起動成功だけでこのLinux-hosted経路を対応済みとは判断しません。少なくとも
 [ADR-0015の共通の合格条件](../adr/0015-evaluate-windows-linux-hosted-deployments.md#共通の合格条件)
 に沿って、
 loopback限定、LANからの到達不能、実CLI経路、streaming、tool call、session分離、restart、

@@ -19,16 +19,16 @@
 | console log level・設定閾値 | done | schema v1の`logging.level`、影響別4 level、起動・終了・異常系testあり |
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
-| source release candidate | done | macOS arm64とLinux arm64のsource gateに合格 |
+| source release candidate | done | macOS arm64、Linux arm64、Windows 11 x64のsource gateに合格 |
 | application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
-| Windows | 対応外（native source gate検証中） | 未完のnative negative matrix、利用・運用手順、対応判断 |
+| Windows native source | done | Windows 11 x64 build 26100以降、CPython 3.12 x64、local fixed NTFS限定 |
 
 ## Source版
 
-現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12とLinux arm64の
-Python 3.12でsource setupを検証しています。
+現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12、Linux arm64の
+Python 3.12、Windows 11 x64のPython 3.12 x64でsource setupを検証しています。
 
 2026-08-01にmacOS arm64、Python 3.12、Claude Code 2.1.212からSecurityMaskerを通して
 Anthropic実サーバへ接続する明示opt-in E2Eを追加しました。`haiku`を使う一つのsessionで
@@ -80,8 +80,10 @@ source版だけが公開対象であることをrelease noteへ明記できれ�
 判断は妥当です。判断理由は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
-Windowsはsource版を含めて公開対応範囲外です。部分的に動くことを根拠としたbest-effort対応は
-[ADR-0013](../adr/0013-reject-best-effort-windows-support.md)で却下しました。
+Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
+x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。範囲外を
+部分的な動作だけでbest-effort対応とする方針は、引き続き
+[ADR-0013](../adr/0013-reject-best-effort-windows-support.md)どおり却下します。
 
 2026-08-02に[ADR-0021](../adr/0021-add-windows-native-source-target.md)を採用し、Windows 11 x64、
 CPython 3.12 x64、local fixed NTFS、cmd.exeを最初のnative source targetとして実装を開始しました。
@@ -93,7 +95,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 742件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 753件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
@@ -123,8 +125,8 @@ UAC昇格した専用gateでは、ProgramData上の合成fileのownerだけをAd
 owner検査が実fileを拒否した後にfixtureを完全削除しました。
 
 drive境界はUNC pathをvolume access前に拒否し、Windows APIがremovableまたはremoteと分類したdriveを
-local fixed driveではないとして拒否する回帰testを追加しました。実removable mediaを接続したnative
-証跡はまだ取得していません。
+local fixed driveではないとして拒否する回帰testを追加しました。実removable mediaもread-only gateで
+同じ理由により拒否しました。
 
 固定NER modelは、Windowsでmodel loadから実CPU推論までsocket接続を禁止した状態で合成PERSONを検出
 しました。実snapshotの全artifactをNTFS hard linkで複製し、`config.json`だけを1 byte変更したshadowは
@@ -140,9 +142,8 @@ mock upstream E2E 4件、Windows native process test 3件を完走しました�
 
 backup媒体、退避したfileの保護と保管、restore作業は利用者の運用範囲とし、製品CLIでは扱いません。
 cmd.exeからのsetup、mode別data directory、Gateway、Codex／Claude Code CLIとDesktopの設定・解除を
-利用者向けWindows手順へ固定しました。実removable mediaもread-only gateでlocal fixed driveでは
-ないとして拒否しました。native gateと利用者手順は揃いましたが、新しい対応ADRを採用するまでは
-Windows native sourceを対応環境とせず、実際の機密情報を扱いません。
+利用者向けWindows手順へ固定しました。native gate、利用者手順、再検討条件の監査が完了したため、
+限定したWindows native source targetを対応環境と判断しました。
 
 ## Binary版
 

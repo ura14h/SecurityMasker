@@ -6,7 +6,7 @@
 ## 初めて使う
 
 1. [導入ガイド](getting-started.md) — setup、初期化、合成値での確認、client接続、終了
-2. [Windows native source版の導入候補手順](guides/windows-native-source.md) — cmd.exe、CLI、Desktop
+2. [Windows native source版の導入手順](guides/windows-native-source.md) — cmd.exe、CLI、Desktop
 3. [辞書のカスタマイズ](guides/customize-dictionary.md) — 会社名、人名、顧客名、project名の登録
 4. [日常的な使い方](operations/daily-use.md) — 起動、readiness確認、終了
 
@@ -61,7 +61,7 @@
 ## 対応外の評価手順
 
 [Windows上のLinux環境で評価する](unsupported/windows-evaluation.md)はtechnical spikeです。
-Windows nativeもWSL2／Docker Desktop経路も対応環境ではありません。実データを扱わないでください。
+WSL2／Docker Desktop経路はWindows native source版とは異なり、対応環境ではありません。
 
 ## ADR
 

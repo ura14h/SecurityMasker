@@ -29,8 +29,8 @@ mock upstream、合成credential、隔離HOME、network namespace、test-only環
 .venv/bin/python -m pytest -q tests/evaluation
 ```
 
-Windows native source targetの開発環境は、標準のcmd.exeから次を実行します。Windows対応判断が
-完了するまでは合成dataだけを使います。
+Windows native source targetの開発環境は、標準のcmd.exeから次を実行します。testには合成dataだけを
+使います。
 
 ```bat
 scripts\test-setup.cmd
@@ -43,8 +43,7 @@ scripts\release-check.cmd
 Windows setupは64-bit Python 3.12と`requirements-windows*.lock`のwheelだけを使用し、Visual Studio
 Build Toolsやsource buildへfallbackしません。`release-check.cmd`はlocal unit／evaluation／mock
 Gatewayまでのpre-release gateであり、Windows Firewallで外向き通信を遮断した専用standard userの
-実Codex／Claude Code CLI E2Eを含みません。後者は別の必須gateとして実行し、両方の成功を確認するまで
-Windows対応済みと判断しません。
+実Codex／Claude Code CLI E2Eを含みません。後者はrelease時に別の必須gateとして実行します。
 
 ### Windows実CLIのFirewall gate
 

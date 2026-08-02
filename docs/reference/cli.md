@@ -5,9 +5,8 @@
 
 この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では
 `securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker-lite`または
-`./securitymasker-full`に読み替えられます。実装・native gate中のWindows source targetでは、
-`.venv\Scripts\python.exe securitymasker.py`に読み替えます。Windowsはすべてのsecurity gateが
-完了するまで公開対応範囲外です。
+`./securitymasker-full`に読み替えられます。Windows native source版では、
+`.venv\Scripts\python.exe securitymasker.py`に読み替えます。
 
 ## 共通仕様
 

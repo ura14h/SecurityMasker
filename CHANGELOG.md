@@ -14,6 +14,8 @@
   分け、成果物名と`--version`でprofileを識別可能に変更
 - Lite版binaryの`model-load`、model未準備時のfail-closed、取得後のoffline NER、両mode Gatewayを
   profile別gateで検証
+- Windows 11 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSのnative source版を対応範囲へ
+  追加し、protected DACL、wheel-only setup、固定NER、SQLite、隔離実CLI E2Eをnative検証
 
 ## 0.1.0 — 2026-07-26
 

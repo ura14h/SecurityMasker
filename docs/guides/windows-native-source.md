@@ -1,8 +1,7 @@
-# Windows native source版の導入候補手順
+# Windows native source版の導入手順
 
-この手順はWindows native source版の対応判断に先立つ候補手順です。新しい対応ADRが採用されるまで、
-合成dataだけを使い、実際の機密情報を扱わないでください。Windows one-file版、Windows 10、ARM64、
-Python 3.13以降、ReFS、removable／network／subst driveは対象外です。
+この手順は対応範囲に含まれるWindows native source版を導入します。Windows one-file版、Windows 10、
+ARM64、Python 3.11／3.13以降、ReFS、removable／network／subst driveは対象外です。
 
 対象はWindows 11 x64 build 26100以降、64-bit Python 3.12、local fixed NTFS上のsource archive、
 standard userと標準のcmd.exeです。Visual Studioは不要です。

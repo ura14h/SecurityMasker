@@ -103,11 +103,12 @@ blockします。未知の組織内用語を自動で100%推測することは�
 |---|---|
 | macOS arm64、Python 3.11／3.12 | 検証済み |
 | Linux arm64、Python 3.12 | 検証済み |
-| Windows native | 非対応 |
+| Windows 11 x64 build 26100以降、Python 3.12 x64 | source版を検証済み |
 | one-file Lite／Full binary | macOS／Linux arm64で技術検証済み。[私的build手順](docs/development/binary-build.md)のみ。未公開 |
 
-Windows用のfile ACL、setup、client設定、native E2Eが揃うまでは、Windowsで実際の機密情報を
-扱わないでください。platformとclientの詳細は[対応環境](docs/reference/compatibility.md)にあります。
+Windowsは[Windows native source版の導入手順](docs/guides/windows-native-source.md)に従います。
+Windows one-file版と表にない環境は未対応です。platformとclientの詳細は
+[対応環境](docs/reference/compatibility.md)にあります。
 
 ## 合成データで試す
 

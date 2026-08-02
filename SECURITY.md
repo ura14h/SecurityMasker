@@ -11,7 +11,9 @@ one-file Lite／Full binaryは技術検証段階で、公開対象ではあり�
 同梱dependencyの再配布確認が必要です。model weightを同梱するFull版には、model再配布条件の確認も
 追加で必要です。
 
-Windows nativeは非対応です。Windows上で実際の機密情報を扱わないでください。
+Windows native source版は、Windows 11 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSに
+限定して対応します。Windows one-file版、Windows 10、ARM64、その他のPython／filesystemは
+対応範囲外です。
 
 ## Safe operation
 
@@ -26,7 +28,8 @@ Windows nativeは非対応です。Windows上で実際の機密情報を扱わ�
 - `securitymasker.state/securitymasker.db`
 - `securitymasker.state/securitymasker.key`
 
-POSIXではfileを`0600`、state directoryを`0700`にします。DBとkeyは1対1で、
+POSIXではfileを`0600`、state directoryを`0700`にします。Windowsでは製品がprotected DACLを
+作成・検査します。DBとkeyは1対1で、
 [同じbackup単位](docs/operations/backup-restore.md)にします。keyを失うと既存DBを復号できません。
 config、辞書、DB、keyをGitへcommitしないでください。
 

@@ -139,7 +139,9 @@ mediaを接続したstandard userのcmd.exeから実行しました。Windows AP
 {"removable_drive_rejected":true}
 ```
 
-## 残件
+## 最終gateと対応判断
 
-ADR-0013とADR-0021の再検討条件に対する最終監査を行い、Windows native sourceの対応範囲を
-新しいADRで判断します。
+最新treeでruff、mypy strict 73 source files、unit／evaluation 753件（5 skip、既知warning 1件）、
+mock Gateway E2E 4件、Windows native process 3件を再実行し、すべて成功しました。ADR-0013と
+ADR-0021の再検討条件は[ADR-0023](../../adr/0023-support-windows-native-source.md)で監査し、限定した
+Windows native source targetを対応範囲へ加えました。
