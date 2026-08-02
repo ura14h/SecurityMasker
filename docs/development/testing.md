@@ -92,6 +92,13 @@ scripts\windows-firewall-gate.cmd verify
 scripts\windows-cli-e2e.cmd
 ```
 
+RDP sessionでは、試験userのsource archive gate用cmdを閉じた後、昇格した開発userのcmdから次だけを
+実行します。固定user用Firewall ruleをinstallし、`runas /profile`で実CLI E2E用の別cmdを開きます。
+
+```bat
+scripts\windows-cli-e2e-runas.cmd
+```
+
 試験後は管理者cmdで、このgate固有のruleを削除してからtest userを完全削除します。user所有process、
 service、scheduled task、load済みprofile／registry hiveがあれば削除せずfail-closedにします。profileは
 local `Users`直下の固定user名と一致し、reparse pointでないことを確認してWindows profile APIから削除

@@ -12,6 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 POWERSHELL_GATE = REPO / "devtools" / "windows_firewall_gate.ps1"
 CMD_GATE = REPO / "scripts" / "windows-firewall-gate.cmd"
 CMD_E2E = REPO / "scripts" / "windows-cli-e2e.cmd"
+RUNAS_E2E = REPO / "scripts" / "windows-cli-e2e-runas.cmd"
+SESSION_E2E = REPO / "devtools" / "windows_cli_e2e_session.cmd"
 
 
 def test_firewall_gate_is_user_scoped_and_excludes_only_loopback() -> None:
@@ -87,6 +89,8 @@ def test_cmd_wrapper_dispatches_remove_from_lf_only_source(tmp_path: Path) -> No
 
 def test_windows_cli_runner_verifies_firewall_before_resolving_clis() -> None:
     source = CMD_E2E.read_text(encoding="utf-8")
+    runas = RUNAS_E2E.read_text(encoding="utf-8")
+    session = SESSION_E2E.read_text(encoding="utf-8")
 
     verify = source.index('windows-firewall-gate.cmd" verify')
     codex = source.index("SM_CODEX_CLI")
@@ -96,3 +100,13 @@ def test_windows_cli_runner_verifies_firewall_before_resolving_clis() -> None:
     assert "SM_REQUIRE_ALL_CLIS=1" in source
     assert "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe" in source
     assert "%USERPROFILE%\\.local\\bin\\claude.exe" in source
+    assert 'windows-firewall-gate.cmd" install' in runas
+    assert "%COMPUTERNAME%\\SecurityMaskerTester" in runas
+    assert "runas.exe /profile" in runas
+    assert "/savecred" not in runas.lower()
+    assert "/netonly" not in runas.lower()
+    assert "windows_cli_e2e_session.cmd" in runas
+    assert 'set "EXPECTED_USER=SecurityMaskerTester"' in session
+    assert "whoami.exe" in session
+    assert "%USERPROFILE%\\Developer\\securitymasker-0.1.0" in session
+    assert "windows-cli-e2e.cmd" in session
