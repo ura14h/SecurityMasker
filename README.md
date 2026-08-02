@@ -99,15 +99,16 @@ blockします。未知の組織内用語を自動で100%推測することは�
 
 現在はsource版を利用します。
 
-| 環境 | 状態 |
-|---|---|
-| macOS arm64、Python 3.11／3.12 | 検証済み |
-| Linux arm64、Python 3.12 | 検証済み |
-| Windows 11 x64 build 26100以降、Python 3.12 x64 | source版を検証済み |
-| one-file Lite／Full binary | macOS／Linux arm64で技術検証済み。[私的build手順](docs/development/binary-build.md)のみ。未公開 |
+| 環境 | source版 | one-file Lite／Full binary |
+|---|---|---|
+| macOS arm64 | Python 3.11／3.12で検証済み | [技術検証済み](docs/development/release-evidence/macos-arm64-lite-full-one-file-2026-08-01.md) |
+| Linux arm64 | Python 3.12で検証済み | [技術検証済み](docs/development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md) |
+| Windows 11 x64 build 26100以降 | Python 3.12 x64で検証済み | [Windows 11 x64で技術検証済み](docs/development/release-evidence/windows-x64-lite-full-one-file-2026-08-02.md) |
 
 Windowsは[Windows native source版の導入手順](docs/guides/windows-native-source.md)に従います。
-Windows one-file版と表にない環境は未対応です。platformとclientの詳細は
+one-file版は[私的build手順](docs/development/binary-build.md)のみで未公開です。Windows one-file版も
+技術検証済みですが、clean-machine gateや署名等が未完のため、対応・公開対象外です。表にない環境は
+未対応です。platformとclientの詳細は
 [対応環境](docs/reference/compatibility.md)にあります。
 
 ## 合成データで試す
