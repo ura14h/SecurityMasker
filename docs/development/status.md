@@ -93,14 +93,20 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。ruff、mypy strict
-73 source files、unit／evaluation 709件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 713件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
 
-これはWindows対応完了の証拠ではありません。wrong owner、NULL／未知／object ACE、network／removable／
-subst drive、reparse pointのnative negative matrix、別processでのgraceful／forced termination、
-backup／restore、Codex／Claude Code CLIとDesktop設定手順、外向きrouteのないWindows VMでの実CLI
+同じ環境でaccess-denied ACEとNULL DACL、junction、subst driveを実OS上で拒否し、別processのwriter
+競合、graceful close、forced termination後のprivate leaseと再openを検証しました。暗号化SQLiteと
+sidecar keyのbackup pairをprivate DACLで保護して別layoutへ復元し、合成session／response bindingを
+再読込できることも確認しました。これら3件のWindows native process testを`release-check.cmd`へ接続
+しています。
+
+これはWindows対応完了の証拠ではありません。wrong owner、未知／object／callback ACE、network／
+removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと
+Desktop設定手順、外向きrouteのないWindows VMでの実CLI
 漏洩ゼロE2E、standard userのclean-machine source archive gateが残っています。これらをすべて完了して
 新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
 
