@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 
 import pytest
 from pydantic import ValidationError
@@ -71,6 +72,42 @@ def standard_engine():
         }
     )
     return build_engine(config)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native offline model gate")
+def test_windows_standard_model_load_and_inference_open_no_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if cache_directory(ADOPTED_MODEL, ADOPTED_REVISION) is None:
+        _missing_model()
+    attempts: list[object] = []
+
+    def refuse_connection(_socket: socket.socket, address: object) -> None:
+        attempts.append(address)
+        raise AssertionError("offline NER attempted a socket connection")
+
+    def refuse_connection_ex(_socket: socket.socket, address: object) -> int:
+        refuse_connection(_socket, address)
+        return 1
+
+    monkeypatch.setattr(socket.socket, "connect", refuse_connection)
+    monkeypatch.setattr(socket.socket, "connect_ex", refuse_connection_ex)
+    from securitymasker.detectors.japanese_ner import JapaneseNerDetector
+
+    detector = JapaneseNerDetector(
+        model=ADOPTED_MODEL,
+        revision=ADOPTED_REVISION,
+        min_score=0.7,
+        required=True,
+        local_files_only=True,
+        allow_unverified_model=False,
+    )
+    text = "担当者は佐々木健一です。"
+    assert detector._pipeline is not None
+    entities = detector._pipeline(text)
+
+    assert any(text[item["start"] : item["end"]] == "佐々木健一" for item in entities)
+    assert attempts == []
 
 
 @pytest.mark.asyncio

@@ -93,7 +93,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 735件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 737件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
@@ -119,6 +119,10 @@ payloadに合成原文がないこと、CLI出力で合成原文が復元されa
 追加で実security descriptorのownerとprocess SIDが一致しない場合の拒否を固定し、有効なSDDLから
 object ACEとconditional callback ACEを実fileのDACLへ設定して、どちらもunsupportedとして拒否する
 ことを確認しました。
+
+固定NER modelは、Windowsでmodel loadから実CPU推論までsocket接続を禁止した状態で合成PERSONを検出
+しました。実snapshotの全artifactをNTFS hard linkで複製し、`config.json`だけを1 byte変更したshadowは
+runtime load前のdigest再検証で拒否しました。元のmodel cacheは変更していません。
 
 これはWindows対応完了の証拠ではありません。別principalが所有する実file、未知ACE、network／
 removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと

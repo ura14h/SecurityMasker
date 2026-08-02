@@ -17,6 +17,7 @@ when the model is not present.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -292,6 +293,45 @@ def test_pinned_manifest_records_whole_file_bytes() -> None:
             f"{path.stat().st_size} — the manifest was not built from the file itself"
         )
         assert file_sha256(path) == artifact.sha256, artifact.name
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native model tamper gate")
+def test_windows_runtime_rejects_tampered_real_snapshot_shadow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """実snapshotのhard-link shadowを改変し、load前の再検証で拒否する。"""
+    directory = _snapshot()
+    if directory is None:
+        _missing("the pinned model is not in the local cache")
+        return
+    manifest = manifest_for(ADOPTED, ADOPTED_REV)
+    assert manifest is not None
+    shadow = tmp_path / "tampered-snapshot"
+    shadow.mkdir()
+    tampered_name = "config.json"
+    assert tampered_name in manifest.required_names
+    try:
+        for artifact in manifest.artifacts:
+            source = directory / artifact.name
+            target = shadow / artifact.name
+            if artifact.name == tampered_name:
+                shutil.copy2(source, target)
+                target.write_bytes(target.read_bytes() + b"\n")
+            else:
+                os.link(source, target)
+    except OSError as exc:
+        pytest.fail(f"could not create the NTFS model shadow: {exc}")
+
+    monkeypatch.setattr(
+        "securitymasker.models_fetch.cache_directory",
+        lambda model, revision: shadow,
+    )
+    from securitymasker.detectors.japanese_ner import JapaneseNerDetector
+    from securitymasker.errors import ConfigError
+
+    with pytest.raises(ConfigError, match="failed verification"):
+        JapaneseNerDetector(model=ADOPTED, revision=ADOPTED_REV, required=True)
 
 
 def test_frozen_runtime_prefers_the_bundled_model(
