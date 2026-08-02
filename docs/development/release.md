@@ -60,6 +60,12 @@ version確定・commit後、clean worktreeからarchiveとchecksumを生成し�
 ./scripts/package-source
 ```
 
+Windowsの標準cmd.exeでは同じ契約のcmd版を実行します。
+
+```bat
+scripts\package-source.cmd
+```
+
 `dist/securitymasker-<version>-source.tar.gz`と同名の`.sha256`を生成します。既存artifactは
 上書きしません。tagを作る場合は、そのtag名を第1引数として指定できます。
 

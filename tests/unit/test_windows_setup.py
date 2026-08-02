@@ -28,3 +28,16 @@ def test_windows_setup_is_cmd_native_wheel_only_and_python_312() -> None:
     assert "colorama==0.4.6" in runtime_lock
     assert "pytest==8.4.2" in dev_lock
     assert "torch==" not in dev_lock
+
+
+def test_windows_source_packaging_requires_clean_tree_and_never_overwrites() -> None:
+    package = (ROOT / "scripts/package-source.cmd").read_text(encoding="utf-8")
+
+    assert "git -C \"%PROJECT_DIRECTORY%\" diff --quiet" in package
+    assert "git -C \"%PROJECT_DIRECTORY%\" diff --cached --quiet" in package
+    assert "git -C \"%PROJECT_DIRECTORY%\" archive --format=tar.gz" in package
+    assert '--prefix="securitymasker-%VERSION%/"' in package
+    assert "hashlib.sha256" in package
+    assert 'if exist "%ARCHIVE%" goto exists' in package
+    assert 'if exist "%CHECKSUM%" goto exists' in package
+    assert "--version" in package

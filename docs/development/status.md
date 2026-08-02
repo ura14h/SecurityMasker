@@ -93,7 +93,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 737件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 738件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
