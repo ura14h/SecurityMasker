@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 POWERSHELL_GATE = REPO / "devtools" / "windows_firewall_gate.ps1"
@@ -46,10 +50,29 @@ def test_cmd_wrapper_exposes_only_install_verify_and_remove() -> None:
 
     assert 'if /i "%~1"=="install" goto install' in source
     assert 'if /i "%~1"=="verify" goto verify' in source
-    assert 'if /i "%~1"=="remove" goto remove' in source
+    assert 'if /i "%~1"=="remove" goto remove_gate' in source
     assert "-Action Install" in source
     assert "-Action Verify" in source
     assert "-Action Remove" in source
+    assert "ExecutionPolicy Bypass ^\n" not in source
+
+
+@pytest.mark.skipif(os.name != "nt", reason="cmd.exe batch dispatch contract")
+def test_cmd_wrapper_dispatches_remove_from_lf_only_source(tmp_path: Path) -> None:
+    source = CMD_GATE.read_text(encoding="utf-8")
+    wrapper = tmp_path / "windows-firewall-gate.cmd"
+    wrapper.write_text(source, encoding="utf-8", newline="\n")
+
+    result = subprocess.run(  # noqa: S603
+        ["cmd.exe", "/d", "/c", str(wrapper), "remove"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    diagnostic = result.stdout + result.stderr
+    assert "batch label" not in diagnostic.lower()
+    assert "バッチ ラベル" not in diagnostic
 
 
 def test_windows_cli_runner_verifies_firewall_before_resolving_clis() -> None:
