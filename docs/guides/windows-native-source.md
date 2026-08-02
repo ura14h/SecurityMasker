@@ -5,6 +5,7 @@ ARM64、Python 3.11／3.13以降、ReFS、removable／network／subst driveは�
 
 対象はWindows 11 x64 build 26100以降、64-bit Python 3.12、local fixed NTFS上のsource archive、
 standard userと標準のcmd.exeです。Visual Studioは不要です。
+対応条件とDesktopの検証範囲の詳細は[対応環境](../reference/compatibility.md)を参照してください。
 
 ## 1. Setupする
 
@@ -19,7 +20,7 @@ set "SM=.venv\Scripts\python.exe securitymasker.py"
 `scripts\setup.cmd`はWindows専用lockからwheelだけを導入し、固定NER modelを取得してdigestを
 検証します。既存のCodex／Claude Code設定は変更しません。
 
-## 2. Modeを初期化する
+## 2. modeを初期化する
 
 Codex用は`chatgpt` modeです。
 
@@ -36,7 +37,10 @@ set "CFG=%LOCALAPPDATA%\SecurityMasker\claude\securitymasker.config"
 ```
 
 両方を使う場合は別々に初期化し、config、state、DB、key、portを共有しません。`CFG`は現在の
-cmd.exeだけに設定されます。以降は操作対象modeに対応する値を使います。
+cmd.exeだけに設定されます。`SM`と`CFG`は新しいcmd.exeへ引き継がれません。新しいwindowでは
+repository rootへ移動し、前節の`set "SM=..."`と操作対象modeの`set "CFG=..."`を実行してください。
+
+## 3. 外部へ送らずmaskを確認する
 
 外部へ送信しない確認を先に実行します。
 
@@ -47,9 +51,9 @@ cmd.exeだけに設定されます。以降は操作対象modeに対応する値
 
 `preview`に元の合成値ではなく`SM_PERSON_...`が表示されることを確認します。
 
-## 3. Gatewayを起動する
+## 4. Gatewayを起動する
 
-専用のcmd.exeを一つ開き、そのwindowでも`SM`と`CFG`を設定してから起動します。
+専用のcmd.exeを一つ開き、`SM`と`CFG`を設定してから起動します。
 
 ```bat
 %SM% gateway --config "%CFG%"
@@ -58,7 +62,9 @@ cmd.exeだけに設定されます。以降は操作対象modeに対応する値
 `gateway_started`が表示され、promptが戻らない状態が正常です。このwindowを閉じず、clientは別の
 windowまたはDesktop appから起動します。終了するときはGatewayのwindowで`Ctrl+C`を1回押します。
 
-## 4. Codex CLIを接続する
+## 5. Codexを接続する
+
+### Codex CLI
 
 `chatgpt` modeの`CFG`を使ってsnippetを表示します。
 
@@ -80,20 +86,19 @@ codex
 
 新しいCodex taskでstarter辞書の合成値だけを使い、表示上で元の値へ復元されることを確認します。
 
-## 5. Codex appを接続する
+### Codex app
 
 Windows nativeのCodex appとCodex CLIは`%USERPROFILE%\.codex`を共有します。appの
 **Settings > Configuration > Open config.toml**から、前節と同じuser-level configを開いて設定します。
 保存後に新しいlocal taskを開始します。cloud taskやremote environmentからはPCの
 `127.0.0.1`へ接続できません。
 
-Windowsでの自動gateはCodex CLIをprotocol surrogateとして使用しています。Codex app UIからの手動
-smoke testが未実施のreleaseでは、Desktop実証済みとは扱いません。
-
 Codexの設定仕様は[OpenAI Config basics](https://developers.openai.com/codex/config-basic)と
 [Configuration Reference](https://developers.openai.com/codex/config-reference)を参照してください。
 
-## 6. Claude Code CLIを接続する
+## 6. Claude Codeを接続する
+
+### Claude Code CLI
 
 `claude` modeのGatewayとは別のcmd.exeから、次を実行します。
 
@@ -110,7 +115,7 @@ claude
 set "ANTHROPIC_BASE_URL="
 ```
 
-## 7. Claude Code Desktopを接続する
+### Claude Code Desktop
 
 新しいsessionのenvironmentで**Local**を選び、environment dropdownでLocalへpointerを合わせて
 gear iconからLocal environment editorを開きます。次を登録します。
@@ -123,13 +128,10 @@ Windows版Desktopはuser／system環境変数を継承しますが、PowerShell 
 Local environment editorの値は新しいlocal sessionへ適用されます。remote／SSH sessionはlocal
 Gatewayと同じprocess境界ではないため、この手順の対象外です。
 
-Windowsでの自動gateはClaude Code CLIをprotocol surrogateとして使用しています。Desktop UIからの
-手動smoke testが未実施のreleaseでは、Desktop実証済みとは扱いません。
-
 Claude Codeの設定仕様は[Environment variables](https://code.claude.com/docs/en/env-vars)と
 [Desktop](https://code.claude.com/docs/en/desktop)を参照してください。
 
-## 8. 設定を解除する
+## 7. 設定を解除する
 
 - Codexはuser-level `config.toml`の`model_provider`を導入前の値へ戻します。
 - Claude Code CLIは設定したcmd.exeを閉じるか`set "ANTHROPIC_BASE_URL="`を実行します。

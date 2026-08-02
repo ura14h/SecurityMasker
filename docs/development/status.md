@@ -85,65 +85,24 @@ x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応
 部分的な動作だけでbest-effort対応とする方針は、引き続き
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)どおり却下します。
 
-2026-08-02に[ADR-0021](../adr/0021-add-windows-native-source-target.md)を採用し、Windows 11 x64、
-CPython 3.12 x64、local fixed NTFS、cmd.exeを最初のnative source targetとして実装を開始しました。
-current user、SYSTEM、AdministratorsだけへFull Controlを与えるprotected DACLをWindows APIで作成・
-検査し、mode別`%LOCALAPPDATA%\SecurityMasker\<mode>`、config、辞書、key、SQLite DB／WAL／SHM／
-lock、`init --force`のstaging／rollbackへ配線しました。Windowsではmaster key自身をlockしたまま
-renameできないため、置換対象外の`securitymasker.state.lock`をGatewayと`init`が共有します。
+2026-08-02に[ADR-0021](../adr/0021-add-windows-native-source-target.md)を採用し、Windows APIによる
+protected DACLの作成・検査、mode別data directory、SQLite artifact、`init --force`の安全な切替を
+実装しました。owner不一致、予期しないACE、UNC path、removable／network／subst drive、model改竄は
+fail-closedで拒否します。
 
-同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
-Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
-modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 753件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
-成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
-既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
-`init --force`とrollbackを含みます。
+Windows 11 x64 build 26200.8875、Python 3.12.10、Visual Studioなしのfreshなstandard user環境で、
+wheel-only setup、固定NER modelの取得・digest検証・offline推論、両modeの初期化とlocal gateを完走
+しました。最新treeではruff、mypy strict 73 source files、unit／evaluation 753件（5 skip）、mock
+upstream E2E 4件、Windows native process test 3件が成功しています。
 
-同じ環境でaccess-denied ACEとNULL DACL、junction、subst driveを実OS上で拒否し、別processのwriter
-競合、graceful close、forced termination後のprivate leaseと再openを検証しました。暗号化SQLiteと
-sidecar keyのbackup pairをprivate DACLで保護して別layoutへ復元し、合成session／response bindingを
-再読込できることも確認しました。これら3件のWindows native process testを`release-check.cmd`へ接続
-しています。
-
-Hyper-V VMを必須にせずoperatorのCodex Desktop接続を維持するため、ADR-0021へ専用local standard
-userのWindows Firewall境界を追加しました。administratorが試験user SIDへ、loopback以外の全IPv4／
-IPv6と全IP protocolをblockするPersistentStore ruleを作成し、試験user自身がActiveStoreのSID、
-address range、profile、actionを検査した後だけ実CLI E2Eを開始します。ruleのinstall／verify／remove、
-Codex CLI 0.146.0とClaude Code 2.1.220の既定path解決、外部canary、local mock E2Eをcmd runnerへ実装し、
-rule未設定時のfail-closedとunit testを確認しました。UAC昇格したcmdから専用standard user SIDへruleを
-作成し、そのuser自身によるActiveStore検査と外部canary拒否を確認した上で実CLI E2E 2件を実行しました。
-CodexはResponses WebSocket、Claude CodeはAnthropic Messages routeを使用し、local mockが受信した最終
-payloadに合成原文がないこと、CLI出力で合成原文が復元されaliasが残らないことを確認しました。結果は
-2件成功、42.11秒でした。詳細は
+実CLI E2Eは、専用standard userのloopback以外をWindows Firewallで遮断し、試験user自身が有効なruleを
+検査した後に実行しました。Codex CLI 0.146.0とClaude Code 2.1.220の両方で、local mockへの合成原文の
+非送信、CLI出力での復元、alias非残存を確認しています。試験後はFirewall rule、user、profileを削除
+しました。詳細な条件とnegative matrixは
 [Windows x64 source evidence](release-evidence/windows-x64-source-2026-08-02.md)に記録しています。
 
-追加で実security descriptorのownerとprocess SIDが一致しない場合の拒否を固定し、有効なSDDLから
-object ACEとconditional callback ACEを実fileのDACLへ設定して、どちらもunsupportedとして拒否する
-ことを確認しました。さらに存在しない合成SIDのallow ACEをunexpected principalとして拒否しました。
-UAC昇格した専用gateでは、ProgramData上の合成fileのownerだけをAdministratorsへ変更し、製品の
-owner検査が実fileを拒否した後にfixtureを完全削除しました。
-
-drive境界はUNC pathをvolume access前に拒否し、Windows APIがremovableまたはremoteと分類したdriveを
-local fixed driveではないとして拒否する回帰testを追加しました。実removable mediaもread-only gateで
-同じ理由により拒否しました。
-
-固定NER modelは、Windowsでmodel loadから実CPU推論までsocket接続を禁止した状態で合成PERSONを検出
-しました。実snapshotの全artifactをNTFS hard linkで複製し、`config.json`だけを1 byte変更したshadowは
-runtime load前のdigest再検証で拒否しました。元のmodel cacheは変更していません。
-
-freshなsource archiveを固定名`SecurityMaskerTester`のstandard userでだけ実行するcmd gateを追加しました。
-`.git`／`.venv`と既存製品dataがないこと、local fixed NTFS、reparse point非使用、環境分離をpreflightし、
-setup、両mode init、doctor、preview、client config、local release gateを一巡します。新規作成した固定userへ
-checksum検証済みarchiveを展開し、ruff、mypy strict 73 source files、unit／evaluation 742件（5 skip）、
-mock upstream E2E 4件、Windows native process test 3件を完走しました。続けて専用Firewall境界を設定し、
-実Codex／Claude Code隔離E2E 2件を41.34秒で再確認しました。最後にFirewall rule、固定user、profileを
-完全削除し、user、profile directory、ActiveStore ruleが残っていないことを確認しました。
-
-backup媒体、退避したfileの保護と保管、restore作業は利用者の運用範囲とし、製品CLIでは扱いません。
-cmd.exeからのsetup、mode別data directory、Gateway、Codex／Claude Code CLIとDesktopの設定・解除を
-利用者向けWindows手順へ固定しました。native gate、利用者手順、再検討条件の監査が完了したため、
-限定したWindows native source targetを対応環境と判断しました。
+backup／restore作業は利用者の運用範囲とし、製品CLIでは扱いません。setup、mode別data directory、
+Gateway、Codex／Claude Codeの設定・解除は利用者向けWindows手順へまとめています。
 
 ## Binary版
 
