@@ -104,6 +104,16 @@ previewがfail-closedになること、`model-load`後は同じtestが成功す�
 Full版にはmodel weightの再配布条件確認も必要です。one-file artifact、model weight、build directoryは
 Gitへcommitしません。
 
+Windows 11 x64では、64-bit CPython 3.12と固定Windows lockから両profileをnative buildし、同じ
+binary integrationを実行します。
+
+```bat
+scripts\windows-binary-gate.cmd
+```
+
+このrunnerの成功だけでは公開可能としません。新しいstandard userまたは同等のclean Windows環境、
+Authenticode署名、署名後artifactの再検証、再配布条件の確認を別途必要とします。
+
 macOS arm64のDocker DesktopでLinux arm64 one-fileをnative buildし、Pythonを含まないclean
 runtimeまで検証する場合は次を実行します。
 

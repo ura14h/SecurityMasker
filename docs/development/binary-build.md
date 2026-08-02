@@ -16,11 +16,11 @@ downgradeせず、起動を拒否します。
 
 ## 必要条件
 
-- 対象OS上のPython 3.11以上
-- POSIX shellと`venv`
+- macOS／Linuxでは対象OS上のPython 3.11以上とPOSIX shell、Windowsでは64-bit CPython 3.12とcmd.exe
+- `venv`を作成できる環境
 - build dependencyとmodelを取得するnetwork接続
 - Liteはbuildと利用cache、Fullはbuildとone-file作成に十分な空き容量
-- macOS／Linux arm64以外は未検証
+- macOS／Linux arm64とWindows 11 x64以外は未検証
 
 PyInstallerはcross compilerではありません。利用するOS／architecture上でnative buildします。
 
@@ -100,6 +100,33 @@ build directoryまたは同名artifactが存在する場合は上書きせず終
 securitymasker 0.1.0 (binary lite)
 securitymasker 0.1.0 (binary full)
 ```
+
+## Windows x64
+
+Windowsでは`scripts\test-setup.cmd`を先に完了し、cleanなbuild／dist directoryから次を実行します。
+
+```bat
+scripts\build-binary-lite.cmd
+scripts\test-binary.cmd --profile lite
+scripts\build-binary-full.cmd
+scripts\test-binary.cmd --profile full
+```
+
+両profileを順にbuild・testする短いrunnerもあります。
+
+```bat
+scripts\windows-binary-gate.cmd
+```
+
+buildは`requirements-windows.lock`と`requirements-windows-build.lock`のwheelだけを使用し、Visual
+Studioやsource buildへfallbackしません。別のPython 3.12 x64を使う場合だけ、その絶対pathを
+`SECURITYMASKER_PYTHON`へ設定します。成果物は`dist\securitymasker-lite.exe`と
+`dist\securitymasker-full.exe`です。
+
+Windows one-file版はtechnical spikeであり、署名、clean-machine gate、再配布確認が終わるまで
+第三者へ配布しません。検証結果は
+[Windows x64 Lite／Full evidence](release-evidence/windows-x64-lite-full-one-file-2026-08-02.md)に
+記録しています。
 
 ## Linux arm64 Docker gate
 

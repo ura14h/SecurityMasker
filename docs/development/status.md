@@ -92,7 +92,7 @@ fail-closedで拒否します。
 
 Windows 11 x64 build 26200.8875、Python 3.12.10、Visual Studioなしのfreshなstandard user環境で、
 wheel-only setup、固定NER modelの取得・digest検証・offline推論、両modeの初期化とlocal gateを完走
-しました。最新treeではruff、mypy strict 73 source files、unit／evaluation 753件（5 skip）、mock
+しました。最新treeではruff、mypy strict 73 source files、unit／evaluation 754件（5 skip）、mock
 upstream E2E 4件、Windows native process test 3件が成功しています。
 
 実CLI E2Eは、専用standard userのloopback以外をWindows Firewallで遮断し、試験user自身が有効なruleを
@@ -123,6 +123,13 @@ Full版は1,019,794,840 bytes（約972.6 MiB）でした。Pythonを含まない
 previewも確認しました。詳細は
 [Linux arm64 Lite／Full evidence](release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md)に
 記録しています。
+
+2026-08-02にWindows 11 x64 build 26200.8875、Python 3.12.13、PyInstaller 6.21.0でLite／Fullを
+native buildしました。Liteは202,654,668 bytes、Fullは973,887,958 bytesでした。Pythonを解決できない
+隔離子process環境でprofile識別、model経路、標準NER、両modeのmock Gateway、SQLite、mask／復元、
+一時展開cleanupを検証し、Lite 6件、Full 5件（Lite専用1件skip）が成功しています。詳細は
+[Windows x64 Lite／Full evidence](release-evidence/windows-x64-lite-full-one-file-2026-08-02.md)に記録
+しています。
 
 公開には次が必要です。
 

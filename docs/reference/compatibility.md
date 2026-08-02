@@ -29,7 +29,7 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 |---|---|---|---|
 | macOS arm64 | Python 3.11 / 3.12で検証済み | Lite／Full技術spike済み | source版の対応環境 |
 | Linux arm64 | Python 3.12で検証済み | Lite／Full技術spike済み（Debian 12） | source版の対応環境 |
-| Windows 11 x64 build 26100以降 | CPython 3.12 x64で検証済み | 非対応 | [ADR-0023](../adr/0023-support-windows-native-source.md)。local fixed NTFSのsource版限定 |
+| Windows 11 x64 build 26100以降 | CPython 3.12 x64で検証済み | Lite／Full技術spike済み | [ADR-0023](../adr/0023-support-windows-native-source.md)。local fixed NTFSのsource版限定 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
 Windows native source版はmode別`%LOCALAPPDATA%\SecurityMasker\<mode>`を既定data directoryとし、
@@ -56,7 +56,7 @@ technical spikeとして用意していますが、どちらも対応環境で�
 - source最小要件: macOS／LinuxはPython 3.11、Windows targetはCPython 3.12 x64
 - clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64／Linux arm64／Windows 11 x64）
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
-- one-file spike: macOS arm64のLite／Full、Linux arm64 Debian 12 containerのLite／Full、
+- one-file spike: macOS arm64、Linux arm64 Debian 12 container、Windows 11 x64のLite／Full、
   PyInstaller 6.21.0
 
 実CLIの検証baselineはmacOS／LinuxがCodex CLI 0.145.0とClaude Code 2.1.212、WindowsがCodex CLI
@@ -111,10 +111,13 @@ one-fileはOS/architecture別artifactで、model配置だけが異なる二つ�
 （約917 MiB）でした。同日のLinux arm64 spikeではLite版248,563,712 bytes（約237 MiB）、Full版
 1,019,794,840 bytes（約972.6 MiB）でした。LinuxはDebian 12 slimのPythonなしruntimeで、外部network
 なし、read-only root filesystemによる両profileのinit、config validation、標準NER previewを検証済み
-です。実測条件とchecksumは
+です。2026-08-02のWindows 11 x64 spikeではLite版202,654,668 bytes（約193.3 MiB）、Full版
+973,887,958 bytes（約928.8 MiB）をnative buildし、Pythonを解決できない子process環境で両profileの
+binary integrationを完了しました。実測条件とchecksumは
 [macOS arm64 evidence](../development/release-evidence/macos-arm64-lite-full-one-file-2026-08-01.md)と
-[Linux arm64 evidence](../development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md)に
-記録しています。
+[Linux arm64 evidence](../development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md)、
+[Windows x64 evidence](../development/release-evidence/windows-x64-lite-full-one-file-2026-08-02.md)に記録
+しています。
 
 これらは技術検証であり、物理clean machineや公開artifactの互換性を表明しません。両版とも署名／
 notarizationと同梱dependencyの再配布確認が未完で、Full版にはmodel weight再配布確認も残ります。
