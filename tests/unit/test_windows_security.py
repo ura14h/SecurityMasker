@@ -288,6 +288,43 @@ def test_substituted_drive_is_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_unc_path_is_rejected_before_network_access() -> None:
+    from securitymasker.windows_security import WindowsSecurityError, require_local_fixed_ntfs
+
+    target = Path(r"\\localhost\SecurityMaskerSyntheticMissingShare\state")
+    with pytest.raises(WindowsSecurityError, match="UNC path"):
+        require_local_fixed_ntfs(target)
+
+
+@pytest.mark.parametrize("drive_type", [2, 4], ids=["removable", "remote"])
+def test_non_fixed_windows_drive_types_are_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drive_type: int,
+) -> None:
+    from securitymasker import windows_security
+
+    class Kernel32:
+        @staticmethod
+        def QueryDosDeviceW(_drive: str, mapping: object, _length: int) -> int:
+            mapping.value = r"\Device\SecurityMaskerSyntheticVolume"  # type: ignore[attr-defined]
+            return 1
+
+        @staticmethod
+        def GetVolumePathNameW(_path: str, volume: object, _length: int) -> int:
+            volume.value = f"{tmp_path.drive}\\"  # type: ignore[attr-defined]
+            return 1
+
+        @staticmethod
+        def GetDriveTypeW(_volume: str) -> int:
+            return drive_type
+
+    monkeypatch.setattr(windows_security, "_libraries", lambda: (object(), Kernel32()))
+
+    with pytest.raises(windows_security.WindowsSecurityError, match="local fixed drive"):
+        windows_security.require_local_fixed_ntfs(tmp_path)
+
+
 def test_local_ntfs_volume_is_accepted(tmp_path: Path) -> None:
     from securitymasker.windows_security import require_local_fixed_ntfs
 

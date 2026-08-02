@@ -277,7 +277,10 @@ def require_no_reparse_points(path: Path) -> None:
 def require_local_fixed_ntfs(path: Path) -> None:
     """pathがlocal fixed NTFS volume上にあることを要求する。"""
     _, kernel32 = _libraries()
-    existing = path.absolute()
+    absolute = path.absolute()
+    if absolute.drive.startswith("\\\\"):
+        raise WindowsSecurityError("managed path must not use a UNC path")
+    existing = absolute
     while not existing.exists() and existing.parent != existing:
         existing = existing.parent
     drive = existing.drive
