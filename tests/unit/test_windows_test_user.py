@@ -25,6 +25,10 @@ def test_setup_prompts_for_password_without_command_line_value() -> None:
     source = POWERSHELL.read_text(encoding="utf-8")
 
     assert 'net.exe" user $User "*" /add' in source
+    description = "SecurityMasker isolated CLI test user"
+    assert f'$Description = "{description}"' in source
+    assert "Set-LocalUser -Name $User -Description $Description" in source
+    assert len(description) <= 48
     assert "New-LocalUser" not in source
     assert "ConvertFrom-SecureString" not in source
     assert "SecurityMaskerTester" in source

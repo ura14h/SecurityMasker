@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $User = "SecurityMaskerTester"
+$Description = "SecurityMasker isolated CLI test user"
 $RuleGroup = "SecurityMasker Windows CLI Egress Gate"
 $RuleNames = @("SecurityMaskerCliEgressGate-v4", "SecurityMaskerCliEgressGate-v6")
 
@@ -150,8 +151,7 @@ function Setup-Tester {
         throw "net.exe failed to create SecurityMaskerTester"
     }
     try {
-        Set-LocalUser -Name $User -Description `
-            "Dedicated standard user for SecurityMasker isolated CLI tests"
+        Set-LocalUser -Name $User -Description $Description
         $created = Get-LocalUser -Name $User
         Assert-StandardUser -LocalUser $created
     }
