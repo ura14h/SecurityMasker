@@ -199,6 +199,17 @@ def test_real_cli_output_is_decoded_as_utf8() -> None:
     assert source.count("result.stderr or result.stdout") == 2
 
 
+def test_claude_e2e_uses_empty_workdir_and_disables_ambient_context() -> None:
+    source = MODULE.read_text(encoding="utf-8")
+
+    assert 'workdir = tmp_path / "empty-workdir"' in source
+    assert '"--no-session-persistence"' in source
+    assert '"--disable-slash-commands"' in source
+    assert '"--tools",\n            ""' in source
+    assert '"--setting-sources",\n            ""' in source
+    assert 'cwd=str(workdir)' in source
+
+
 def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None:
     """Collection must not touch the network, opted in or not."""
     import socket as socket_module

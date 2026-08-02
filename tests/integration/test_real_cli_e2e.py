@@ -552,9 +552,28 @@ def test_real_claude_with_persistent_environment_sends_only_aliases(
     record, config, _layout = stack
     claude_home = tmp_path / "claude_home"
     claude_home.mkdir()
+    workdir = tmp_path / "empty-workdir"
+    workdir.mkdir()
     result = subprocess.run(  # noqa: S603
-        [claude, "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
-        cwd=str(REPO),
+        [
+            claude,
+            "--print",
+            "--no-session-persistence",
+            "--disable-slash-commands",
+            "--no-chrome",
+            "--tools",
+            "",
+            "--permission-mode",
+            "dontAsk",
+            "--setting-sources",
+            "",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "You are running a deterministic compatibility test. Reply once.",
+            f"担当は{PERSON}です。{HOST} に{CARRIER}。",
+        ],
+        cwd=str(workdir),
         env=_contained_env(
             **_isolated_windows_profile(tmp_path),
             **client_environment(config),
