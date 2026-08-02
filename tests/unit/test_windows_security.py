@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import subprocess
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
@@ -55,6 +57,115 @@ def test_everyone_ace_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(WindowsSecurityError, match="unexpected principal"):
         require_private_dacl(target, directory=False)
+
+
+def test_access_denied_ace_is_rejected(tmp_path: Path) -> None:
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        require_private_dacl,
+        secure_path,
+    )
+
+    target = tmp_path / "denied.txt"
+    target.write_text("synthetic-value", encoding="utf-8")
+    secure_path(target, directory=False)
+    completed = subprocess.run(
+        ["icacls.exe", str(target), "/deny", "*S-1-1-0:(R)"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0
+
+    with pytest.raises(WindowsSecurityError, match="unsupported ACE"):
+        require_private_dacl(target, directory=False)
+
+
+def test_null_dacl_is_rejected(tmp_path: Path) -> None:
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        require_private_dacl,
+        secure_path,
+    )
+
+    target = tmp_path / "null-dacl.txt"
+    target.write_text("synthetic-value", encoding="utf-8")
+    secure_path(target, directory=False)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    advapi32.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    result = int(
+        advapi32.SetNamedSecurityInfoW(
+            str(target),
+            1,
+            0x00000004 | 0x80000000,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+    assert result == 0
+    try:
+        with pytest.raises(WindowsSecurityError, match="NULL DACL"):
+            require_private_dacl(target, directory=False)
+    finally:
+        secure_path(target, directory=False)
+
+
+def test_junction_is_rejected(tmp_path: Path) -> None:
+    from securitymasker.windows_security import WindowsSecurityError, require_no_reparse_points
+
+    target = tmp_path / "target"
+    target.mkdir()
+    junction = tmp_path / "junction"
+    completed = subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(target)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        pytest.skip("junction creation is unavailable in this Windows environment")
+    try:
+        with pytest.raises(WindowsSecurityError, match="reparse point"):
+            require_no_reparse_points(junction)
+    finally:
+        os.rmdir(junction)
+
+
+def test_substituted_drive_is_rejected(tmp_path: Path) -> None:
+    from securitymasker.windows_security import WindowsSecurityError, require_local_fixed_ntfs
+
+    drive = next((f"{letter}:" for letter in "ZYXWV" if not Path(f"{letter}:\\").exists()), None)
+    if drive is None:
+        pytest.skip("no free drive letter for subst test")
+    created = subprocess.run(
+        ["subst.exe", drive, str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if created.returncode != 0:
+        pytest.skip("subst is unavailable in this Windows environment")
+    try:
+        with pytest.raises(WindowsSecurityError, match="substituted drive"):
+            require_local_fixed_ntfs(Path(f"{drive}\\"))
+    finally:
+        subprocess.run(
+            ["subst.exe", drive, "/D"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
 
 
 def test_local_ntfs_volume_is_accepted(tmp_path: Path) -> None:

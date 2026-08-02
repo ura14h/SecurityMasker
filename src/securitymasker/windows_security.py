@@ -280,6 +280,13 @@ def require_local_fixed_ntfs(path: Path) -> None:
     existing = path.absolute()
     while not existing.exists() and existing.parent != existing:
         existing = existing.parent
+    drive = existing.drive
+    if len(drive) == 2 and drive[1] == ":":
+        mapping = ctypes.create_unicode_buffer(32768)
+        if not kernel32.QueryDosDeviceW(drive, mapping, len(mapping)):
+            raise _win_error("drive mapping inspection")
+        if mapping.value.startswith("\\??\\"):
+            raise WindowsSecurityError("managed path must not use a substituted drive")
     volume = ctypes.create_unicode_buffer(32768)
     if not kernel32.GetVolumePathNameW(str(existing), volume, len(volume)):
         raise _win_error("volume path inspection")
@@ -301,14 +308,6 @@ def require_local_fixed_ntfs(path: Path) -> None:
     if filesystem.value.upper() != "NTFS":
         raise WindowsSecurityError("managed path must be on NTFS")
 
-    # subst driveはlocal fixed driveと報告され得るため、DOS device mappingも拒否条件にする。
-    drive = volume.value[:2]
-    if len(drive) == 2 and drive[1] == ":":
-        mapping = ctypes.create_unicode_buffer(32768)
-        if not kernel32.QueryDosDeviceW(drive, mapping, len(mapping)):
-            raise _win_error("drive mapping inspection")
-        if mapping.value.startswith("\\??\\"):
-            raise WindowsSecurityError("managed path must not use a substituted drive")
     require_no_reparse_points(path)
 
 
