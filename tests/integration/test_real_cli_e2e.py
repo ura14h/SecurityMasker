@@ -260,7 +260,25 @@ def _contained_env(**overrides: str) -> dict[str, str]:
     or HTTPS_PROXY from the developer's shell is exactly the kind of thing that
     would route real traffic out of a test that looks local.
     """
-    keep = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SHELL", "USER", "TERM")
+    keep = (
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TMPDIR",
+        "SHELL",
+        "USER",
+        "TERM",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
+        "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS",
+    )
     env = {k: os.environ[k] for k in keep if k in os.environ}
     env.update({
         # Nothing this test does should leave the machine; if any component
@@ -280,6 +298,28 @@ def _contained_env(**overrides: str) -> dict[str, str]:
     })
     env.update(overrides)
     return env
+
+
+def _isolated_windows_profile(root: Path) -> dict[str, str]:
+    """Windows native CLIへ空のuser-writable profile treeを渡す。"""
+    if sys.platform != "win32":
+        return {"HOME": str(root / "home")}
+    home = root / "home"
+    roaming = home / "AppData" / "Roaming"
+    local = home / "AppData" / "Local"
+    temporary = local / "Temp"
+    for directory in (home, roaming, local, temporary):
+        directory.mkdir(parents=True, exist_ok=True)
+    return {
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "APPDATA": str(roaming),
+        "LOCALAPPDATA": str(local),
+        "TEMP": str(temporary),
+        "TMP": str(temporary),
+        "HOMEDRIVE": home.drive,
+        "HOMEPATH": str(home)[len(home.drive) :],
+    }
 
 
 def _require_cli(name: str) -> str:
@@ -483,12 +523,16 @@ def test_real_codex_with_persistent_config_sends_only_aliases(stack, tmp_path) -
          f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
-            HOME=str(tmp_path / "home"),
+            **_isolated_windows_profile(tmp_path),
             CODEX_HOME=str(home),
             OPENAI_API_KEY="dummy-not-a-real-key"),
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=180,
     )
-    assert result.returncode == 0, f"codex failed: {result.stderr[-1500:]}"
+    assert result.returncode == 0, f"codex failed: {(result.stderr or '')[-1500:]}"
     assert config_path.read_bytes() == original_config
 
     assert _last_request(record).get("transport") == "websocket", (
@@ -511,13 +555,17 @@ def test_real_claude_with_persistent_environment_sends_only_aliases(
         [claude, "-p", f"担当は{PERSON}です。{HOST} に{CARRIER}。"],
         cwd=str(REPO),
         env=_contained_env(
+            **_isolated_windows_profile(tmp_path),
             **client_environment(config),
-            HOME=str(tmp_path / "home"),
             ANTHROPIC_API_KEY="dummy-not-a-real-key",
             CLAUDE_CONFIG_DIR=str(claude_home)),
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=180,
     )
-    assert result.returncode == 0, f"claude failed: {result.stderr[-1500:]}"
+    assert result.returncode == 0, f"claude failed: {(result.stderr or '')[-1500:]}"
 
     assert _last_request(record)["path"].endswith("/messages"), (
         f"expected the Anthropic path, got {_last_request(record)['path']}"

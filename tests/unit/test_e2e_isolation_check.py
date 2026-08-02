@@ -177,6 +177,28 @@ def test_windows_rejects_incomplete_firewall_verification(mod, monkeypatch) -> N
     assert reason and "both deny rules" in reason
 
 
+def test_windows_client_profile_is_empty_and_self_contained(
+    mod, monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    profile = mod._isolated_windows_profile(tmp_path)
+
+    home = tmp_path / "home"
+    assert profile["HOME"] == str(home)
+    assert profile["USERPROFILE"] == str(home)
+    assert profile["APPDATA"] == str(home / "AppData" / "Roaming")
+    assert profile["LOCALAPPDATA"] == str(home / "AppData" / "Local")
+    assert profile["TEMP"] == str(home / "AppData" / "Local" / "Temp")
+    assert Path(profile["TEMP"]).is_dir()
+
+
+def test_real_cli_output_is_decoded_as_utf8() -> None:
+    source = MODULE.read_text(encoding="utf-8")
+
+    assert source.count('encoding="utf-8"') >= 2
+    assert "(result.stderr or '')[-1500:]" in source
+
+
 def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None:
     """Collection must not touch the network, opted in or not."""
     import socket as socket_module
