@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 from pathlib import Path
 
@@ -77,7 +78,12 @@ def test_client_config_prints_only_the_configured_mode_from_shared_generator(
     output = capsys.readouterr().out
 
     assert output == client_setup_snippet(config)
-    assert expected in output
+    rendered_expected = (
+        'set "ANTHROPIC_BASE_URL=http://127.0.0.1:45673"'
+        if os.name == "nt" and mode == "claude"
+        else expected
+    )
+    assert rendered_expected in output
     assert unexpected not in output
     assert "\nmodel = " not in output
 

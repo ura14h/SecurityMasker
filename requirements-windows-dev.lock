@@ -1,0 +1,17 @@
+# Development-only layer for Windows 11 x64 / CPython 3.12.
+# Apply after requirements-windows.lock with --no-deps and --only-binary=:all:.
+Pygments==2.20.0
+hypothesis==6.161.4
+iniconfig==2.3.0
+librt==0.13.0
+mypy==1.20.2
+mypy_extensions==1.1.0
+pathspec==1.1.1
+pluggy==1.6.0
+pytest-asyncio==0.24.0
+pytest==8.4.2
+respx==0.22.0
+ruff==0.8.6
+sortedcontainers==2.4.0
+types-PyYAML==6.0.12.20260724
+

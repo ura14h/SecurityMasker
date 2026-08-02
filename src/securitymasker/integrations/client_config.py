@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from securitymasker.config import SecurityMaskerConfig
 from securitymasker.errors import ConfigError
 from securitymasker.integrations.codex import codex_config_toml
@@ -31,9 +33,17 @@ def client_setup_snippet(config: SecurityMaskerConfig) -> str:
             f"{codex_config_toml(base_url)}"
         )
     environment = client_environment(config)
+    if os.name == "nt":
+        rendered_environment = "".join(
+            f'set "{name}={value}"\n' for name, value in environment.items()
+        )
+    else:
+        rendered_environment = "".join(
+            f'export {name}="{value}"\n' for name, value in environment.items()
+        )
     return (
         "# Claude Code CLIまたはClaude Code Desktopを起動する環境へ設定してください。\n"
-        + "".join(f'export {name}="{value}"\n' for name, value in environment.items())
+        + rendered_environment
     )
 
 

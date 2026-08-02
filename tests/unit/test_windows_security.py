@@ -62,3 +62,50 @@ def test_local_ntfs_volume_is_accepted(tmp_path: Path) -> None:
 
     require_local_fixed_ntfs(tmp_path)
 
+
+def test_default_init_uses_mode_specific_local_app_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from securitymasker.cli import main
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert main(["init", "--mode", "claude", "--port", "45679"]) == 0
+    root = tmp_path / "SecurityMasker" / "claude"
+    assert (root / "securitymasker.config").is_file()
+    assert (root / "securitymasker.state/securitymasker.key").is_file()
+
+
+def test_config_load_rejects_everyone_ace(tmp_path: Path) -> None:
+    from securitymasker.bootstrap import initialize_layout
+    from securitymasker.config import load_config
+    from securitymasker.errors import ConfigError
+
+    layout = initialize_layout(tmp_path / "layout", mode="chatgpt", port=45680)
+    completed = subprocess.run(
+        ["icacls.exe", str(layout.config), "/grant", "*S-1-1-0:(R)"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0
+
+    with pytest.raises(ConfigError, match="unexpected principal"):
+        load_config(layout.config)
+
+
+def test_sqlite_artifacts_receive_private_dacl(tmp_path: Path) -> None:
+    from securitymasker.bootstrap import initialize_layout
+    from securitymasker.sessions.sqlite import SQLiteSessionStore
+    from securitymasker.windows_security import require_private_dacl
+
+    layout = initialize_layout(tmp_path / "layout", mode="chatgpt", port=45681)
+    database = layout.state_directory / "securitymasker.db"
+    key = layout.state_directory / "securitymasker.key"
+    store = SQLiteSessionStore(database, key, mode="chatgpt")
+    try:
+        require_private_dacl(database, directory=False)
+        require_private_dacl(Path(f"{database}.lock"), directory=False)
+        require_private_dacl(layout.root / "securitymasker.state.lock", directory=False)
+    finally:
+        store.close()

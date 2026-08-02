@@ -5,7 +5,9 @@
 
 この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では
 `securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker-lite`または
-`./securitymasker-full`に読み替えられます。
+`./securitymasker-full`に読み替えられます。実装・native gate中のWindows source targetでは、
+`.venv\Scripts\python.exe securitymasker.py`に読み替えます。Windowsはすべてのsecurity gateが
+完了するまで公開対応範囲外です。
 
 ## 共通仕様
 
@@ -35,8 +37,9 @@ securitymasker init [--directory DIRECTORY] [-f | --force] \
   [--mode chatgpt|claude] [--port PORT]
 ```
 
-- `--directory DIRECTORY`: 作成先directory。既定値は実行ファイルまたはroot scriptと同じ
-  directoryです。
+- `--directory DIRECTORY`: 作成先directory。macOS／Linuxの既定値は実行ファイルまたはroot scriptと
+  同じdirectoryです。Windows nativeでは`%LOCALAPPDATA%\SecurityMasker\<mode>`を使い、local fixed
+  NTFS、owner、protected DACL、ACE、reparse pointを検査します。
 - `-f`, `--force`: 指定directory直下の既存`securitymasker.config`、
   `securitymasker.dict`、`securitymasker.state/`を削除して再作成します。辞書、SQLite内の
   全session、response binding、alias対応表、master keyは復元できなくなります。このoptionでは
@@ -102,6 +105,10 @@ securitymasker client-config [--config PATH]
 ```
 
 - `--config PATH`: snippetの生成元configを明示します。
+
+Claude modeではmacOS／Linuxに`export ANTHROPIC_BASE_URL="..."`、Windowsのcmd.exeに
+`set "ANTHROPIC_BASE_URL=..."`を表示します。現在のprocessへ手動適用するsnippetであり、永続環境や
+Claudeの設定fileを変更しません。Codex modeは全platformで手動追記用TOMLを表示します。
 
 ## `securitymasker doctor`
 
