@@ -109,6 +109,28 @@ Windows profileを完全削除しました。削除後にlocal user、`C:\Users\
 ruleが存在しないことを確認しました。合成dataと公開実行ファイルだけを含むPublic bootstrap資材は、
 今後の再検証用に残しています。
 
+## 追加native negative gate
+
+fresh archive gate後の開発treeで、次のWindows境界を追加確認しました。
+
+- `7941ad098254e706794d9527b7c0b9255c07c266`: UNC pathをvolume access前に拒否し、
+  `GetDriveTypeW`のremovable／remote値をlocal fixed driveではないとして拒否
+- `68165d0e6183cc4c8e41a6585595adf9e293255f`: 存在しない合成SIDのallow ACEを設定した
+  実DACLをunexpected principalとして拒否
+- `ba945378b0d164e45e208d0d82e2220b7899d2c2`: UAC昇格したoperatorがProgramDataへ
+  owner Administratorsの合成fileを作成し、製品のowner検査が拒否した後にfixtureを削除
+
+wrong-owner gateの実測出力は次のとおりです。
+
+```text
+created synthetic wrong-owner fixture
+{"wrong_owner_rejected":true}
+removed synthetic wrong-owner fixture
+```
+
+終了後、固定fixture directoryが存在しないことを読み取り確認しました。実removable mediaを接続した
+native evidenceはこの記録に含みません。
+
 ## 残件
 
 Windows native sourceを対応済みと判断する前に、statusに記載した追加のnative negative matrix、利用・

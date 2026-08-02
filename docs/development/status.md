@@ -118,7 +118,13 @@ payloadに合成原文がないこと、CLI出力で合成原文が復元されa
 
 追加で実security descriptorのownerとprocess SIDが一致しない場合の拒否を固定し、有効なSDDLから
 object ACEとconditional callback ACEを実fileのDACLへ設定して、どちらもunsupportedとして拒否する
-ことを確認しました。
+ことを確認しました。さらに存在しない合成SIDのallow ACEをunexpected principalとして拒否しました。
+UAC昇格した専用gateでは、ProgramData上の合成fileのownerだけをAdministratorsへ変更し、製品の
+owner検査が実fileを拒否した後にfixtureを完全削除しました。
+
+drive境界はUNC pathをvolume access前に拒否し、Windows APIがremovableまたはremoteと分類したdriveを
+local fixed driveではないとして拒否する回帰testを追加しました。実removable mediaを接続したnative
+証跡はまだ取得していません。
 
 固定NER modelは、Windowsでmodel loadから実CPU推論までsocket接続を禁止した状態で合成PERSONを検出
 しました。実snapshotの全artifactをNTFS hard linkで複製し、`config.json`だけを1 byte変更したshadowは
@@ -132,10 +138,9 @@ mock upstream E2E 4件、Windows native process test 3件を完走しました�
 実Codex／Claude Code隔離E2E 2件を41.34秒で再確認しました。最後にFirewall rule、固定user、profileを
 完全削除し、user、profile directory、ActiveStore ruleが残っていないことを確認しました。
 
-これはWindows対応完了の証拠ではありません。別principalが所有する実file、未知ACE、network／
-removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと
-Desktop設定手順が残っています。これらをすべて完了して新しい対応判断を記録するまで、Windowsでは
-実際の機密情報を扱いません。
+これはWindows対応完了の証拠ではありません。実removable mediaのnative negative evidence、利用者向け
+backup／restore操作、Codex／Claude Code CLIとDesktop設定手順が残っています。これらをすべて完了して
+新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
 
 ## Binary版
 
