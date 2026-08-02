@@ -196,7 +196,7 @@ def test_real_cli_output_is_decoded_as_utf8() -> None:
     source = MODULE.read_text(encoding="utf-8")
 
     assert source.count('encoding="utf-8"') >= 2
-    assert "(result.stderr or '')[-1500:]" in source
+    assert source.count("result.stderr or result.stdout") == 2
 
 
 def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None:

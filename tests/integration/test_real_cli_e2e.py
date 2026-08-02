@@ -532,7 +532,8 @@ def test_real_codex_with_persistent_config_sends_only_aliases(stack, tmp_path) -
         encoding="utf-8",
         timeout=180,
     )
-    assert result.returncode == 0, f"codex failed: {(result.stderr or '')[-1500:]}"
+    diagnostic = result.stderr or result.stdout or ""
+    assert result.returncode == 0, f"codex failed: {diagnostic[-1500:]}"
     assert config_path.read_bytes() == original_config
 
     assert _last_request(record).get("transport") == "websocket", (
@@ -565,7 +566,8 @@ def test_real_claude_with_persistent_environment_sends_only_aliases(
         encoding="utf-8",
         timeout=180,
     )
-    assert result.returncode == 0, f"claude failed: {(result.stderr or '')[-1500:]}"
+    diagnostic = result.stderr or result.stdout or ""
+    assert result.returncode == 0, f"claude failed: {diagnostic[-1500:]}"
 
     assert _last_request(record)["path"].endswith("/messages"), (
         f"expected the Anthropic path, got {_last_request(record)['path']}"

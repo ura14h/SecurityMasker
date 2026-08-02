@@ -234,15 +234,17 @@ async def messages(request: Request):
     body = await _read(request)
     text = _reply_text(body)
     if body.get("stream"):
+        model = body.get("model", "claude-synthetic")
         delta_lines = [
             f'event: content_block_delta\ndata: {json.dumps({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": tok}})}\n\n'
             for tok in _chunk(text)  # aliasを複数deltaに分割する小さなchunk
         ]
         lines = [
-            f'event: message_start\ndata: {json.dumps({"type": "message_start", "message": {"id": "msg-mock", "role": "assistant", "content": []}})}\n\n',
+            f'event: message_start\ndata: {json.dumps({"type": "message_start", "message": {"id": "msg-mock", "type": "message", "role": "assistant", "content": [], "model": model, "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 0}}})}\n\n',
             f'event: content_block_start\ndata: {json.dumps({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})}\n\n',
             *delta_lines,
             f'event: content_block_stop\ndata: {json.dumps({"type": "content_block_stop", "index": 0})}\n\n',
+            f'event: message_delta\ndata: {json.dumps({"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None}, "usage": {"output_tokens": 1}})}\n\n',
             f'event: message_stop\ndata: {json.dumps({"type": "message_stop"})}\n\n',
         ]
         return _sse(lines)
