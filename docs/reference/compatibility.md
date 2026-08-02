@@ -29,11 +29,12 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 |---|---|---|---|
 | macOS arm64 | Python 3.11 / 3.12で検証済み | Lite／Full技術spike済み | source版の対応環境 |
 | Linux arm64 | Python 3.12で検証済み | Lite／Full技術spike済み（Debian 12） | source版の対応環境 |
-| Windows 11 x64 build 26100以降 | CPython 3.12 x64で検証済み | Lite／Full技術spike済み | [ADR-0023](../adr/0023-support-windows-native-source.md)。local fixed NTFSのsource版限定 |
+| Windows 11 x64 build 26100以降 | launcher隣接layoutは実装済み・native再検証待ち | Lite／Full技術spike済み | [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)。local fixed NTFS限定 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
-Windows native source版はmode別`%LOCALAPPDATA%\SecurityMasker\<mode>`を既定data directoryとし、
-current user、SYSTEM、AdministratorsだけへFull Controlを与えるprotected DACLを作成・検査します。
+Windows native source版もroot script隣接を既定data directoryとし、config、辞書、state directoryと
+その配下へcurrent user、SYSTEM、Administratorsだけのprotected DACLを作成・検査します。
+source root自体のDACLは変更しません。
 setup、利用、client設定は全OS共通の[導入ガイド](../getting-started.md)に
 従います。Windows 10、ARM64、Python 3.11／3.13以降、ReFS、FAT、removable／network／subst drive、
 UNC pathは未対応であり、部分的に動いても対応範囲へ含めません。
@@ -55,6 +56,7 @@ technical spikeとして用意していますが、どちらも対応環境で�
 - SQLite: process restart後のalias復元、wrong key/mode、tamper、二重writer
 - source最小要件: macOS／LinuxはPython 3.11、Windows targetはCPython 3.12 x64
 - clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64／Linux arm64／Windows 11 x64）
+- Windows sourceの上記実測は従来のmode別`%LOCALAPPDATA%` layout。launcher隣接layoutはnative再検証待ち
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
 - one-file spike: macOS arm64、Linux arm64 Debian 12 container、Windows 11 x64のLite／Full、
   PyInstaller 6.21.0

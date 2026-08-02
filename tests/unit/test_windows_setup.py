@@ -35,10 +35,21 @@ def test_common_install_guide_activates_windows_venv_without_command_alias() -> 
     guide = (ROOT / "docs/getting-started.md").read_text(encoding="utf-8")
 
     assert ".venv\\Scripts\\activate.bat" in guide
-    assert "SECURITYMASKER_CONFIG" in guide
+    assert "SECURITYMASKER_CONFIG" not in guide
     assert 'set "SM=' not in guide
     assert "%SM%" not in guide
     assert not (ROOT / "docs/guides/windows-native-source.md").exists()
+
+
+def test_windows_source_protects_managed_artifacts_without_rewriting_source_root() -> None:
+    """WindowsもPOSIXと同じartifact単位の機密境界を使う。"""
+    bootstrap = (ROOT / "src/securitymasker/bootstrap.py").read_text(encoding="utf-8")
+    config = (ROOT / "src/securitymasker/config.py").read_text(encoding="utf-8")
+
+    assert "_windows_secure(root" not in bootstrap
+    assert "_windows_secure(state_directory, directory=True)" in bootstrap
+    assert "_windows_secure(path, directory=False)" in bootstrap
+    assert "_require_private_directory(config_path.parent" not in config
 
 
 def test_windows_source_packaging_requires_clean_tree_and_never_overwrites() -> None:

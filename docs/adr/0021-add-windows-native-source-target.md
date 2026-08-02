@@ -1,5 +1,8 @@
 # ADR-0021 — Windows native source版は専用NTFS directoryと保護DACLを必須にする
 
+> Windows source版の既定data配置とsource rootの扱いは、後続の
+> [ADR-0024](0024-unify-source-adjacent-layout.md)で置き換えた。
+
 - 状態：採用（主要実装済み・native gate検証中）
 - 日付：2026-08-02
 - 関連：[ADR-0013](0013-reject-best-effort-windows-support.md)（best-effort対応の却下）、

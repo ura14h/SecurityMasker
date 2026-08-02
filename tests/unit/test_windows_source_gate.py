@@ -20,7 +20,8 @@ def test_preflight_requires_fixed_non_admin_user_and_clean_archive() -> None:
     assert "fixed SecurityMaskerTester user" in source
     assert "must run as a standard user" in source
     assert '@(".git", ".venv")' in source
-    assert 'Join-Path $env:LOCALAPPDATA "SecurityMasker"' in source
+    assert '"securitymasker.config"' in source
+    assert '"securitymasker.state"' in source
     assert '"PYTHONPATH", "VIRTUAL_ENV", "SECURITYMASKER_CONFIG"' in source
 
 
@@ -39,13 +40,17 @@ def test_runner_checks_fresh_archive_before_setup_and_runs_both_modes() -> None:
 
     preflight = source.index('powershell.exe -NoLogo -NoProfile -NonInteractive')
     setup = source.index('call "%SCRIPT_DIRECTORY%test-setup.cmd"')
-    assert preflight < setup
+    release = source.index('call "%SCRIPT_DIRECTORY%release-check.cmd"')
+    init = source.index("init --mode chatgpt --port 45677")
+    assert preflight < setup < release < init
     assert "init --mode chatgpt --port 45677" in source
-    assert "init --mode claude --port 45678" in source
+    assert 'init --directory "%PROJECT_DIRECTORY%\\securitymasker-claude"' in source
+    assert "--mode claude --port 45678" in source
+    assert 'CHATGPT_CONFIG=%PROJECT_DIRECTORY%\\securitymasker.config' in source
+    assert 'CLAUDE_CONFIG=%PROJECT_DIRECTORY%\\securitymasker-claude' in source
     assert source.count(" doctor --config ") == 2
     assert source.count(" preview ") == 2
     assert source.count(" client-config ") == 2
-    assert 'call "%SCRIPT_DIRECTORY%release-check.cmd"' in source
     assert "git clone" not in source
 
 

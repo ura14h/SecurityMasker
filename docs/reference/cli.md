@@ -36,9 +36,9 @@ securitymasker init [--directory DIRECTORY] [-f | --force] \
   [--mode chatgpt|claude] [--port PORT]
 ```
 
-- `--directory DIRECTORY`: 作成先directory。macOS／Linuxの既定値は実行ファイルまたはroot scriptと
-  同じdirectoryです。Windows nativeでは`%LOCALAPPDATA%\SecurityMasker\<mode>`を使い、local fixed
-  NTFS、owner、protected DACL、ACE、reparse pointを検査します。
+- `--directory DIRECTORY`: 作成先directory。source版の既定値は全OSでroot scriptと同じdirectoryです。
+  Windows nativeではlocal fixed NTFSを要求し、管理対象artifactのowner、protected DACL、ACE、
+  reparse pointを検査します。
 - `-f`, `--force`: 指定directory直下の既存`securitymasker.config`、
   `securitymasker.dict`、`securitymasker.state/`を削除して再作成します。辞書、SQLite内の
   全session、response binding、alias対応表、master keyは復元できなくなります。このoptionでは

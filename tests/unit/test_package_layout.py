@@ -153,6 +153,40 @@ def test_discovery_priority_is_cli_then_environment_then_adjacent(
     assert resolve_config_path() == adjacent.resolve()
 
 
+def test_source_default_init_and_managed_root_are_launcher_adjacent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher = tmp_path / "source" / "securitymasker.py"
+    launcher.parent.mkdir()
+    launcher.touch()
+    monkeypatch.setattr(sys, "argv", [str(launcher)])
+
+    expected = launcher.parent.resolve()
+    assert bootstrap.default_init_directory("chatgpt") == expected
+    assert bootstrap.default_init_directory("claude") == expected
+
+
+def test_source_default_init_preserves_adjacent_distribution_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    launcher = root / "securitymasker.py"
+    launcher.write_text("# synthetic launcher\n", encoding="utf-8")
+    notice = root / "README.md"
+    notice.write_text("synthetic distribution file\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [str(launcher)])
+
+    assert main(["init", "--mode", "chatgpt", "--port", "45675"]) == 0
+
+    assert launcher.read_text(encoding="utf-8") == "# synthetic launcher\n"
+    assert notice.read_text(encoding="utf-8") == "synthetic distribution file\n"
+    assert (root / "securitymasker.config").is_file()
+    assert (root / "securitymasker.dict").is_file()
+    assert (root / "securitymasker.state/securitymasker.key").is_file()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission contract")
 @pytest.mark.parametrize("target", ["config", "dictionary", "key"])
 def test_refuses_files_readable_by_other_users(tmp_path: Path, target: str) -> None:

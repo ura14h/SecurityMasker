@@ -44,9 +44,16 @@ function Assert-CleanArchive([string]$Path) {
             throw "source gate requires a fresh archive without $name"
         }
     }
-    $productData = Join-Path $env:LOCALAPPDATA "SecurityMasker"
-    if (Test-Path -LiteralPath $productData) {
-        throw "source gate requires a fresh user without existing SecurityMasker data"
+    foreach ($name in @(
+        "securitymasker.config",
+        "securitymasker.dict",
+        "securitymasker.state",
+        "securitymasker.state.lock",
+        "securitymasker-claude"
+    )) {
+        if (Test-Path -LiteralPath (Join-Path $Path $name)) {
+            throw "source gate requires an archive without existing product data: $name"
+        }
     }
     foreach ($name in @("PYTHONPATH", "VIRTUAL_ENV", "SECURITYMASKER_CONFIG")) {
         if (Test-Path -LiteralPath "Env:$name") {

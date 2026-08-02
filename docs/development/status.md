@@ -19,11 +19,11 @@
 | console log level・設定閾値 | done | schema v1の`logging.level`、影響別4 level、起動・終了・異常系testあり |
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
-| source release candidate | done | macOS arm64、Linux arm64、Windows 11 x64のsource gateに合格 |
+| source release candidate | partial | macOS／Linuxは完了。Windowsのlauncher隣接layoutはnative再検証待ち |
 | application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
-| Windows native source | done | Windows 11 x64 build 26100以降、CPython 3.12 x64、local fixed NTFS限定 |
+| Windows native source | partial | 実装済み。launcher隣接layoutのWindows native DACL／process gate待ち |
 
 ## Source版
 
@@ -81,28 +81,35 @@ source版だけが公開対象であることをrelease noteへ明記できれ�
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
 Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
-x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。範囲外を
-部分的な動作だけでbest-effort対応とする方針は、引き続き
+x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。その後、
+[ADR-0024](../adr/0024-unify-source-adjacent-layout.md)でsource版の既定data配置を全OS共通のlauncher隣接へ
+変更しました。現行layoutのWindows native再検証が終わるまで、Windows sourceの状態を`partial`とします。
+範囲外を部分的な動作だけでbest-effort対応とする方針は、引き続き
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)どおり却下します。
 
 2026-08-02に[ADR-0021](../adr/0021-add-windows-native-source-target.md)を採用し、Windows APIによる
-protected DACLの作成・検査、mode別data directory、SQLite artifact、`init --force`の安全な切替を
+protected DACLの作成・検査、当時のmode別data directory、SQLite artifact、`init --force`の安全な切替を
 実装しました。owner不一致、予期しないACE、UNC path、removable／network／subst drive、model改竄は
 fail-closedで拒否します。
 
 Windows 11 x64 build 26200.8875、Python 3.12.10、Visual Studioなしのfreshなstandard user環境で、
 wheel-only setup、固定NER modelの取得・digest検証・offline推論、両modeの初期化とlocal gateを完走
-しました。最新treeではruff、mypy strict 73 source files、unit／evaluation 754件（5 skip）、mock
+しました。そのsnapshotではruff、mypy strict 73 source files、unit／evaluation 754件（5 skip）、mock
 upstream E2E 4件、Windows native process test 3件が成功しています。
 
 実CLI E2Eは、専用standard userのloopback以外をWindows Firewallで遮断し、試験user自身が有効なruleを
 検査した後に実行しました。Codex CLI 0.146.0とClaude Code 2.1.220の両方で、local mockへの合成原文の
 非送信、CLI出力での復元、alias非残存を確認しています。試験後はFirewall rule、user、profileを削除
 しました。詳細な条件とnegative matrixは
-[Windows x64 source evidence](release-evidence/windows-x64-source-2026-08-02.md)に記録しています。
+[Windows x64 source evidence](release-evidence/windows-x64-source-2026-08-02.md)に記録しています。この
+evidenceは従来のmode別`%LOCALAPPDATA%` layoutに対するもので、現行のlauncher隣接layoutには流用しません。
 
-backup／restore作業は利用者の運用範囲とし、製品CLIでは扱いません。setup、mode別data directory、
-Gateway、Codex／Claude Codeの設定・解除は利用者向けWindows手順へまとめています。
+現行のlauncher隣接layoutはmacOS arm64でruff、mypy strict 73 source files、unit／evaluation 740件
+（24 skip）、mock upstream E2E 4件が成功しています。skipにはWindows native DACL／process testが
+含まれます。Windows APIによるartifact単位DACL、source root非変更、native Gatewayは未検証です。
+
+backup／restore作業は利用者の運用範囲とし、製品CLIでは扱いません。setup、隣接data layout、Gateway、
+Codex／Claude Codeの設定・解除は全OS共通の導入手順へまとめています。
 
 ## Binary版
 

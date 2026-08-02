@@ -517,8 +517,6 @@ def _resolve_from_config(config_path: Path, configured_path: str | Path) -> Path
 
 
 def _load_current(config_path: Path, raw: dict[str, Any]) -> SecurityMaskerConfig:
-    if os.name == "nt":
-        _require_private_directory(config_path.parent, label="config directory")
     _require_private_file(config_path, label="config")
     try:
         file_config = SecurityMaskerFileConfig.model_validate(raw)

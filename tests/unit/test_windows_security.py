@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import subprocess
+import sys
 from ctypes import wintypes
 from pathlib import Path
 
@@ -96,6 +97,39 @@ def test_secure_file_and_directory_are_accepted(tmp_path: Path) -> None:
 
     require_private_dacl(root, directory=True)
     require_private_dacl(secret, directory=False)
+
+
+def test_source_init_keeps_root_dacl_and_protects_only_managed_artifacts(
+    tmp_path: Path,
+) -> None:
+    from securitymasker.bootstrap import initialize_layout
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        current_user_sid,
+        require_private_dacl,
+    )
+
+    root = tmp_path / "source"
+    root.mkdir()
+    source = root / "securitymasker.py"
+    source.write_text("# synthetic source\n", encoding="utf-8")
+    root_dacl = (
+        f"D:P(A;;GA;;;{current_user_sid()})(A;;GA;;;SY)(A;;GA;;;BA)"
+        "(A;;GR;;;WD)"
+    )
+    _install_sddl_dacl(root, root_dacl)
+
+    layout = initialize_layout(root, mode="chatgpt", port=45676)
+
+    assert source.read_text(encoding="utf-8") == "# synthetic source\n"
+    with pytest.raises(WindowsSecurityError, match="unexpected principal"):
+        require_private_dacl(root, directory=True)
+    require_private_dacl(layout.config, directory=False)
+    require_private_dacl(layout.dictionary, directory=False)
+    require_private_dacl(layout.state_directory, directory=True)
+    require_private_dacl(
+        layout.state_directory / "securitymasker.key", directory=False
+    )
 
 
 def test_wrong_owner_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -354,15 +388,18 @@ def test_local_ntfs_volume_is_accepted(tmp_path: Path) -> None:
     require_local_fixed_ntfs(tmp_path)
 
 
-def test_default_init_uses_mode_specific_local_app_data(
+def test_default_source_init_uses_launcher_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from securitymasker.cli import main
 
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    root = tmp_path / "SecurityMaskerSource"
+    root.mkdir()
+    launcher = root / "securitymasker.py"
+    launcher.write_text("# synthetic launcher\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [str(launcher)])
     assert main(["init", "--mode", "claude", "--port", "45679"]) == 0
-    root = tmp_path / "SecurityMasker" / "claude"
     assert (root / "securitymasker.config").is_file()
     assert (root / "securitymasker.state/securitymasker.key").is_file()
 

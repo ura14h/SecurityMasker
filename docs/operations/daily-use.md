@@ -12,11 +12,10 @@ macOS／Linux:
 . .venv/bin/activate
 ```
 
-Windowsの`cmd.exe`では、操作対象modeのconfigも設定します。次は`chatgpt` modeの例です。
+Windowsの`cmd.exe`:
 
 ```bat
 .venv\Scripts\activate.bat
-set "SECURITYMASKER_CONFIG=%LOCALAPPDATA%\SecurityMasker\chatgpt\securitymasker.config"
 ```
 
 Gatewayを起動します。
@@ -26,7 +25,7 @@ python securitymasker.py gateway
 ```
 
 別名configを使う場合は`--config PATH`で明示できます。別terminalからreadinessを確認する場合も、
-仮想環境を有効にし、Windowsでは同じ`SECURITYMASKER_CONFIG`を設定します。
+仮想環境を有効にします。
 
 ```console
 python securitymasker.py doctor --require-ready

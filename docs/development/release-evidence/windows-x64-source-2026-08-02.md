@@ -1,5 +1,9 @@
 # Windows x64 source gate検証記録
 
+> このevidenceはmode別`%LOCALAPPDATA%`を使った当時のlayoutに対する記録である。
+> [ADR-0024](../../adr/0024-unify-source-adjacent-layout.md)で採用したlauncher隣接layoutのWindows native
+> 検証を示すものではない。
+
 実行日: 2026-08-02
 
 この文書はWindows native source targetの検証証跡です。対応範囲は別の最新ADRと

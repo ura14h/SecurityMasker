@@ -1,5 +1,9 @@
 # ADR-0023 — Windows 11 x64のnative source版を対応範囲へ加える
 
+> Windows source版の既定data配置は、後続の
+> [ADR-0024](0024-unify-source-adjacent-layout.md)で置き換えた。現行layoutのWindows native再検証は
+> 未完了である。
+
 - 状態：採用
 - 日付：2026-08-02
 - 関連：[ADR-0013](0013-reject-best-effort-windows-support.md)、

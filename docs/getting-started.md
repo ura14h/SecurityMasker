@@ -6,8 +6,8 @@ CodexまたはClaude CodeをSecurityMaskerへ接続します。実際の機密�
 
 ## 始める前に
 
-- 対応環境はmacOS arm64のPython 3.11／3.12、Linux arm64のPython 3.12、Windows 11 x64 build
-  26100以降のPython 3.12 x64です。
+- 対応環境はmacOS arm64のPython 3.11／3.12とLinux arm64のPython 3.12です。Windows 11 x64 build
+  26100以降のPython 3.12 x64向け実装は、launcher隣接layoutのnative再検証待ちです。
 - Windowsではlocal fixed NTFS上のsource archive、standard user、標準の`cmd.exe`を使います。
   Windows 10、ARM64、ReFS、removable／network／subst driveは対象外です。
 - setup時にPython packageと固定済み日本語NER modelを取得します。数GBの空き容量を確保してください。
@@ -57,25 +57,9 @@ Claude Codeには`claude` modeを使います。
 python securitymasker.py init --mode claude --port 4001
 ```
 
-macOS／Linuxではrepository rootにconfig、辞書、state directoryを作ります。Windowsではmode別の
-`%LOCALAPPDATA%\SecurityMasker\<mode>`を使い、current user、SYSTEM、Administratorsだけがアクセス
-できるprotected DACLを作成・検査します。
-
-Windowsでは、初期化したmodeに対応するconfigを現在の`cmd.exe`へ設定します。
-
-```bat
-rem Codexを使う場合
-set "SECURITYMASKER_CONFIG=%LOCALAPPDATA%\SecurityMasker\chatgpt\securitymasker.config"
-
-rem Claude Codeを使う場合
-set "SECURITYMASKER_CONFIG=%LOCALAPPDATA%\SecurityMasker\claude\securitymasker.config"
-```
-
-この設定は現在の`cmd.exe`と、そこから起動したprocessだけへ渡ります。新しい`cmd.exe`では仮想環境を
-有効にした後、操作対象modeの`SECURITYMASKER_CONFIG`を設定してください。両modeを使う場合は別々に
-初期化し、config、state、DB、key、portを共有しません。
-
-初期化すると次のlayoutを作ります。Windowsでは各modeのdata directory以下に同じ構成を作ります。
+全OSでrepository rootに次のlayoutを作ります。Windowsではconfig、辞書、state directoryとその配下へ
+current user、SYSTEM、Administratorsだけがアクセスできるprotected DACLを作成・検査します。
+source root自体のDACLは変更しません。
 
 ```text
 securitymasker.config
@@ -85,22 +69,13 @@ securitymasker.state/
 ```
 
 `securitymasker.db`はGatewayの初回起動時に作られます。config、辞書、DB、keyは機密fileです。
+両modeを使う場合は別々のconfig、state、DB、key、portを明示し、共有しません。
 
 既存の設定と状態を意図的にすべて捨てて初期状態へ戻す場合だけ、Gatewayを停止し、対象directoryを
 明示して`init --force`を実行できます。次は`chatgpt` modeの例です。
 
-macOS／Linux:
-
 ```console
 python securitymasker.py init --force --directory . --mode chatgpt --port 4000
-```
-
-Windows:
-
-```bat
-python securitymasker.py init --force ^
-  --directory "%LOCALAPPDATA%\SecurityMasker\chatgpt" ^
-  --mode chatgpt --port 4000
 ```
 
 この操作では辞書、全session、alias対応表、master keyを復元できなくなります。必要なら先に
@@ -142,8 +117,7 @@ Gatewayはloopbackだけで待ち受けます。public bind、共有server、複
 
 ## 5. Codexを接続する
 
-別terminalで仮想環境を有効にします。Windowsでは`chatgpt` modeの`SECURITYMASKER_CONFIG`も設定し、
-設定snippetを表示します。
+別terminalで仮想環境を有効にし、設定snippetを表示します。
 
 ```console
 python securitymasker.py client-config
@@ -176,8 +150,7 @@ Codexの設定仕様は[OpenAI Config basics](https://developers.openai.com/code
 
 ## 6. Claude Codeを接続する
 
-Claude Codeを起動する別terminalで仮想環境を有効にします。Windowsでは`claude` modeの
-`SECURITYMASKER_CONFIG`も設定し、`ANTHROPIC_BASE_URL`を設定します。
+Claude Codeを起動する別terminalで仮想環境を有効にし、`ANTHROPIC_BASE_URL`を設定します。
 
 macOS／Linux:
 
@@ -204,8 +177,7 @@ Claude Codeの設定仕様は[Environment variables](https://code.claude.com/doc
 
 ## 7. 接続状態を確認する
 
-SecurityMaskerのcommandを実行する別terminalでは、仮想環境を有効にします。Windowsでは操作対象modeの
-`SECURITYMASKER_CONFIG`も設定します。
+SecurityMaskerのcommandを実行する別terminalでは、仮想環境を有効にします。
 
 ```console
 python securitymasker.py doctor

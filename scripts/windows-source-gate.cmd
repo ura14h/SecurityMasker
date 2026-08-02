@@ -17,13 +17,16 @@ if errorlevel 1 exit /b %errorlevel%
 call "%SCRIPT_DIRECTORY%test-setup.cmd"
 if errorlevel 1 exit /b %errorlevel%
 
-"%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" init --mode chatgpt --port 45677
-if errorlevel 1 exit /b %errorlevel%
-"%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" init --mode claude --port 45678
+call "%SCRIPT_DIRECTORY%release-check.cmd"
 if errorlevel 1 exit /b %errorlevel%
 
-set "CHATGPT_CONFIG=%LOCALAPPDATA%\SecurityMasker\chatgpt\securitymasker.config"
-set "CLAUDE_CONFIG=%LOCALAPPDATA%\SecurityMasker\claude\securitymasker.config"
+"%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" init --mode chatgpt --port 45677
+if errorlevel 1 exit /b %errorlevel%
+"%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" init --directory "%PROJECT_DIRECTORY%\securitymasker-claude" --mode claude --port 45678
+if errorlevel 1 exit /b %errorlevel%
+
+set "CHATGPT_CONFIG=%PROJECT_DIRECTORY%\securitymasker.config"
+set "CLAUDE_CONFIG=%PROJECT_DIRECTORY%\securitymasker-claude\securitymasker.config"
 "%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" doctor --config "%CHATGPT_CONFIG%"
 if errorlevel 1 exit /b %errorlevel%
 "%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" doctor --config "%CLAUDE_CONFIG%"
@@ -35,9 +38,6 @@ if errorlevel 1 exit /b %errorlevel%
 "%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" client-config --config "%CHATGPT_CONFIG%"
 if errorlevel 1 exit /b %errorlevel%
 "%PYTHON%" "%PROJECT_DIRECTORY%\securitymasker.py" client-config --config "%CLAUDE_CONFIG%"
-if errorlevel 1 exit /b %errorlevel%
-
-call "%SCRIPT_DIRECTORY%release-check.cmd"
 if errorlevel 1 exit /b %errorlevel%
 
 echo Windows standard-user source archive gate passed.

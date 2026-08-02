@@ -130,6 +130,8 @@ Responses WebSocketの境界は
 [ADR-0019](../adr/0019-add-explicit-destructive-init.md)、
 Lite／Full binaryの分離は
 [ADR-0020](../adr/0020-split-lite-and-full-binary-profiles.md)、
+source版の全OS共通隣接layoutは
+[ADR-0024](../adr/0024-unify-source-adjacent-layout.md)、
 専用proxy化は [ADR-0006](../adr/0006-drop-litellm-purpose-built-proxy.md)、
 alias暗号は [ADR-0005](../adr/0005-alias-hmac-aes-gcm.md)、
 model供給網は [ADR-0010](../adr/0010-model-supply-chain.md)、

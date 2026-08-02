@@ -14,6 +14,7 @@ from importlib import resources
 from pathlib import Path
 from typing import BinaryIO
 
+from securitymasker.distribution import distribution_info
 from securitymasker.errors import ConfigError
 
 
@@ -36,21 +37,13 @@ _MANAGED_STATE_FILES = frozenset(
         "securitymasker.db-journal",
     }
 )
-_MANAGED_ROOT_ENTRIES = frozenset(
-    {
-        "securitymasker.config",
-        "securitymasker.dict",
-        "securitymasker.state",
-        "securitymasker.state.lock",
-    }
-)
 
 
 def default_init_directory(mode: str) -> Path:
-    """platform別の利用者data directoryを返す。"""
-    if os.name != "nt":
-        from securitymasker.config import adjacent_config_directory
+    """source版は全OSでlauncher隣接、Windows binaryは利用者data directoryを返す。"""
+    from securitymasker.config import adjacent_config_directory
 
+    if distribution_info().distribution == "source" or os.name != "nt":
         return adjacent_config_directory()
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
@@ -271,19 +264,10 @@ def initialize_layout(
         from securitymasker.windows_security import (
             WindowsSecurityError,
             require_local_fixed_ntfs,
-            require_private_dacl,
         )
 
         try:
             require_local_fixed_ntfs(requested_root)
-            if root.exists():
-                entries = {entry.name for entry in root.iterdir()}
-                if not entries <= _MANAGED_ROOT_ENTRIES:
-                    raise ConfigError(
-                        "Windows init directory must not contain unmanaged entries"
-                    )
-                if entries and force:
-                    require_private_dacl(root, directory=True)
         except WindowsSecurityError as exc:
             raise ConfigError(f"Windows init directory is not supported: {exc}") from None
     config_path = root / "securitymasker.config"
@@ -319,7 +303,6 @@ def initialize_layout(
         master_key = secrets.token_bytes(32)
         try:
             root.mkdir(mode=0o700, parents=True, exist_ok=True)
-            _windows_secure(root, directory=True)
             state_directory.mkdir(mode=0o700)
             os.chmod(state_directory, 0o700)
             _windows_secure(state_directory, directory=True)
@@ -341,7 +324,6 @@ def initialize_layout(
 
     try:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        _windows_secure(root, directory=True)
         with (
             tempfile.TemporaryDirectory(
                 prefix=".securitymasker-init-", dir=root.parent

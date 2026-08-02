@@ -104,7 +104,8 @@ class _TOKEN_USER_STRUCT(ctypes.Structure):
 def _libraries() -> tuple[Any, Any]:
     if os.name != "nt":
         raise WindowsSecurityError("Windows security APIs are unavailable")
-    loader = ctypes.WinDLL
+    # typeshedはhost OSに応じてWindows専用属性を隠すため、Mac上のstrict mypyでも検査できる形で取る。
+    loader = vars(ctypes)["WinDLL"]
     advapi32 = loader("advapi32", use_last_error=True)
     kernel32 = loader("kernel32", use_last_error=True)
 
@@ -203,7 +204,7 @@ def _libraries() -> tuple[Any, Any]:
 
 
 def _win_error(operation: str, code: int | None = None) -> WindowsSecurityError:
-    number = ctypes.get_last_error() if code is None else code
+    number = int(vars(ctypes)["get_last_error"]()) if code is None else code
     return WindowsSecurityError(f"{operation} failed with Windows error {number}")
 
 
@@ -240,7 +241,10 @@ def current_user_sid() -> str:
     try:
         required = wintypes.DWORD()
         advapi32.GetTokenInformation(token, _TOKEN_USER, None, 0, ctypes.byref(required))
-        if ctypes.get_last_error() != _ERROR_INSUFFICIENT_BUFFER or required.value == 0:
+        if (
+            int(vars(ctypes)["get_last_error"]()) != _ERROR_INSUFFICIENT_BUFFER
+            or required.value == 0
+        ):
             raise _win_error("current user SID sizing")
         buffer = ctypes.create_string_buffer(required.value)
         if not advapi32.GetTokenInformation(
