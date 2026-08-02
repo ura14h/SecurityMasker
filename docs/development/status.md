@@ -83,6 +83,27 @@ source版だけが公開対象であることをrelease noteへ明記できれ�
 Windowsはsource版を含めて公開対応範囲外です。部分的に動くことを根拠としたbest-effort対応は
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)で却下しました。
 
+2026-08-02に[ADR-0021](../adr/0021-add-windows-native-source-target.md)を採用し、Windows 11 x64、
+CPython 3.12 x64、local fixed NTFS、cmd.exeを最初のnative source targetとして実装を開始しました。
+current user、SYSTEM、AdministratorsだけへFull Controlを与えるprotected DACLをWindows APIで作成・
+検査し、mode別`%LOCALAPPDATA%\SecurityMasker\<mode>`、config、辞書、key、SQLite DB／WAL／SHM／
+lock、`init --force`のstaging／rollbackへ配線しました。Windowsではmaster key自身をlockしたまま
+renameできないため、置換対象外の`securitymasker.state.lock`をGatewayと`init`が共有します。
+
+同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
+Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
+modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。ruff、mypy strict
+73 source files、unit／evaluation 709件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
+既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
+`init --force`とrollbackを含みます。
+
+これはWindows対応完了の証拠ではありません。wrong owner、NULL／未知／object ACE、network／removable／
+subst drive、reparse pointのnative negative matrix、別processでのgraceful／forced termination、
+backup／restore、Codex／Claude Code CLIとDesktop設定手順、外向きrouteのないWindows VMでの実CLI
+漏洩ゼロE2E、standard userのclean-machine source archive gateが残っています。これらをすべて完了して
+新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。
+
 ## Binary版
 
 2026-08-01にmacOS arm64で、one-fileをLite版（モデル非同梱）とFull版（固定モデル同梱）へ分離
