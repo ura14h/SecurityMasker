@@ -93,7 +93,7 @@ renameできないため、置換対象外の`securitymasker.state.lock`をGatew
 同日のWindows 11 x64 build 26200.8875、Python 3.12.10で`scripts\test-setup.cmd`を実行し、
 Windows専用lockからVisual Studioなし・wheel-onlyでTorch 2.13.0を含む環境を構築しました。固定NER
 modelの6 artifactをdownloadし、size／SHA-256検証とlocal loadに成功しました。最新treeではruff、mypy strict
-73 source files、unit／evaluation 732件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
+73 source files、unit／evaluation 735件（5 skip）、mock upstreamを使う実process Gateway E2E 4件が
 成功しています。Windows native重点testはowner／protected DACL、Everyone／継承ACL拒否、mode別
 既定directory、config load、SQLite artifact、restart／暗号化／wrong key／mode／tamper／二重writer、
 `init --force`とrollbackを含みます。
@@ -116,7 +116,11 @@ payloadに合成原文がないこと、CLI出力で合成原文が復元されa
 2件成功、42.11秒でした。詳細は
 [Windows x64 source evidence](release-evidence/windows-x64-source-2026-08-02.md)に記録しています。
 
-これはWindows対応完了の証拠ではありません。wrong owner、未知／object／callback ACE、network／
+追加で実security descriptorのownerとprocess SIDが一致しない場合の拒否を固定し、有効なSDDLから
+object ACEとconditional callback ACEを実fileのDACLへ設定して、どちらもunsupportedとして拒否する
+ことを確認しました。
+
+これはWindows対応完了の証拠ではありません。別principalが所有する実file、未知ACE、network／
 removable driveのnative negative matrix、利用者向けbackup／restore操作、Codex／Claude Code CLIと
 Desktop設定手順、standard userのclean-machine source archive gateが残っています。これらをすべて完了して
 新しい対応判断を記録するまで、Windowsでは実際の機密情報を扱いません。

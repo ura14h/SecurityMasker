@@ -12,6 +12,77 @@ import pytest
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows native DACL contract")
 
+_SE_FILE_OBJECT = 1
+_DACL_SECURITY_INFORMATION = 0x00000004
+_PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+
+
+def _install_sddl_dacl(path: Path, dacl: str) -> None:
+    """有効なSDDLから試験対象DACLをWindows APIで設定する。"""
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    descriptor = ctypes.c_void_p()
+    descriptor_size = wintypes.DWORD()
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    advapi32.GetSecurityDescriptorDacl.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.BOOL),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL),
+    ]
+    advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+    advapi32.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+
+    converted = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        dacl,
+        1,
+        ctypes.byref(descriptor),
+        ctypes.byref(descriptor_size),
+    )
+    assert converted, f"SDDL conversion failed: {ctypes.get_last_error()}"
+    try:
+        present = wintypes.BOOL()
+        defaulted = wintypes.BOOL()
+        acl = ctypes.c_void_p()
+        assert advapi32.GetSecurityDescriptorDacl(
+            descriptor,
+            ctypes.byref(present),
+            ctypes.byref(acl),
+            ctypes.byref(defaulted),
+        )
+        assert present.value and acl.value
+        result = int(
+            advapi32.SetNamedSecurityInfoW(
+                str(path),
+                _SE_FILE_OBJECT,
+                _DACL_SECURITY_INFORMATION | _PROTECTED_DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                acl,
+                None,
+            )
+        )
+        assert result == 0, f"DACL installation failed with Windows error {result}"
+    finally:
+        kernel32.LocalFree(descriptor)
+
 
 def test_secure_file_and_directory_are_accepted(tmp_path: Path) -> None:
     from securitymasker.windows_security import require_private_dacl, secure_path
@@ -25,6 +96,55 @@ def test_secure_file_and_directory_are_accepted(tmp_path: Path) -> None:
 
     require_private_dacl(root, directory=True)
     require_private_dacl(secret, directory=False)
+
+
+def test_wrong_owner_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from securitymasker import windows_security
+
+    target = tmp_path / "wrong-owner.txt"
+    target.write_text("synthetic-value", encoding="utf-8")
+    windows_security.secure_path(target, directory=False)
+    monkeypatch.setattr(windows_security, "current_user_sid", lambda: "S-1-5-19")
+
+    with pytest.raises(
+        windows_security.WindowsSecurityError,
+        match="owned by the current user",
+    ):
+        windows_security.require_private_dacl(target, directory=False)
+
+
+@pytest.mark.parametrize(
+    "unsupported_ace",
+    [
+        "(OA;;GA;aaaaaaaa-0000-1111-2222-bbbbbbbbbbbb;;SY)",
+        "(XA;;GA;;;SY;(OctetStringType==#01020300))",
+    ],
+    ids=["object", "callback"],
+)
+def test_object_and_callback_aces_are_rejected(
+    tmp_path: Path,
+    unsupported_ace: str,
+) -> None:
+    from securitymasker.windows_security import (
+        WindowsSecurityError,
+        current_user_sid,
+        require_private_dacl,
+        secure_path,
+    )
+
+    target = tmp_path / "unsupported-ace.txt"
+    target.write_text("synthetic-value", encoding="utf-8")
+    secure_path(target, directory=False)
+    expected = (
+        f"D:P(A;;GA;;;{current_user_sid()})(A;;GA;;;SY)(A;;GA;;;BA)"
+        f"{unsupported_ace}"
+    )
+    try:
+        _install_sddl_dacl(target, expected)
+        with pytest.raises(WindowsSecurityError, match="unsupported ACE"):
+            require_private_dacl(target, directory=False)
+    finally:
+        secure_path(target, directory=False)
 
 
 def test_inherited_permissive_acl_is_rejected(tmp_path: Path) -> None:
