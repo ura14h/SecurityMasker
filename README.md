@@ -105,7 +105,7 @@ blockします。未知の組織内用語を自動で100%推測することは�
 | Linux arm64 | Python 3.12で検証済み | [技術検証済み](docs/development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md) |
 | Windows 11 x64 build 26100以降 | Python 3.12 x64で検証済み | [Windows 11 x64で技術検証済み](docs/development/release-evidence/windows-x64-lite-full-one-file-2026-08-02.md) |
 
-Windowsは[Windows native source版の導入手順](docs/guides/windows-native-source.md)に従います。
+source版は全OS共通の[導入ガイド](docs/getting-started.md)に従います。
 one-file版は[私的build手順](docs/development/binary-build.md)のみで未公開です。Windows one-file版も
 技術検証済みですが、clean-machine gateや署名等が未完のため、対応・公開対象外です。表にない環境は
 未対応です。platformとclientの詳細は

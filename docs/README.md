@@ -5,10 +5,9 @@
 
 ## 初めて使う
 
-1. [導入ガイド](getting-started.md) — setup、初期化、合成値での確認、client接続、終了
-2. [Windows native source版の導入手順](guides/windows-native-source.md) — cmd.exe、CLI、Desktop
-3. [辞書のカスタマイズ](guides/customize-dictionary.md) — 会社名、人名、顧客名、project名の登録
-4. [日常的な使い方](operations/daily-use.md) — 起動、readiness確認、終了
+1. [導入ガイド](getting-started.md) — 全対応OSのsetup、初期化、合成値での確認、client接続、終了
+2. [辞書のカスタマイズ](guides/customize-dictionary.md) — 会社名、人名、顧客名、project名の登録
+3. [日常的な使い方](operations/daily-use.md) — 起動、readiness確認、終了
 
 実際の機密情報を扱う前に[安全な使い方](security/safe-use.md)のチェックを完了してください。
 

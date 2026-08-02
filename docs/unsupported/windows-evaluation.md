@@ -1,7 +1,7 @@
 # Windows上のLinux環境で評価する（非対応）
 
 Windows native source版は限定条件で対応しています。通常は
-[Windows native source版の導入手順](../guides/windows-native-source.md)を使用してください。この番外編は、
+[全OS共通の導入ガイド](../getting-started.md)を使用してください。この番外編は、
 Windows 11 x64上のWSL2またはDocker DesktopのLinux containerで、Linux版SecurityMaskerを評価する
 ためのtechnical spikeです。
 [ADR-0015](../adr/0015-evaluate-windows-linux-hosted-deployments.md)の共通gateは未完了であり、

@@ -109,7 +109,8 @@ def test_windows_extra_guide_redirects_native_users_and_keeps_volume_warning() -
 
     for required in (
         "Windows native source版は限定条件で対応",
-        "Windows native source版の導入手順",
+        "全OS共通の導入ガイド",
+        "../getting-started.md",
         "この番外編",
         "評価版の免責",
         "実データの投入は利用者自身の判断と責任",

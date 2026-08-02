@@ -30,6 +30,17 @@ def test_windows_setup_is_cmd_native_wheel_only_and_python_312() -> None:
     assert "torch==" not in dev_lock
 
 
+def test_common_install_guide_activates_windows_venv_without_command_alias() -> None:
+    """Windows導入を共通ガイドへ統合し、独自のSM短縮変数を使わない。"""
+    guide = (ROOT / "docs/getting-started.md").read_text(encoding="utf-8")
+
+    assert ".venv\\Scripts\\activate.bat" in guide
+    assert "SECURITYMASKER_CONFIG" in guide
+    assert 'set "SM=' not in guide
+    assert "%SM%" not in guide
+    assert not (ROOT / "docs/guides/windows-native-source.md").exists()
+
+
 def test_windows_source_packaging_requires_clean_tree_and_never_overwrites() -> None:
     package = (ROOT / "scripts/package-source.cmd").read_text(encoding="utf-8")
 

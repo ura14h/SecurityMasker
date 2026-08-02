@@ -3,10 +3,10 @@
 全commandとoptionを確認するための仕様書です。初めて導入する場合は
 [導入ガイド](../getting-started.md)から始めてください。
 
-この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では
-`securitymasker`を`python3 securitymasker.py`に、one-file版では`./securitymasker-lite`または
-`./securitymasker-full`に読み替えられます。Windows native source版では、
-`.venv\Scripts\python.exe securitymasker.py`に読み替えます。
+この文書はSecurityMaskerの利用者向けcommandとoptionを網羅します。source版では仮想環境を有効にして
+`securitymasker`を`python securitymasker.py`に、one-file版では`./securitymasker-lite`または
+`./securitymasker-full`に読み替えられます。Windowsで仮想環境を有効にしない場合は、
+`.venv\Scripts\python.exe securitymasker.py`を使用できます。
 
 ## 共通仕様
 

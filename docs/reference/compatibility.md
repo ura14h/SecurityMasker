@@ -34,7 +34,7 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 
 Windows native source版はmode別`%LOCALAPPDATA%\SecurityMasker\<mode>`を既定data directoryとし、
 current user、SYSTEM、AdministratorsだけへFull Controlを与えるprotected DACLを作成・検査します。
-setup、利用、client設定は[Windows native source版の導入手順](../guides/windows-native-source.md)に
+setup、利用、client設定は全OS共通の[導入ガイド](../getting-started.md)に
 従います。Windows 10、ARM64、Python 3.11／3.13以降、ReFS、FAT、removable／network／subst drive、
 UNC pathは未対応であり、部分的に動いても対応範囲へ含めません。
 
