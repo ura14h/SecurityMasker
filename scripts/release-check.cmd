@@ -23,6 +23,9 @@ if errorlevel 1 goto failed
 set "SM_RUN_LIVE=1"
 "%PYTHON%" -m pytest -q tests\integration\test_live_gateway.py
 if errorlevel 1 goto failed
+set "SM_RUN_WINDOWS_NATIVE=1"
+"%PYTHON%" -m pytest -q tests\integration\test_windows_native_process.py
+if errorlevel 1 goto failed
 
 popd
 echo Windows native pre-release checks passed.
@@ -33,4 +36,3 @@ exit /b 0
 set "RESULT=%errorlevel%"
 popd
 exit /b %RESULT%
-
