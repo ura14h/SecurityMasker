@@ -7,9 +7,11 @@ boundary: both tools have update checks, analytics and crash reporting that do n
 go through the configured provider at all, so a routing mistake here would leak to
 the internet rather than fail. Dummy credentials do not change that.
 
-So containment is **checked structurally**: the host must have no non-loopback
-interface and no default route. That is a property of the network stack, and it is
-what a fresh network namespace produces.
+So containment is **checked structurally**. Linux requires no active non-loopback
+interface and no default route. Windows requires two active outbound block rules
+installed by an administrator for the dedicated standard-user SID. Those rules
+cover every IPv4 and IPv6 destination except 127.0.0.0/8 and ::1, and the test user
+cannot modify them. Both boundaries are inspected before any connection attempt.
 
 An earlier version instead tried to connect to 1.1.1.1 and 8.8.8.8 and treated
 failure as safety. That is not a proof of anything: a network can drop those two
@@ -23,8 +25,8 @@ A connect attempt survives only as a secondary assertion AFTER the structural
 check has passed: if the stack says isolated and a connection still succeeds,
 something is wrong enough to fail rather than skip.
 
-Run the WHOLE stack — pytest, the gateway, the mock and the CLI — inside one
-namespace:
+On Linux, run the WHOLE stack — pytest, the gateway, the mock and the CLI — inside
+one namespace:
 
     devtools/run_cli_e2e.sh          # unshare -rn around pytest itself (Linux)
 
@@ -36,6 +38,10 @@ On top of the boundary, the child gets a scrubbed environment, telemetry and
 auto-update switched off, and proxy variables aimed at a closed loopback port, so
 anything that honours them fails fast. That is defence in depth; the probe is the
 guarantee.
+
+On Windows, run the whole stack as the dedicated firewall-gated standard user via
+``scripts\\windows-cli-e2e.cmd``. The operator and Codex Desktop remain under a
+different user and retain their normal connection.
 
 The gateway's upstream is the local mock, the CLIs get isolated homes so the
 user's own ``~/.codex`` is neither read for credentials nor written to, and the
@@ -67,6 +73,7 @@ from securitymasker.integrations.client_config import (
 )
 
 REPO = Path(__file__).resolve().parents[2]
+WINDOWS_FIREWALL_GATE = REPO / "devtools" / "windows_firewall_gate.ps1"
 
 
 def _free_port() -> int:
@@ -147,6 +154,8 @@ def _isolation_failure() -> str | None:
     depth, and ignore routes bound to `lo`, which a fresh namespace can carry
     without them meaning anything.
     """
+    if sys.platform == "win32":
+        return _windows_firewall_isolation_failure()
     if sys.platform != "linux":
         return (f"network isolation cannot be verified on {sys.platform}; run the "
                 "whole stack in a Linux namespace (devtools/run_cli_e2e.sh) or a "
@@ -161,6 +170,43 @@ def _isolation_failure() -> str | None:
     return None
 
 
+def _windows_firewall_isolation_failure() -> str | None:
+    """専用standard userへ有効なloopback-only firewall gateを要求する。"""
+    try:
+        completed = subprocess.run(  # noqa: S603
+            [
+                "powershell.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(WINDOWS_FIREWALL_GATE),
+                "-Action",
+                "Verify",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"Windows firewall gate inspection failed: {type(exc).__name__}"
+    if completed.returncode != 0:
+        detail = completed.stderr.strip().splitlines()
+        return "Windows firewall gate is not active" + (
+            f": {detail[-1]}" if detail else ""
+        )
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return "Windows firewall gate returned invalid verification data"
+    if result.get("isolated") is not True or len(result.get("rule_names", [])) != 2:
+        return "Windows firewall gate did not verify both deny rules"
+    return None
+
+
 def _assert_nothing_routes_off_box() -> None:
     """Secondary check, only meaningful once the structural one has passed.
 
@@ -168,7 +214,11 @@ def _assert_nothing_routes_off_box() -> None:
     succeeds, the structural check is being fooled — which is a failure, not a
     reason to skip quietly.
     """
-    for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53)):
+    for host, port in (
+        ("1.1.1.1", 443),
+        ("8.8.8.8", 53),
+        ("2606:4700:4700::1111", 443),
+    ):
         try:
             with socket.create_connection((host, port), timeout=1.0):
                 raise AssertionError(
@@ -230,14 +280,41 @@ def _contained_env(**overrides: str) -> dict[str, str]:
     })
     env.update(overrides)
     return env
+
+
 def _require_cli(name: str) -> str:
-    executable = shutil.which(name)
+    override_name = "SM_CODEX_CLI" if name == "codex" else "SM_CLAUDE_CLI"
+    override = os.environ.get(override_name)
+    candidate = _windows_cli_candidate(name) if sys.platform == "win32" else None
+    executable = (
+        str(Path(override).resolve())
+        if override
+        else shutil.which(name)
+        or (str(candidate) if candidate and candidate.is_file() else None)
+    )
+    if override and not Path(executable).is_file():
+        executable = None
     if executable is not None:
         return executable
     message = f"required real CLI is not installed: {name}"
     if os.environ.get("SM_REQUIRE_ALL_CLIS") == "1":
         pytest.fail(message)
     pytest.skip(message)
+
+
+def _windows_cli_candidate(name: str) -> Path | None:
+    if name == "codex" and os.environ.get("LOCALAPPDATA"):
+        return (
+            Path(os.environ["LOCALAPPDATA"])
+            / "Programs"
+            / "OpenAI"
+            / "Codex"
+            / "bin"
+            / "codex.exe"
+        )
+    if name == "claude" and os.environ.get("USERPROFILE"):
+        return Path(os.environ["USERPROFILE"]) / ".local" / "bin" / "claude.exe"
+    return None
 
 
 def _wait(url: str, timeout: float = 30.0) -> None:

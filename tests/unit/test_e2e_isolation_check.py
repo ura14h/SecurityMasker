@@ -15,6 +15,7 @@ outbound connections.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -130,6 +131,50 @@ def test_non_linux_is_never_considered_isolated(mod, monkeypatch) -> None:
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     reason = mod._isolation_failure()
     assert reason and "darwin" in reason
+
+
+def test_windows_requires_verified_firewall_gate(mod, monkeypatch) -> None:
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="gate missing\n"
+        ),
+    )
+    reason = mod._isolation_failure()
+    assert reason and "gate missing" in reason
+
+
+def test_windows_accepts_both_verified_firewall_rules(mod, monkeypatch) -> None:
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"isolated":true,"rule_names":["v4","v6"]}',
+            stderr="",
+        ),
+    )
+    assert mod._isolation_failure() is None
+
+
+def test_windows_rejects_incomplete_firewall_verification(mod, monkeypatch) -> None:
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"isolated":true,"rule_names":["v4"]}',
+            stderr="",
+        ),
+    )
+    reason = mod._isolation_failure()
+    assert reason and "both deny rules" in reason
 
 
 def test_importing_the_e2e_module_opens_no_connections(mod, monkeypatch) -> None:
