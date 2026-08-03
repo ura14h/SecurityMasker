@@ -51,6 +51,7 @@ def test_runner_checks_fresh_archive_before_setup_and_runs_both_modes() -> None:
     assert source.count(" doctor --config ") == 2
     assert source.count(" preview ") == 2
     assert source.count(" client-config ") == 2
+    assert "real CLI E2E is optional" in source
     assert "git clone" not in source
 
 

@@ -29,7 +29,7 @@ if errorlevel 1 goto failed
 
 popd
 echo Windows native pre-release checks passed.
-echo Real Codex and Claude Code network-isolated E2E remains a separate required gate.
+echo Network-isolated real CLI E2E is an optional extended compatibility gate.
 exit /b 0
 
 :failed

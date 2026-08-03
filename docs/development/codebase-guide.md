@@ -102,7 +102,7 @@ loggingへ原文やalias対応表を追加して観察してはいけません�
 | streaming | `test_responses_stream.py`、`test_anthropic_stream.py` |
 | Responses WebSocket | `test_responses_websocket.py`、`test_live_gateway.py` |
 | session分離と暗号化 | `test_multiturn_session.py`、`test_sqlite_store.py` |
-| 実CLI境界 | `tests/integration/test_real_cli_e2e.py` |
+| 実CLI境界 | `tests/integration/test_real_cli_e2e.py`（拡張互換性） |
 | 実OpenAI WebSocket反復・HTTP比較 | `tests/integration/test_real_openai_e2e.py`（明示opt-in） |
 | 実Anthropic Messages単一turn | `tests/integration/test_real_anthropic_e2e.py`（release必須、明示opt-in） |
 | 実Anthropic Messages MCP chain | 同file（拡張互換性、別opt-in） |

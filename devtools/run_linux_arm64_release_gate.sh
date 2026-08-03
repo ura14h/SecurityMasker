@@ -53,16 +53,20 @@ docker run --rm \
             .venv/bin/python -m pytest tests/integration/test_real_openai_e2e.py -q -s
     '
 
-printf '%s\n' "Running Linux arm64 network-none real-CLI gate."
-docker run --rm \
-    --network none \
-    --platform linux/arm64 \
-    "$IMAGE" \
-    /bin/sh -ec '
-        test "$(uname -s)" = Linux
-        test "$(uname -m)" = aarch64
-        SM_RUN_CLI_E2E=1 SM_REQUIRE_ALL_CLIS=1 \
-            .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
-    '
+if [ "${SM_RUN_EXTENDED_CLI_E2E:-0}" = "1" ]; then
+    printf '%s\n' "Running optional Linux arm64 network-none real-CLI gate."
+    docker run --rm \
+        --network none \
+        --platform linux/arm64 \
+        "$IMAGE" \
+        /bin/sh -ec '
+            test "$(uname -s)" = Linux
+            test "$(uname -m)" = aarch64
+            SM_RUN_CLI_E2E=1 SM_REQUIRE_ALL_CLIS=1 \
+                .venv/bin/python -m pytest tests/integration/test_real_cli_e2e.py -v
+        '
+else
+    printf '%s\n' "Skipping optional network-none real-CLI compatibility gate."
+fi
 
 printf '%s\n' "Linux arm64 source release gate passed."

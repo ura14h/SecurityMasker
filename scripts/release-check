@@ -22,8 +22,5 @@ SM_RUN_ANTHROPIC_E2E=1 \
     "$PYTHON" -m pytest \
     tests/integration/test_real_anthropic_e2e.py::test_real_claude_single_turn_through_anthropic \
     -q
-SM_REQUIRE_ALL_CLIS=1 \
-    PYTEST="$PYTHON -m pytest" \
-    "$PROJECT_DIRECTORY/devtools/run_cli_e2e.sh"
 
 printf '%s\n' "Local source release checks passed."

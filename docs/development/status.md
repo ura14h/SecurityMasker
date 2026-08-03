@@ -85,6 +85,11 @@ SSE完了、最終表示での復元、alias非残存を合格条件にします
 Claude Code側のMCP初期化・tool公開まで含む拡張互換性試験へ分離し、そのversion／platform固有の
 失敗だけでは1.0.0 source版の公開をblockしません。
 
+local mockを使うnetwork-isolated実Codex／Claude Code CLI E2Eも、client設定、CLI transport、egress
+隔離を追加確認する拡張互換性試験とします。専用OS user、Firewall rule、network namespaceを必要と
+するため1.0.0 source版の必須gateには含めず、未実施やclient／platform固有の失敗だけでは公開を
+blockしません。実行時は隔離境界を構造検査し、隔離できない状態を成功扱いにはしません。
+
 Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。その後、
 [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)でsource版の既定data配置を全OS共通のlauncher隣接へ

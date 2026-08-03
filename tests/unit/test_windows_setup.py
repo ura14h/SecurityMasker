@@ -23,7 +23,7 @@ def test_windows_setup_is_cmd_native_wheel_only_and_python_312() -> None:
     assert "requirements-dev.lock" not in test_setup
     assert "SM_REQUIRE_MODEL=1" in release
     assert "test_live_gateway.py" in release
-    assert "separate required gate" in release
+    assert "optional extended compatibility gate" in release
     assert "torch==2.13.0" in runtime_lock
     assert "colorama==0.4.6" in runtime_lock
     assert "pytest==8.4.2" in dev_lock

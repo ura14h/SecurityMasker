@@ -17,7 +17,6 @@
 - mock upstreamを使うlive Gateway test
 - 実Codex app-serverとOpenAI実サーバを使うWebSocket反復E2EとHTTP性能比較
 - 実Claude Code CLIとAnthropic実サーバを使うMessages単一turn E2E
-- 実Codex CLIと実Claude Code CLIを使うE2E
 
 実OpenAI E2Eは外部送信とモデル利用を伴い、固定した合成値だけを送ります。既存のCodex認証を
 表示・複製せず、一時overrideで一つのturnに標準8回のdynamic tool callを実行します。
@@ -37,9 +36,11 @@ test専用stdio MCP probeを直列に呼ぶMessages tool chainは、Claude Code�
 Code versionやplatform固有のMCP挙動をSecurityMasker 1.0.0 source版の公開blockerにはしません。
 成功時は追加evidenceとして記録し、失敗時も単一turn必須gateの結果と混同しません。
 
-その後のlocal mock実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeが
-ないことを構造検査してから実行します。隔離を証明できないhostでは成功扱いにせず、
-release gateを失敗させます。この隔離gateは実providerへbodyを送りません。
+local mockを使う実Codex／Claude Code CLI E2Eは、client設定とegress隔離も同時に検査する拡張互換性
+試験です。Linuxではnetwork namespace内で外向きinterfaceとdefault routeがないことを構造検査し、
+Windowsでは専用standard userとFirewall ruleを使います。隔離を証明できないhostでは試験自体を
+成功扱いにしませんが、その未実施やclient／platform固有の失敗は1.0.0 source版の公開blockerには
+しません。この試験は実providerへbodyを送りません。
 
 containerで代用する場合も、test setupとCLI取得をnetwork有効時に済ませた後、test process全体を
 `--network none`で起動します。IFF_UPな非loopback interfaceまたはdefault routeが一つでもあれば
@@ -55,7 +56,9 @@ macOS arm64のDocker DesktopでLinux arm64 gateを代替する場合は、host�
 この検証専用imageは、固定したPython 3.12、Linux版Codex CLI／Claude Code CLI、dependency、NER
 modelをnetwork有効時に構築します。online source gateにはhostのCodex認証fileだけをread-onlyで
 mountし、imageへ含めません。その後、同じimageを`--network none`で別起動し、local mockを使う
-実CLI E2Eを実行します。このDocker資材は製品runtimeまたは公開binaryの対応範囲を広げません。
+実CLI E2Eを実行する場合は`SM_RUN_EXTENDED_CLI_E2E=1`を明示します。この拡張試験を省略しても
+online source gateの合否は変わりません。このDocker資材は製品runtimeまたは公開binaryの対応範囲を
+広げません。
 
 ## Source release artifact
 
@@ -143,6 +146,7 @@ SHA-256を表示します。
 - 同じtool chainのWebSocket／HTTP wall timeと差（promptや認証情報は記録しない）
 - 実Anthropic Messages単一turn E2Eのturn数、wall time、完了response数
 - MCP拡張互換性試験を実行した場合はtool call数と結果（必須gateとは分離）
+- network-isolated実CLI拡張互換性試験を実行した場合は環境と結果（必須gateとは分離）
 - 実行したgateと結果
 - test件数
 - artifact名、size、checksum

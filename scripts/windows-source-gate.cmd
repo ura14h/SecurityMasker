@@ -41,5 +41,5 @@ if errorlevel 1 exit /b %errorlevel%
 if errorlevel 1 exit /b %errorlevel%
 
 echo Windows standard-user source archive gate passed.
-echo Install the firewall gate from an elevated administrator cmd before real CLI E2E.
+echo Network-isolated real CLI E2E is optional and requires an explicit firewall-gate setup.
 exit /b 0

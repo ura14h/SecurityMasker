@@ -43,9 +43,9 @@ scripts\release-check.cmd
 Windows setupは64-bit Python 3.12と`requirements-windows*.lock`のwheelだけを使用し、Visual Studio
 Build Toolsやsource buildへfallbackしません。`release-check.cmd`はlocal unit／evaluation／mock
 Gatewayまでのpre-release gateであり、Windows Firewallで外向き通信を遮断した専用standard userの
-実Codex／Claude Code CLI E2Eを含みません。後者はrelease時に別の必須gateとして実行します。
+実Codex／Claude Code CLI E2Eを含みません。後者は明示した場合だけ実行する拡張互換性試験です。
 
-### Windows実CLIのFirewall gate
+### Windows実CLIの拡張Firewall gate
 
 operatorとCodex Desktopの通信を維持したまま実CLIだけを隔離するため、別のlocal standard userを
 用意します。account／profile lifecycleとFirewall ruleのinstall／removeだけは管理者cmdで行います。
@@ -149,9 +149,10 @@ SM_RUN_LIVE=1 .venv/bin/python -m pytest -q tests/integration/test_live_gateway.
 
 ## 実CLIと実サーバ
 
-実Codex／Claude Codeとlocal mockを使うegress検証は、全processを外向きinterfaceとdefault routeの
-ないLinux network namespaceへ入れます。Codex側がHTTPへfallbackして成功しただけでは
-WebSocketの証拠にならないため、mock upstreamの記録で`transport == "websocket"`をassertします。
+実Codex／Claude Codeとlocal mockを使うegress検証は拡張互換性試験です。実行する場合は全processを
+外向きinterfaceとdefault routeのないLinux network namespaceへ入れます。Codex側がHTTPへfallback
+して成功しただけではWebSocketの証拠にならないため、mock upstreamの記録で
+`transport == "websocket"`をassertします。
 
 ```console
 devtools/run_cli_e2e.sh

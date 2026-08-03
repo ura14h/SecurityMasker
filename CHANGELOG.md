@@ -26,6 +26,8 @@ Lite版／Full版binaryはtechnical spikeとして検証済みですが、この
   opt-in E2Eを追加（binaryは引き続き公開対象外）
 - 実Claude Code／Anthropicの単一turnをsource release必須gateとし、stdio MCP chainはclient側の
   MCP互換性も検査する独立した拡張gateへ分離
+- 専用OS user、Firewall、network namespaceを使うnetwork-isolated実CLI E2Eを、client設定と
+  egress境界を追加確認する拡張互換性試験へ分離
 
 ## 0.1.0 — 2026-07-26
 
