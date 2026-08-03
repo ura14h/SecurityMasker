@@ -2,7 +2,7 @@
 setlocal EnableExtensions DisableDelayedExpansion
 
 set "EXPECTED_USER=SecurityMaskerTester"
-set "SOURCE_ROOT=%USERPROFILE%\Developer\securitymasker-0.1.0"
+set "SOURCE_ROOT=%USERPROFILE%\Developer\securitymasker-1.0.0"
 
 for /f "tokens=2 delims=\" %%U in ('whoami.exe') do set "CURRENT_USER=%%U"
 if /i not "%CURRENT_USER%"=="%EXPECTED_USER%" (

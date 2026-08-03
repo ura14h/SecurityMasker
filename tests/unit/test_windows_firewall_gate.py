@@ -108,5 +108,5 @@ def test_windows_cli_runner_verifies_firewall_before_resolving_clis() -> None:
     assert "windows_cli_e2e_session.cmd" in runas
     assert 'set "EXPECTED_USER=SecurityMaskerTester"' in session
     assert "whoami.exe" in session
-    assert "%USERPROFILE%\\Developer\\securitymasker-0.1.0" in session
+    assert "%USERPROFILE%\\Developer\\securitymasker-1.0.0" in session
     assert "windows-cli-e2e.cmd" in session

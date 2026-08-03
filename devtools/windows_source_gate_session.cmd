@@ -7,10 +7,10 @@ set "PYTHON_INSTALLER=%BOOTSTRAP%\python-3.12.10-amd64.exe"
 set "PYTHON=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
 set "CODEX_SOURCE=%BOOTSTRAP%\codex.exe"
 set "CLAUDE_SOURCE=%BOOTSTRAP%\claude.exe"
-set "SM_BOOTSTRAP_ARCHIVE=%BOOTSTRAP%\securitymasker-0.1.0-source.tar.gz"
+set "SM_BOOTSTRAP_ARCHIVE=%BOOTSTRAP%\securitymasker-1.0.0-source.tar.gz"
 set "SM_BOOTSTRAP_CHECKSUM=%SM_BOOTSTRAP_ARCHIVE%.sha256"
 set "DEVELOPER_DIRECTORY=%USERPROFILE%\Developer"
-set "SOURCE_ROOT=%DEVELOPER_DIRECTORY%\securitymasker-0.1.0"
+set "SOURCE_ROOT=%DEVELOPER_DIRECTORY%\securitymasker-1.0.0"
 
 for /f "tokens=2 delims=\" %%U in ('whoami.exe') do set "CURRENT_USER=%%U"
 if /i not "%CURRENT_USER%"=="%EXPECTED_USER%" (

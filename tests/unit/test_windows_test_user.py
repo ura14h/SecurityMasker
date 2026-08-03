@@ -90,6 +90,8 @@ def test_cmd_exposes_only_tester_lifecycle_without_caret_continuations() -> None
     assert "InstallAllUsers=0" in session
     assert "sys.version_info[:2] == (3, 12)" in session
     assert "Get-FileHash -Algorithm SHA256" in session
+    assert "securitymasker-1.0.0-source.tar.gz" in session
+    assert "%DEVELOPER_DIRECTORY%\\securitymasker-1.0.0" in session
     assert 'if exist "%SOURCE_ROOT%\\"' in session
     assert 'set "SECURITYMASKER_PYTHON=%PYTHON%"' in session
     assert "windows-source-gate.cmd run" in session
