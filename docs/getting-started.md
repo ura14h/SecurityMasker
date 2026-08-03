@@ -6,8 +6,8 @@ CodexまたはClaude CodeをSecurityMaskerへ接続します。実際の機密�
 
 ## 始める前に
 
-- 対応環境はmacOS arm64のPython 3.11／3.12とLinux arm64のPython 3.12です。Windows 11 x64 build
-  26100以降のPython 3.12 x64向け実装は、launcher隣接layoutのnative再検証待ちです。
+- 対応環境はmacOS arm64のPython 3.11／3.12、Linux arm64のPython 3.12、Windows 11 x64 build
+  26100以降のPython 3.12 x64です。Windowsのlauncher隣接layoutもnative検証済みです。
 - Windowsではlocal fixed NTFS上のsource archive、standard user、標準の`cmd.exe`を使います。
   Windows 10、ARM64、ReFS、removable／network／subst driveは対象外です。
 - setup時にPython packageと固定済み日本語NER modelを取得します。数GBの空き容量を確保してください。

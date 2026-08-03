@@ -54,4 +54,15 @@ launcher隣接変更はowner判定実装を変更していないため、同じ�
 ## 結論
 
 Windows 11 x64、CPython 3.12 x64、local fixed NTFSで、launcher隣接layoutのnative source gateは
-成功です。このevidence後の変更は文書に限定し、Windows gateは再実行しません。
+成功です。
+
+## 1.0.0候補HEADの再確認
+
+その後のrelease gate整理と実E2E process分離を含むcommit
+`cb52d5627f5320cb5d5c0f2032720a1c33e7d8b1`でも、ownerが同じWindows環境から
+`scripts\windows-source-gate.cmd run`を実行し、preflight、setup、ruff、mypy、unit／evaluation、
+mock Gateway、Windows native process、両modeの隣接init、doctor、preview、client-configが
+すべて成功したことを確認した。詳細件数は上記のnative gate記録を正とする。
+
+この再確認後、1.0.0候補へ加えた変更はAnthropic E2Eの既定model固定とLinux arm64検証imageの
+構成・回帰testに限定され、製品実装、Windows DACL、Windows source gateは変更していない。

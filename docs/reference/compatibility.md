@@ -29,7 +29,7 @@ GPUやCUDA runtimeは必要ありません。通常のrequest処理中にpackage
 |---|---|---|---|
 | macOS arm64 | Python 3.11 / 3.12で検証済み | Lite／Full技術spike済み | source版の対応環境 |
 | Linux arm64 | Python 3.12で検証済み | Lite／Full技術spike済み（Debian 12） | source版の対応環境 |
-| Windows 11 x64 build 26100以降 | launcher隣接layoutは実装済み・native再検証待ち | Lite／Full技術spike済み | [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)。local fixed NTFS限定 |
+| Windows 11 x64 build 26100以降 | Python 3.12でlauncher隣接layoutを検証済み | Lite／Full技術spike済み | [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)。local fixed NTFS限定 |
 | その他のOS・architecture | 未検証 | 未検証 | 対応を表明しない |
 
 Windows native source版もroot script隣接を既定data directoryとし、config、辞書、state directoryと
@@ -56,14 +56,14 @@ technical spikeとして用意していますが、どちらも対応環境で�
 - SQLite: process restart後のalias復元、wrong key/mode、tamper、二重writer
 - source最小要件: macOS／LinuxはPython 3.11、Windows targetはCPython 3.12 x64
 - clean setup実測: Python 3.11（macOS arm64）、Python 3.12（macOS arm64／Linux arm64／Windows 11 x64）
-- Windows sourceの上記実測は従来のmode別`%LOCALAPPDATA%` layout。launcher隣接layoutはnative再検証待ち
+- Windows sourceのlauncher隣接layoutは、Windows 11 x64とCPython 3.12 x64でnative検証済み
 - Linux NER runtime: 公式CPU版Torch 2.13.0+cpu
 - one-file spike: macOS arm64、Linux arm64 Debian 12 container、Windows 11 x64のLite／Full、
   PyInstaller 6.21.0
 
-実CLIの検証baselineはmacOS／LinuxがCodex CLI 0.145.0とClaude Code 2.1.212、WindowsがCodex CLI
-0.146.0とClaude Code 2.1.220です。protocolは変化し得るため、release時に最新対象versionでE2Eを
-再実行します。2026-07-31にはLinux arm64の外部networkなし
+1.0.0の検証baselineはmacOSがCodex CLI 0.146.0とClaude Code 2.1.212、LinuxがCodex CLI 0.145.0と
+Claude Code 2.1.212、WindowsがCodex CLI 0.146.0とClaude Code 2.1.220です。protocolは変化し得るため、
+release時に最新対象versionでE2Eを再実行します。2026-07-31にはLinux arm64の外部networkなし
 環境で、WebSocket対応後の両CLIのmask、local mockへの到達、response復元を確認しました。
 2026-07-30にはmacOS arm64で
 Codex CLI 0.145.0からSecurityMaskerのWebSocketを通してOpenAI実サーバへ接続し、合成値の

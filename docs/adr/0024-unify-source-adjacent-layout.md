@@ -1,6 +1,6 @@
 # ADR-0024 — source版の既定data配置を全OSでlauncher隣接へ統一する
 
-- 状態：採用（Windows native再検証待ち）
+- 状態：採用（Windows native検証済み）
 - 日付：2026-08-02
 - 関連：[ADR-0012](0012-renew-package-design.md)、
   [ADR-0021](0021-add-windows-native-source-target.md)、
@@ -49,17 +49,16 @@ fail-closedで拒否する。
 
 ## 検証
 
-macOSではsource版の隣接path解決、初期化、config探索、既存回帰testを実行する。Windows実機が利用
-できない開発環境では、共通logic、Windows gate artifact、文書契約までを検証し、Windows APIによる
-DACL作成・拒否matrixとnative process gateは未検証として明示する。
+2026-08-03にWindows 11 x64、CPython 3.12 x64、local fixed NTFSでnative source gateを実行し、
+次を確認した。詳細は
+[Windows x64 launcher隣接source evidence](../development/release-evidence/windows-x64-launcher-adjacent-source-2026-08-03.md)
+に記録する。
 
-Windows nativeの対応表明を現行layoutへ更新する前に、少なくとも次を再実行する。
-
-1. fresh source archiveのrootで既定`init`が成功し、source fileを変更しない。
-2. config、辞書、state、key、DBのprotected DACLを確認する。
-3. source rootのDACLが変更されないことを確認する。
+1. fresh source treeのrootで既定`init`が成功し、source fileを変更しない。
+2. config、辞書、state、key、DBのprotected DACLを作成・検査する。
+3. source rootのDACLを変更しない。
 4. permissive artifact DACL、wrong owner、reparse point、非local NTFSを拒否する。
-5. 両modeの明示分離とmock Gateway E2Eを完走する。
+5. 両modeの明示分離、mock Gateway E2E、native process gateを完走する。
 
 protocol、masking、NER、実provider通信、binary artifactは変更しないため、このlayout変更だけを理由に
 実OpenAI／Anthropic E2Eまたはbinary gateを再実行しない。

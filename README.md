@@ -103,7 +103,7 @@ blockします。未知の組織内用語を自動で100%推測することは�
 |---|---|---|
 | macOS arm64 | Python 3.11／3.12で検証済み | [技術検証済み](docs/development/release-evidence/macos-arm64-lite-full-one-file-2026-08-01.md) |
 | Linux arm64 | Python 3.12で検証済み | [技術検証済み](docs/development/release-evidence/linux-arm64-lite-full-one-file-2026-08-01.md) |
-| Windows 11 x64 build 26100以降 | launcher隣接layoutは実装済み・Windows実機再検証待ち | [Windows 11 x64で技術検証済み](docs/development/release-evidence/windows-x64-lite-full-one-file-2026-08-02.md) |
+| Windows 11 x64 build 26100以降 | Python 3.12でlauncher隣接layoutを検証済み | [Windows source検証記録](docs/development/release-evidence/windows-x64-launcher-adjacent-source-2026-08-03.md) |
 
 source版は全OS共通の[導入ガイド](docs/getting-started.md)に従います。
 one-file版は[私的build手順](docs/development/binary-build.md)のみで未公開です。Windows one-file版も

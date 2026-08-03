@@ -116,12 +116,20 @@ upstream E2E 4件、Windows native process test 3件が成功しています。
 [Windows x64 source evidence](release-evidence/windows-x64-source-2026-08-02.md)に記録しています。この
 evidenceは従来のmode別`%LOCALAPPDATA%` layoutに対するもので、現行のlauncher隣接layoutには流用しません。
 
-現行のlauncher隣接layoutはmacOS arm64でruff、mypy strict 73 source files、unit／evaluation 740件
-（24 skip）、mock upstream E2E 4件が成功しています。Windows 11 x64でもruff、mypy strict
-73 source files、unit／evaluation 759件（5 skip）、mock upstream E2E 4件、Windows native process
-test 3件が成功しました。launcher隣接の既定init、source file／root DACL非変更、
-managed artifactのprotected DACL、不正DACL、wrong owner、reparse point、非local fixed NTFSの拒否を
-含みます。
+1.0.0候補の最終回帰では、macOS arm64、Python 3.12.13でruff、mypy strict 73 source files、
+unit／evaluation 747件（24 skip）、mock upstream E2E 4件、実OpenAI E2E 1件、実Anthropic単一turn
+E2E 1件が成功しました。実OpenAIの記録実行はWebSocket 34,047.0 ms、HTTP 21,431.7 ms、接続1、
+完了response 10、実Anthropicは1 turn、成功stream 1本、2,831.8 msでした。
+
+同じ候補のLinux arm64、Python 3.12.13でもruff、mypy strict 73 source files、unit／evaluation
+747件（24 skip）、mock upstream E2E 4件、実OpenAI E2E 1件が成功しました。WebSocketは
+16,266.6 ms、HTTPは26,923.3 ms、接続1、完了response 10でした。
+
+Windows 11 x64ではruff、mypy strict 73 source files、unit／evaluation 759件（5 skip）、mock
+upstream E2E 4件、Windows native process test 3件の詳細gateに加え、release gate整理後のcommit
+`cb52d56`でも`scripts\windows-source-gate.cmd run`の完走を再確認しました。launcher隣接の既定init、
+source file／root DACL非変更、managed artifactのprotected DACL、不正DACL、wrong owner、reparse
+point、非local fixed NTFSの拒否を含みます。
 
 backup／restore作業は利用者の運用範囲とし、製品CLIでは扱いません。setup、隣接data layout、Gateway、
 Codex／Claude Codeの設定・解除は全OS共通の導入手順へまとめています。
