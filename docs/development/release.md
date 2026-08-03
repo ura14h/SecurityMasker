@@ -16,7 +16,7 @@
 - 固定NER model必須のunit/evaluation
 - mock upstreamを使うlive Gateway test
 - 実Codex app-serverとOpenAI実サーバを使うWebSocket反復E2EとHTTP性能比較
-- 実Claude Code CLIとAnthropic実サーバを使うMessages tool loop E2E
+- 実Claude Code CLIとAnthropic実サーバを使うMessages単一turn E2E
 - 実Codex CLIと実Claude Code CLIを使うE2E
 
 実OpenAI E2Eは外部送信とモデル利用を伴い、固定した合成値だけを送ります。既存のCodex認証を
@@ -27,10 +27,15 @@ login済みである必要があります。接続数と完了response数を数�
 `logging.level: DEBUG`を使い、利用者の通常configは変更しません。
 
 実Anthropic E2Eも固定した合成PERSONだけを送ります。実Claude Codeの既存認証をCLI自身に
-使わせ、一時product layout、空の作業directory、明示したstdio MCP probeだけで標準4回のtool
-callを直列実行します。各tool resultを含むrequestのmask、Anthropic SSEの完走、最終responseの
-復元、alias非残存を確認します。通常のClaude設定とsession履歴は変更せず、telemetry、update、
-error reportingを無効にします。release担当者はClaude Codeへlogin済みである必要があります。
+使わせ、一時product layoutと空の作業directoryで単一turnを実行します。requestの送信前mask、
+Anthropic SSEの完走、最終responseの復元、alias非残存を確認します。通常のClaude設定とsession
+履歴は変更せず、built-in tool、telemetry、update、error reportingを無効にします。release担当者は
+Claude Codeへlogin済みである必要があります。
+
+test専用stdio MCP probeを直列に呼ぶMessages tool chainは、Claude Code自身のMCP初期化・tool公開も
+同時に検査する拡張互換性試験です。`SM_RUN_ANTHROPIC_MCP_E2E=1`で明示的に実行しますが、Claude
+Code versionやplatform固有のMCP挙動をSecurityMasker 1.0.0 source版の公開blockerにはしません。
+成功時は追加evidenceとして記録し、失敗時も単一turn必須gateの結果と混同しません。
 
 その後のlocal mock実CLI E2EはLinux network namespace内で、外向きinterfaceとdefault routeが
 ないことを構造検査してから実行します。隔離を証明できないhostでは成功扱いにせず、
@@ -136,7 +141,8 @@ SHA-256を表示します。
 - OS、architecture、Python、client version
 - 実OpenAI WebSocket反復E2Eのtool call数、接続数、完了response数
 - 同じtool chainのWebSocket／HTTP wall timeと差（promptや認証情報は記録しない）
-- 実Anthropic Messages E2Eのtool call数、turn数、wall time、完了response数
+- 実Anthropic Messages単一turn E2Eのturn数、wall time、完了response数
+- MCP拡張互換性試験を実行した場合はtool call数と結果（必須gateとは分離）
 - 実行したgateと結果
 - test件数
 - artifact名、size、checksum

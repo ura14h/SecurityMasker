@@ -80,6 +80,11 @@ default routeがないことを構造検査した上で、実Codex CLI／Claude 
 確定しました。binary版はこのreleaseの公開対象外です。判断理由は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
+1.0.0の実Anthropic必須gateは、実Claude Codeから固定合成PERSONを送る単一turnとし、送信前mask、
+SSE完了、最終表示での復元、alias非残存を合格条件にします。stdio MCPを使う複数turn chainは、
+Claude Code側のMCP初期化・tool公開まで含む拡張互換性試験へ分離し、そのversion／platform固有の
+失敗だけでは1.0.0 source版の公開をblockしません。
+
 Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。その後、
 [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)でsource版の既定data配置を全OS共通のlauncher隣接へ

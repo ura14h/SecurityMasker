@@ -570,11 +570,13 @@ def test_test_setup_and_local_release_gate_are_separate_from_user_setup() -> Non
         "test_live_gateway.py",
         "test_real_openai_e2e.py",
         "test_real_anthropic_e2e.py",
+        "test_real_claude_single_turn_through_anthropic",
         "run_cli_e2e.sh",
         "SM_REQUIRE_MODEL=1",
         "SM_REQUIRE_ALL_CLIS=1",
     ):
         assert required in release
+    assert "SM_RUN_ANTHROPIC_MCP_E2E" not in release
     assert "|| true" not in release
 
 

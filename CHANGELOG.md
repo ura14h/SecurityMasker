@@ -24,6 +24,8 @@ Lite版／Full版binaryはtechnical spikeとして検証済みですが、この
   両mode Gatewayを検証するtechnical spike用cmd gateを追加
 - Windows x64の1.0.0 Lite technical artifactを実Codex／OpenAIと実Claude Code／Anthropicへ通す
   opt-in E2Eを追加（binaryは引き続き公開対象外）
+- 実Claude Code／Anthropicの単一turnをsource release必須gateとし、stdio MCP chainはclient側の
+  MCP互換性も検査する独立した拡張gateへ分離
 
 ## 0.1.0 — 2026-07-26
 

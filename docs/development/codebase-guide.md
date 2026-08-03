@@ -104,7 +104,8 @@ loggingへ原文やalias対応表を追加して観察してはいけません�
 | session分離と暗号化 | `test_multiturn_session.py`、`test_sqlite_store.py` |
 | 実CLI境界 | `tests/integration/test_real_cli_e2e.py` |
 | 実OpenAI WebSocket反復・HTTP比較 | `tests/integration/test_real_openai_e2e.py`（明示opt-in） |
-| 実Anthropic Messages tool loop | `tests/integration/test_real_anthropic_e2e.py`（明示opt-in） |
+| 実Anthropic Messages単一turn | `tests/integration/test_real_anthropic_e2e.py`（release必須、明示opt-in） |
+| 実Anthropic Messages MCP chain | 同file（拡張互換性、別opt-in） |
 
 全体の実行方法、network isolation、通常testの外部送信禁止、明示opt-in実provider E2Eの条件は
 [testing](testing.md)にあります。
