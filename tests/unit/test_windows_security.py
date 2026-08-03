@@ -85,6 +85,27 @@ def _install_sddl_dacl(path: Path, dacl: str) -> None:
         kernel32.LocalFree(descriptor)
 
 
+def _sddl(path: Path) -> str:
+    """PowerShell APIからlocale非依存のsecurity descriptorを取得する。"""
+    environment = {**os.environ, "SM_SYNTHETIC_ACL_TARGET": str(path)}
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-Acl -LiteralPath $env:SM_SYNTHETIC_ACL_TARGET).Sddl",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout.strip()
+
+
 def test_secure_file_and_directory_are_accepted(tmp_path: Path) -> None:
     from securitymasker.windows_security import require_private_dacl, secure_path
 
@@ -111,17 +132,21 @@ def test_source_init_keeps_root_dacl_and_protects_only_managed_artifacts(
 
     root = tmp_path / "source"
     root.mkdir()
-    source = root / "securitymasker.py"
-    source.write_text("# synthetic source\n", encoding="utf-8")
     root_dacl = (
-        f"D:P(A;;GA;;;{current_user_sid()})(A;;GA;;;SY)(A;;GA;;;BA)"
-        "(A;;GR;;;WD)"
+        f"D:P(A;OICI;GA;;;{current_user_sid()})(A;OICI;GA;;;SY)"
+        "(A;OICI;GA;;;BA)(A;OICI;GR;;;WD)"
     )
     _install_sddl_dacl(root, root_dacl)
+    source = root / "securitymasker.py"
+    source.write_text("# synthetic source\n", encoding="utf-8")
+    root_sddl = _sddl(root)
+    source_sddl = _sddl(source)
 
     layout = initialize_layout(root, mode="chatgpt", port=45676)
 
     assert source.read_text(encoding="utf-8") == "# synthetic source\n"
+    assert _sddl(root) == root_sddl
+    assert _sddl(source) == source_sddl
     with pytest.raises(WindowsSecurityError, match="unexpected principal"):
         require_private_dacl(root, directory=True)
     require_private_dacl(layout.config, directory=False)

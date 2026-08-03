@@ -19,11 +19,11 @@
 | console log level・設定閾値 | done | schema v1の`logging.level`、影響別4 level、起動・終了・異常系testあり |
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
-| source release candidate | partial | macOS／Linuxは完了。Windowsのlauncher隣接layoutはnative再検証待ち |
+| source release candidate | done | macOS／Linux／Windowsで対応gate完了 |
 | application `1.0.0`判断 | done | source版だけを公開し、binary版は公開対象外 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
-| Windows native source | partial | 実装済み。launcher隣接layoutのWindows native DACL／process gate待ち |
+| Windows native source | done | launcher隣接layoutのDACL／mock Gateway／native process検証済み |
 
 ## Source版
 
@@ -83,7 +83,9 @@ default routeがないことを構造検査した上で、実Codex CLI／Claude 
 Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSへ限定して対応範囲へ加えました。その後、
 [ADR-0024](../adr/0024-unify-source-adjacent-layout.md)でsource版の既定data配置を全OS共通のlauncher隣接へ
-変更しました。現行layoutのWindows native再検証が終わるまで、Windows sourceの状態を`partial`とします。
+変更し、2026-08-03にWindows native再検証を完了しました。結果は
+[Windows x64 launcher隣接source evidence](release-evidence/windows-x64-launcher-adjacent-source-2026-08-03.md)に
+記録しています。
 範囲外を部分的な動作だけでbest-effort対応とする方針は、引き続き
 [ADR-0013](../adr/0013-reject-best-effort-windows-support.md)どおり却下します。
 
@@ -105,8 +107,11 @@ upstream E2E 4件、Windows native process test 3件が成功しています。
 evidenceは従来のmode別`%LOCALAPPDATA%` layoutに対するもので、現行のlauncher隣接layoutには流用しません。
 
 現行のlauncher隣接layoutはmacOS arm64でruff、mypy strict 73 source files、unit／evaluation 740件
-（24 skip）、mock upstream E2E 4件が成功しています。skipにはWindows native DACL／process testが
-含まれます。Windows APIによるartifact単位DACL、source root非変更、native Gatewayは未検証です。
+（24 skip）、mock upstream E2E 4件が成功しています。Windows 11 x64でもruff、mypy strict
+73 source files、unit／evaluation 759件（5 skip）、mock upstream E2E 4件、Windows native process
+test 3件が成功しました。launcher隣接の既定init、source file／root DACL非変更、
+managed artifactのprotected DACL、不正DACL、wrong owner、reparse point、非local fixed NTFSの拒否を
+含みます。
 
 backup／restore作業は利用者の運用範囲とし、製品CLIでは扱いません。setup、隣接data layout、Gateway、
 Codex／Claude Codeの設定・解除は全OS共通の導入手順へまとめています。

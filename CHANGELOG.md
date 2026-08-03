@@ -18,7 +18,8 @@ Lite版／Full版binaryはtechnical spikeとして検証済みですが、この
 - Lite版binaryの`model-load`、model未準備時のfail-closed、取得後のoffline NER、両mode Gatewayを
   profile別gateで検証
 - Windows 11 x64 build 26100以降、CPython 3.12 x64、local fixed NTFSのnative source版を対応範囲へ
-  追加し、protected DACL、wheel-only setup、固定NER、SQLite、隔離実CLI E2Eをnative検証
+  追加し、launcher隣接init、source root非変更、protected DACL、固定NER、SQLite、両modeの
+  mock Gatewayをnative検証
 - Windows 11 x64でLite／Full one-fileを固定wheelからnative buildし、profile別model経路、標準NER、
   両mode Gatewayを検証するtechnical spike用cmd gateを追加
 
