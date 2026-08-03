@@ -22,6 +22,8 @@ Lite版／Full版binaryはtechnical spikeとして検証済みですが、この
   mock Gatewayをnative検証
 - Windows 11 x64でLite／Full one-fileを固定wheelからnative buildし、profile別model経路、標準NER、
   両mode Gatewayを検証するtechnical spike用cmd gateを追加
+- Windows x64の1.0.0 Lite technical artifactを実Codex／OpenAIと実Claude Code／Anthropicへ通す
+  opt-in E2Eを追加（binaryは引き続き公開対象外）
 
 ## 0.1.0 — 2026-07-26
 

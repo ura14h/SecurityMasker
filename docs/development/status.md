@@ -143,6 +143,15 @@ native buildしました。Liteは202,654,668 bytes、Fullは973,887,958 bytes�
 [Windows x64 Lite／Full evidence](release-evidence/windows-x64-lite-full-one-file-2026-08-02.md)に記録
 しています。
 
+2026-08-03にWindows 11 x64で1.0.0 Lite artifactを実client／実providerへ通しました。Codex CLI
+0.146.0からOpenAI Responses WebSocketへ4回のtool chain、Claude Code 2.1.220からAnthropic
+Messagesへ固定合成PERSONの単一turnを実行し、両方で送信直前のmask、実stream完了、最終表示での
+復元、alias非残存を確認しました。Claude Codeのstdio MCP拡張gateは同versionでtoolが公開されず
+0 callとなるため、binary合否から分離して未解決としています。詳細は
+[Windows x64 Lite実client evidence](release-evidence/windows-x64-lite-real-clients-2026-08-03.md)に
+記録しています。この追加確認は署名、再配布条件、clean-machine gateを満たさず、binary公開blockを
+解除しません。
+
 公開には次が必要です。
 
 1. 対象OS／architectureごとのnative buildとclean-machine binary gate。

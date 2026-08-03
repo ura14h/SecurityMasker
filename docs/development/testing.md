@@ -193,6 +193,20 @@ detector modelの揺らぎを混ぜないため、このtest専用の一時confi
 辞書で固定合成値を検出します。WebSocket接続数と完了response数はDEBUG eventで検証するため、
 同じ一時configの`logging.level`だけを`DEBUG`にします。
 
+one-file binaryを実Codex／Claude Codeと実providerの同じE2Eへ通す場合は、明示した
+`SM_REAL_E2E_BINARY`をGateway実行ファイルとして使います。binaryのprofileとversionを
+`--version`で確認し、各provider E2Eを別々にopt-inします。このtestも外部送信とmodel利用を
+伴います。
+
+```bat
+set "SM_REAL_E2E_BINARY=C:\path\to\securitymasker-lite.exe"
+set "SM_RUN_OPENAI_E2E=1"
+.venv\Scripts\python.exe -m pytest -q -s tests\integration\test_real_openai_e2e.py
+set "SM_RUN_ANTHROPIC_E2E=1"
+.venv\Scripts\python.exe -m pytest -q -s ^
+  tests\integration\test_real_anthropic_e2e.py::test_real_claude_single_turn_through_anthropic
+```
+
 実Anthropicサーバとの互換性E2Eは、実Claude Code CLIの既存認証を表示・複製せず、process
 環境の`ANTHROPIC_BASE_URL`だけを一時Gatewayへ向けます。通常suiteではskipされ、外部送信と
 モデル利用を明示的にopt-inした場合だけ実行します。
@@ -202,16 +216,21 @@ SM_RUN_ANTHROPIC_E2E=1 .venv/bin/python -m pytest -q -s \
   tests/integration/test_real_anthropic_e2e.py
 ```
 
-標準では一つのClaude Code session内でtest専用stdio MCPの`repeat_probe`を4回直列実行します。
-2〜12回の範囲で変更でき、modelと最大利用額も一時環境から指定できます。
+標準gateは固定合成PERSONを含む単一turnを実行し、送信直前のmask、実Anthropic streamの完了、
+Claude Code最終表示での完全復元、alias非残存を確認します。
+
+stdio MCPの`repeat_probe`を使う複数turnの拡張gateは、Claude CodeのMCP互換性も同時に検証するため
+別のopt-inにします。標準では4回直列実行し、2〜12回の範囲で変更できます。
 
 ```console
-SM_RUN_ANTHROPIC_E2E=1 SM_ANTHROPIC_E2E_TOOL_CALLS=6 \
+SM_RUN_ANTHROPIC_E2E=1 SM_RUN_ANTHROPIC_MCP_E2E=1 \
+  SM_ANTHROPIC_E2E_TOOL_CALLS=6 \
   SM_ANTHROPIC_E2E_MODEL=sonnet SM_ANTHROPIC_E2E_MAX_BUDGET_USD=1.00 \
-  .venv/bin/python -m pytest -q -s tests/integration/test_real_anthropic_e2e.py
+  .venv/bin/python -m pytest -q -s \
+  tests/integration/test_real_anthropic_e2e.py::test_real_claude_tool_chain_through_anthropic
 ```
 
-成功条件は実Claude Codeの完了、tool call数の一致、初回promptと各tool resultを含むMessages
+拡張gateの成功条件は実Claude Codeの完了、tool call数の一致、初回promptと各tool resultを含むMessages
 requestのmask、Anthropic SSE完了数がtool call数+1以上、最終responseでの固定合成PERSON復元、
 alias非残存のすべてです。MCP probeは固定合成値と進捗だけを返し、built-in tool、他のMCP、
 slash command、Chrome連携、session永続化は無効にします。作業directoryは空にし、user、project、
