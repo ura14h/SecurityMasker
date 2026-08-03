@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-08-03
+
+SecurityMaskerの最初の安定releaseです。公開対象はsource版だけです。PyInstaller one-fileの
+Lite版／Full版binaryはtechnical spikeとして検証済みですが、このreleaseの公開対象には含めません。
 
 - `init -f` / `init --force`を追加し、明示したdirectoryの標準config、辞書、SQLite、master keyを
   Gateway停止中に一組として完全初期化できるように変更

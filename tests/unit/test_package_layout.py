@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -496,10 +497,15 @@ def test_source_launcher_without_command_shows_help_from_unrelated_directory(
 
 def test_release_version_is_consistent() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    project_version = tomllib.loads(pyproject)["project"]["version"]
+    release_headings = [
+        line for line in changelog.splitlines() if line.startswith("## ")
+    ]
 
-    assert securitymasker.__version__ == "0.1.0"
-    assert 'version = "0.1.0"' in pyproject
-    assert "## 0.1.0" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert project_version == securitymasker.__version__ == "1.0.0"
+    assert release_headings[0].startswith(f"## {project_version} ")
+    assert "## Unreleased" not in release_headings
 
 
 def test_source_packaging_script_is_local_and_reproducible() -> None:

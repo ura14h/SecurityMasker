@@ -1,6 +1,6 @@
 # 開発・リリース状況
 
-最終更新: 2026-08-02
+最終更新: 2026-08-03
 
 この文書を、現行構成の`done`／`partial`／`blocked`と公開範囲の正とします。`done`は実装、
 製品配線、回帰test、利用・運用手順が揃った項目だけです。
@@ -20,14 +20,14 @@
 | README、導入、カスタマイズ、運用導線 | done | 目的別配置、link/anchor testあり |
 | 通常setupとtest setupの分離 | done | なし |
 | source release candidate | partial | macOS／Linuxは完了。Windowsのlauncher隣接layoutはnative再検証待ち |
-| application `1.0.0`判断 | partial | source版だけを公開するrelease noteが必要 |
+| application `1.0.0`判断 | done | source版だけを公開し、binary版は公開対象外 |
 | one-file Lite版公開 | blocked | dependency再配布、署名、対象OS別clean-machine gateが未完 |
 | one-file Full版公開 | blocked | Lite版の残件に加え、model weight再配布判断が未完 |
 | Windows native source | partial | 実装済み。launcher隣接layoutのWindows native DACL／process gate待ち |
 
 ## Source版
 
-現在のapplication versionは`0.1.0`です。macOS arm64のPython 3.11／3.12、Linux arm64の
+現在のapplication versionは`1.0.0`です。macOS arm64のPython 3.11／3.12、Linux arm64の
 Python 3.12、Windows 11 x64のPython 3.12 x64でsource setupを検証しています。
 
 2026-08-01にmacOS arm64、Python 3.12、Claude Code 2.1.212からSecurityMaskerを通して
@@ -76,8 +76,8 @@ default routeがないことを構造検査した上で、実Codex CLI／Claude 
 生値と差をevidenceへ残します。詳細は
 [Linux arm64 gate evidence](release-evidence/linux-arm64-2026-07-31.md)に記録しています。
 
-source版だけが公開対象であることをrelease noteへ明記できれば、最初の公開版を`1.0.0`とする
-判断は妥当です。判断理由は
+最初の安定releaseを`1.0.0`とし、source版だけを公開対象とすることをrelease noteで
+確定しました。binary版はこのreleaseの公開対象外です。判断理由は
 [ADR-0016](../adr/0016-reset-config-schema-version.md)に記録しています。
 
 Windows native source版は[ADR-0023](../adr/0023-support-windows-native-source.md)により、Windows 11
@@ -151,7 +151,6 @@ model作者・dataset権利者への確認または適切な法務確認が終�
 
 ## Ownerに必要な操作
 
-- `1.0.0`の公開範囲とrelease noteを確定する
 - repository公開、tag、GitHub Release、source archive/checksum uploadを行う
 - binaryも公開する場合だけ、Lite／Full、対象OS、再配布、署名、artifact uploadを別途判断する
 
