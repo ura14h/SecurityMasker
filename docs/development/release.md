@@ -154,4 +154,6 @@ SHA-256を表示します。
 - 未実施項目がないこと
 
 `1.0.0.md`は、1.0.0の全gateが成功してから作成します。release candidateの結果を正式版のevidenceへ
-流用しません。
+流用しません。source archive自身のchecksumをevidenceへ記録するreleaseでは、checksumの自己参照を
+避けるため、検証済みcommitへtagを作成してarchiveを固定した後、evidenceをtag後の文書commitとして
+追加します。

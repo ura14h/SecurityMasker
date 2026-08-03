@@ -183,8 +183,13 @@ model作者・dataset権利者への確認または適切な法務確認が終�
 
 ## Ownerに必要な操作
 
-- repository公開、tag、GitHub Release、source archive/checksum uploadを行う
+- repository公開、GitHub Release、source archive/checksum uploadを行う
 - binaryも公開する場合だけ、Lite／Full、対象OS、再配布、署名、artifact uploadを別途判断する
+
+source版1.0.0はtag `1.0.0`をcommit `35f47fcf3fbfd5713344bce8190b154658ed7aae`へ作成し、
+428,176 bytesのsource archiveとSHA-256
+`473887d890846a1af3683fd790d03f59ec5c4f08d1221fc6055d4a949dbbf3b7`を検証済みです。正式な結果は
+[1.0.0 release evidence](release-evidence/1.0.0.md)に記録しています。
 
 過去のrelease candidate実測は
 [0.1.0 RC evidence](release-evidence/0.1.0-rc-2026-07-26.md)、合格条件は
