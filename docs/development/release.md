@@ -25,9 +25,10 @@ HTTP比較でwall timeと差を記録します。release担当者は実行前に
 login済みである必要があります。接続数と完了response数を数えるtest専用一時configは
 `logging.level: DEBUG`を使い、利用者の通常configは変更しません。
 
-実Anthropic E2Eも固定した合成PERSONだけを送ります。実Claude Codeの既存認証をCLI自身に
-使わせ、一時product layoutと空の作業directoryで単一turnを実行します。requestの送信前mask、
-Anthropic SSEの完走、最終responseの復元、alias非残存を確認します。通常のClaude設定とsession
+実Anthropic E2Eも固定した合成PERSONだけを送ります。既定modelは既存evidenceと同じ`haiku`とし、
+実Claude Codeの既存認証をCLI自身に使わせ、一時product layoutと空の作業directoryで単一turnを
+実行します。requestの送信前mask、Anthropic SSEの完走、最終responseの復元、alias非残存を
+確認します。通常のClaude設定とsession
 履歴は変更せず、built-in tool、telemetry、update、error reportingを無効にします。release担当者は
 Claude Codeへlogin済みである必要があります。
 

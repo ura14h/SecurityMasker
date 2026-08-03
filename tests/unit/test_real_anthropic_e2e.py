@@ -119,6 +119,7 @@ def test_claude_command_disables_builtin_tools_and_persistence(tmp_path: Path) -
     assert "--strict-mcp-config" in command
     assert f"--mcp-config={tmp_path / 'mcp.json'}" in command
     assert "--mcp-config" not in command
+    assert command[command.index("--model") + 1] == e2e.DEFAULT_MODEL
     assert command[command.index("--setting-sources") + 1] == ""
     assert str(e2e.REPO) not in " ".join(command)
 
@@ -128,6 +129,7 @@ def test_claude_echo_command_contains_only_fixed_synthetic_identifier() -> None:
 
     assert command[0] == "/usr/bin/claude"
     assert command[command.index("--tools") + 1] == ""
+    assert command[command.index("--model") + 1] == e2e.DEFAULT_MODEL
     assert command[-1] == f"Output this exact identifier: {e2e.PERSON}"
     assert "--mcp-config" not in " ".join(command)
 

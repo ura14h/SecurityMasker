@@ -217,8 +217,9 @@ SM_RUN_ANTHROPIC_E2E=1 .venv/bin/python -m pytest -q -s \
   tests/integration/test_real_anthropic_e2e.py
 ```
 
-標準gateは固定合成PERSONを含む単一turnを実行し、送信直前のmask、実Anthropic streamの完了、
-Claude Code最終表示での完全復元、alias非残存を確認します。
+標準gateは既存evidenceと同じ`haiku`を既定modelとし、固定合成PERSONを含む単一turnを実行します。
+送信直前のmask、実Anthropic streamの完了、Claude Code最終表示での完全復元、alias非残存を
+確認します。modelを変更する場合だけ`SM_ANTHROPIC_E2E_MODEL`を明示します。
 
 stdio MCPの`repeat_probe`を使う複数turnの拡張gateは、Claude CodeのMCP互換性も同時に検証するため
 別のopt-inにします。標準では4回直列実行し、2〜12回の範囲で変更できます。

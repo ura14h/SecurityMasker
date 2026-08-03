@@ -39,6 +39,7 @@ pytestmark = pytest.mark.skipif(
 REPO = Path(__file__).resolve().parents[2]
 PERSON = "SYNTHETIC_PERSON_684209"
 DEFAULT_TOOL_CALLS = 4
+DEFAULT_MODEL = "haiku"
 DICTIONARY = f"""\
 version: 1
 entities:
@@ -257,9 +258,8 @@ def _claude_command(claude: str, mcp_config: Path, tool_calls: int) -> list[str]
             "repeat_probe tool and follow the user instruction exactly."
         ),
     ]
-    model = os.environ.get("SM_ANTHROPIC_E2E_MODEL")
-    if model:
-        command.extend(["--model", model])
+    model = os.environ.get("SM_ANTHROPIC_E2E_MODEL", DEFAULT_MODEL)
+    command.extend(["--model", model])
     command.append(prompt)
     return command
 
@@ -286,9 +286,8 @@ def _claude_echo_command(claude: str) -> list[str]:
         "--system-prompt",
         "Output only the exact identifier requested by the user, with no other text.",
     ]
-    model = os.environ.get("SM_ANTHROPIC_E2E_MODEL")
-    if model:
-        command.extend(["--model", model])
+    model = os.environ.get("SM_ANTHROPIC_E2E_MODEL", DEFAULT_MODEL)
+    command.extend(["--model", model])
     command.append(f"Output this exact identifier: {PERSON}")
     return command
 
