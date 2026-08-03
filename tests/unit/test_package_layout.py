@@ -511,6 +511,7 @@ def test_release_version_is_consistent() -> None:
 def test_source_packaging_script_is_local_and_reproducible() -> None:
     script = (ROOT / "scripts/package-source").read_text(encoding="utf-8")
 
+    assert "SECURITYMASKER_PYTHON" in script
     assert "git -C" in script
     assert "archive" in script
     assert "gzip -n" in script
