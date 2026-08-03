@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
-import select
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +29,7 @@ import httpx
 import pytest
 
 from securitymasker.bootstrap import initialize_layout
+from tests.integration.real_e2e_gateway import start_gateway
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SM_RUN_OPENAI_E2E") != "1",
@@ -68,7 +71,7 @@ def _wait(url: str, timeout: float = 60.0) -> None:
 
 def _codex_environment() -> dict[str, str]:
     """認証保存先だけを維持し、promptと無関係な環境変数を子へ渡さない。"""
-    keep = (
+    keep = [
         "PATH",
         "CODEX_HOME",
         "LANG",
@@ -78,7 +81,21 @@ def _codex_environment() -> dict[str, str]:
         "SSL_CERT_FILE",
         "TERM",
         "TMPDIR",
-    )
+    ]
+    if os.name == "nt":
+        keep.extend(
+            (
+                "APPDATA",
+                "COMSPEC",
+                "LOCALAPPDATA",
+                "PATHEXT",
+                "SYSTEMROOT",
+                "TEMP",
+                "TMP",
+                "USERPROFILE",
+                "WINDIR",
+            )
+        )
     environment = {name: os.environ[name] for name in keep if name in os.environ}
     environment["HOME"] = str(Path.home())
     return environment
@@ -131,10 +148,26 @@ def _codex_app_server_command(
 @dataclass
 class _AppServer:
     process: subprocess.Popen[str]
+    stderr_file: IO[str]
     notifications: list[dict[str, Any]] = field(default_factory=list)
     request_id: int = 0
     expected_tool_calls: int = 0
     tool_calls: int = 0
+    stopped_by_test: bool = False
+    _lines: queue.Queue[str | None] = field(default_factory=queue.Queue)
+    _reader: threading.Thread | None = None
+
+    def _start_reader(self) -> None:
+        assert self._reader is None
+        self._reader = threading.Thread(target=self._read_stdout, daemon=True)
+        self._reader.start()
+
+    def _read_stdout(self) -> None:
+        try:
+            for line in self.stdout:
+                self._lines.put(line)
+        finally:
+            self._lines.put(None)
 
     @classmethod
     def start(
@@ -144,31 +177,44 @@ class _AppServer:
         *,
         supports_websockets: bool,
     ) -> _AppServer:
-        process = subprocess.Popen(  # noqa: S603
-            _codex_app_server_command(
-                codex,
-                gateway_url,
-                supports_websockets=supports_websockets,
-            ),
-            env=_codex_environment(),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+        stderr_file = tempfile.TemporaryFile(  # noqa: SIM115 - closeまで保持する
+            mode="w+", encoding="utf-8"
         )
-        server = cls(process)
-        server.request(
-            "initialize",
-            {
-                "clientInfo": {
-                    "name": "securitymasker-e2e",
-                    "version": "1",
+        try:
+            process = subprocess.Popen(  # noqa: S603
+                _codex_app_server_command(
+                    codex,
+                    gateway_url,
+                    supports_websockets=supports_websockets,
+                ),
+                env=_codex_environment(),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=stderr_file,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+            )
+        except BaseException:
+            stderr_file.close()
+            raise
+        server = cls(process, stderr_file)
+        server._start_reader()
+        try:
+            server.request(
+                "initialize",
+                {
+                    "clientInfo": {
+                        "name": "securitymasker-e2e",
+                        "version": "1",
+                    },
+                    "capabilities": {"experimentalApi": True},
                 },
-                "capabilities": {"experimentalApi": True},
-            },
-        )
-        server.notify("initialized", {})
+            )
+            server.notify("initialized", {})
+        except BaseException:
+            server.close()
+            raise
         return server
 
     @property
@@ -189,11 +235,11 @@ class _AppServer:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Codex app-server response timed out")
-        readable, _, _ = select.select([self.stdout], [], [], remaining)
-        if not readable:
-            raise TimeoutError("Codex app-server response timed out")
-        line = self.stdout.readline()
-        if not line:
+        try:
+            line = self._lines.get(timeout=remaining)
+        except queue.Empty:
+            raise TimeoutError("Codex app-server response timed out") from None
+        if line is None:
             raise RuntimeError(
                 f"Codex app-server closed unexpectedly with {self.process.poll()}"
             )
@@ -353,12 +399,22 @@ class _AppServer:
                 self.notifications.append(message)
 
     def close(self) -> str:
-        self.process.terminate()
-        try:
-            _, stderr = self.process.communicate(timeout=15)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            _, stderr = self.process.communicate(timeout=5)
+        if self.process.poll() is None:
+            self.stopped_by_test = True
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+        if self.process.stdin is not None:
+            self.process.stdin.close()
+        if self._reader is not None:
+            self._reader.join(timeout=5)
+        self.stderr_file.flush()
+        self.stderr_file.seek(0)
+        stderr = self.stderr_file.read()
+        self.stderr_file.close()
         return stderr
 
 
@@ -418,20 +474,7 @@ def _run_codex_tool_chain(
     )
     layout.dictionary.write_text(DICTIONARY, encoding="utf-8")
     layout.dictionary.chmod(0o600)
-    gateway = subprocess.Popen(  # noqa: S603
-        [
-            sys.executable,
-            str(REPO / "securitymasker.py"),
-            "gateway",
-            "--config",
-            str(layout.config),
-        ],
-        cwd=REPO,
-        env={**os.environ},
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    gateway = start_gateway(layout.config, environment={**os.environ})
     gateway_stderr = ""
     server: _AppServer | None = None
     turn_timeout = float(os.environ.get("SM_OPENAI_E2E_TURN_TIMEOUT", "180"))
@@ -525,12 +568,7 @@ def _run_codex_tool_chain(
     finally:
         failed = sys.exc_info()[0] is not None
         app_stderr = server.close() if server is not None else ""
-        gateway.terminate()
-        try:
-            _, gateway_stderr = gateway.communicate(timeout=15)
-        except subprocess.TimeoutExpired:
-            gateway.kill()
-            _, gateway_stderr = gateway.communicate(timeout=5)
+        gateway_stderr = gateway.stop()
         if failed:
             safe_log = "\n".join(
                 line
@@ -554,7 +592,11 @@ def _run_codex_tool_chain(
                 if "ERROR" in line or "WARN" in line
             )
             print(app_errors, file=sys.stderr)
-        if server is not None and server.process.returncode not in {0, -15}:
+        if (
+            server is not None
+            and not server.stopped_by_test
+            and server.process.returncode != 0
+        ):
             pytest.fail(f"Codex app-server failed: {app_stderr[-2000:]}")
 
     masked_counts = [

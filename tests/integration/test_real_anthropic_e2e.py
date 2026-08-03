@@ -29,6 +29,7 @@ import httpx
 import pytest
 
 from securitymasker.bootstrap import initialize_layout
+from tests.integration.real_e2e_gateway import start_gateway
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SM_RUN_ANTHROPIC_E2E") != "1",
@@ -73,7 +74,7 @@ def _claude_environment(
     gateway_url: str, config_dir: Path | None = None
 ) -> dict[str, str]:
     """認証に必要な最小環境だけを維持し、Claudeを一時Gatewayへ向ける。"""
-    keep = (
+    keep = [
         "PATH",
         "USER",
         "LOGNAME",
@@ -88,7 +89,21 @@ def _claude_environment(
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN",
-    )
+    ]
+    if os.name == "nt":
+        keep.extend(
+            (
+                "APPDATA",
+                "COMSPEC",
+                "LOCALAPPDATA",
+                "PATHEXT",
+                "SYSTEMROOT",
+                "TEMP",
+                "TMP",
+                "USERPROFILE",
+                "WINDIR",
+            )
+        )
     environment = {name: os.environ[name] for name in keep if name in os.environ}
     environment.update(
         {
@@ -195,6 +210,7 @@ def _mcp_config(path: Path, record: Path, tool_calls: int) -> None:
         "mcpServers": {
             "probe": {
                 "type": "stdio",
+                "alwaysLoad": True,
                 "command": sys.executable,
                 "args": [str(Path(__file__).resolve()), "--mcp-probe"],
                 "env": {
@@ -222,8 +238,7 @@ def _claude_command(claude: str, mcp_config: Path, tool_calls: int) -> list[str]
         "--disable-slash-commands",
         "--no-chrome",
         "--strict-mcp-config",
-        "--mcp-config",
-        str(mcp_config),
+        f"--mcp-config={mcp_config}",
         "--tools",
         "",
         "--allowedTools",
@@ -246,6 +261,35 @@ def _claude_command(claude: str, mcp_config: Path, tool_calls: int) -> list[str]
     if model:
         command.extend(["--model", model])
     command.append(prompt)
+    return command
+
+
+def _claude_echo_command(claude: str) -> list[str]:
+    command = [
+        claude,
+        "--print",
+        "--output-format",
+        "json",
+        "--no-session-persistence",
+        "--disable-slash-commands",
+        "--no-chrome",
+        "--tools",
+        "",
+        "--permission-mode",
+        "dontAsk",
+        "--setting-sources",
+        "",
+        "--effort",
+        "low",
+        "--max-budget-usd",
+        os.environ.get("SM_ANTHROPIC_E2E_MAX_BUDGET_USD", "1.00"),
+        "--system-prompt",
+        "Output only the exact identifier requested by the user, with no other text.",
+    ]
+    model = os.environ.get("SM_ANTHROPIC_E2E_MODEL")
+    if model:
+        command.extend(["--model", model])
+    command.append(f"Output this exact identifier: {PERSON}")
     return command
 
 
@@ -281,6 +325,7 @@ def _run_claude(
     timeout: float,
 ) -> subprocess.CompletedProcess[str]:
     """Claudeとstdio MCP子processを同じprocess groupとして期限内に回収する。"""
+    creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     process = subprocess.Popen(  # noqa: S603
         command,
         cwd=cwd,
@@ -289,17 +334,104 @@ def _run_claude(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        start_new_session=True,
+        encoding="utf-8",
+        start_new_session=os.name != "nt",
+        creationflags=creation_flags,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        stdout, stderr = process.communicate(timeout=10)
+        if os.name == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+            try:
+                stdout, stderr = process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate(timeout=10)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate(timeout=10)
         raise RuntimeError(f"Claude Code timed out after {timeout:.0f}s") from None
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
+def test_real_claude_single_turn_through_anthropic(tmp_path: Path) -> None:
+    """実Claude Codeの単一turnで上流maskと最終表示の復元を確認する。"""
+    claude = shutil.which("claude")
+    if claude is None:
+        pytest.fail("required real CLI is not installed: claude")
+
+    port = _port()
+    layout = initialize_layout(tmp_path / "product", mode="claude", port=port)
+    layout.config.write_text(
+        layout.config.read_text(encoding="utf-8")
+        .replace(
+            "  japanese_ner:\n    enabled: true",
+            "  japanese_ner:\n    enabled: false",
+        )
+        .replace("level: INFO", "level: DEBUG"),
+        encoding="utf-8",
+    )
+    layout.dictionary.write_text(DICTIONARY, encoding="utf-8")
+    layout.dictionary.chmod(0o600)
+
+    gateway = start_gateway(
+        layout.config,
+        environment={
+            **os.environ,
+            "SECURITYMASKER_ANTHROPIC_UPSTREAM": "https://api.anthropic.com",
+        },
+    )
+    gateway_stderr = ""
+    try:
+        gateway_url = f"http://127.0.0.1:{port}"
+        _wait(f"{gateway_url}/ready")
+        workdir = tmp_path / "empty-workdir"
+        workdir.mkdir()
+        started = time.monotonic()
+        result = _run_claude(
+            _claude_echo_command(claude),
+            cwd=workdir,
+            environment=_claude_environment(gateway_url),
+            timeout=float(os.environ.get("SM_ANTHROPIC_E2E_TURN_TIMEOUT", "300")),
+        )
+        wall_ms = (time.monotonic() - started) * 1000.0
+        payload = _parse_result(result.stdout)
+        output = payload.get("result")
+        assert result.returncode == 0, payload.get("subtype")
+        assert payload.get("is_error") is False, payload.get("subtype")
+        assert isinstance(output, str)
+        assert output.strip() == PERSON
+        assert not re.search(r"SM_[A-Z]+_[0-9A-F]+", output)
+    finally:
+        gateway_stderr = gateway.stop()
+
+    masked_counts = [
+        int(value)
+        for value in re.findall(r"request_masked entity_count=(\d+)", gateway_stderr)
+    ]
+    completed = _completed_stream_statuses(gateway_stderr)
+    assert any(count >= 1 for count in masked_counts)
+    assert 200 in completed
+    assert PERSON not in gateway_stderr
+    print(
+        json.dumps(
+            {
+                "completed_streams": completed.count(200),
+                "turns": payload.get("num_turns"),
+                "wall_ms": round(wall_ms, 1),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
+
+@pytest.mark.skipif(
+    os.environ.get("SM_RUN_ANTHROPIC_MCP_E2E") != "1",
+    reason="set SM_RUN_ANTHROPIC_MCP_E2E=1 to run the extended MCP chain",
+)
 def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
     """実Messages tool loopの全requestでmaskし、最終表示でだけ復元する。"""
     claude = shutil.which("claude")
@@ -322,22 +454,12 @@ def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
     layout.dictionary.write_text(DICTIONARY, encoding="utf-8")
     layout.dictionary.chmod(0o600)
 
-    gateway = subprocess.Popen(  # noqa: S603
-        [
-            sys.executable,
-            str(REPO / "securitymasker.py"),
-            "gateway",
-            "--config",
-            str(layout.config),
-        ],
-        cwd=REPO,
-        env={
+    gateway = start_gateway(
+        layout.config,
+        environment={
             **os.environ,
             "SECURITYMASKER_ANTHROPIC_UPSTREAM": "https://api.anthropic.com",
         },
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
     )
     gateway_stderr = ""
     try:
@@ -378,12 +500,7 @@ def test_real_claude_tool_chain_through_anthropic(tmp_path: Path) -> None:
         assert not re.search(r"sm-[a-z]+-[0-9a-f]+\.example\.invalid", output)
     finally:
         failed = sys.exc_info()[0] is not None
-        gateway.terminate()
-        try:
-            _, gateway_stderr = gateway.communicate(timeout=15)
-        except subprocess.TimeoutExpired:
-            gateway.kill()
-            _, gateway_stderr = gateway.communicate(timeout=5)
+        gateway_stderr = gateway.stop()
         if failed:
             safe_log = "\n".join(
                 line
