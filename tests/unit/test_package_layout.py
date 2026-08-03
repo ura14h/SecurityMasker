@@ -605,6 +605,12 @@ def test_linux_arm64_docker_gate_separates_online_and_isolated_phases() -> None:
     assert "@anthropic-ai/claude-code@2.1.212" in dockerfile
     assert "python:3.12.13-slim-bookworm@sha256:" in dockerfile
     assert "node:22.16.0-bookworm-slim@sha256:" in dockerfile
+    for lock in (
+        "requirements-windows.lock",
+        "requirements-windows-dev.lock",
+        "requirements-windows-build.lock",
+    ):
+        assert lock in dockerfile
     assert "securitymasker.config" not in dockerignore
     assert "securitymasker.dict" not in dockerignore
 
