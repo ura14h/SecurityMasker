@@ -611,6 +611,7 @@ def test_linux_arm64_docker_gate_separates_online_and_isolated_phases() -> None:
         "requirements-windows-build.lock",
     ):
         assert lock in dockerfile
+        assert f"!{lock}" in dockerignore
     assert "securitymasker.config" not in dockerignore
     assert "securitymasker.dict" not in dockerignore
 

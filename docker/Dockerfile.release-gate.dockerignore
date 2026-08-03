@@ -13,6 +13,9 @@
 !requirements-dev.lock
 !requirements-ner.lock
 !requirements-torch-cpu.lock
+!requirements-windows.lock
+!requirements-windows-dev.lock
+!requirements-windows-build.lock
 !src
 !src/**
 !tests
